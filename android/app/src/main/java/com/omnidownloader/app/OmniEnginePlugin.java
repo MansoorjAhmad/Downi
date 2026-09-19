@@ -13,8 +13,6 @@ import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.MediaStore;
 import android.content.ContentValues;
 import android.content.Intent;
@@ -46,30 +44,45 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Native download bridge for OmniDownloader V2.1.
- * Real-time download progress, file size, speed, and ETA to WebView.
- * True in-app updater (download with progress bar + APK install),
- * engine health check, and Media Vault backed by MediaStore.
+ * DOWNI native bridge — V2.5 ELITE.
+ * Parallel download queue (3 simultaneous, more auto-queued), per-job progress
+ * and cancel, true in-app updater, engine health check, Media Vault.
  */
 @CapacitorPlugin(name = "OmniEngine", permissions = {
     @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS })
 })
 public class OmniEnginePlugin extends Plugin {
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private static final int MAX_ACTIVE = 3;
+    private static final int MAX_QUEUED = 6;
+
     private DownloadManager downloadManager;
-    private long activeDownloadId = -1;
-    private PluginCall activeCall;
-    private Runnable progressWatcher;
-    private final ExecutorService engineExecutor = Executors.newSingleThreadExecutor();
-    private final ExecutorService miscExecutor = Executors.newFixedThreadPool(2);
-    private volatile boolean engineActive = false;
-    private volatile boolean cancelRequested = false;
+    private final ExecutorService enginePool = Executors.newFixedThreadPool(MAX_ACTIVE);
+    private final ExecutorService miscExecutor = Executors.newFixedThreadPool(3);
+    private final Map<String, DownloadJob> jobs = new ConcurrentHashMap<>();
     private volatile boolean updateCancelled = false;
+
+    /** One queued/active download. */
+    private static class DownloadJob {
+        final String id;
+        final PluginCall call;
+        final String url;
+        final String formatId;
+        final AtomicBoolean cancelled = new AtomicBoolean(false);
+        DownloadJob(String id, PluginCall call, String url, String formatId) {
+            this.id = id;
+            this.call = call;
+            this.url = url;
+            this.formatId = formatId;
+        }
+    }
 
     @PluginMethod
     public void chooseFolder(PluginCall call) {
@@ -126,7 +139,7 @@ public class OmniEnginePlugin extends Plugin {
             result.put("versionName", pInfo.versionName);
             result.put("versionCode", Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? pInfo.getLongVersionCode() : pInfo.versionCode);
             result.put("packageName", getContext().getPackageName());
-            result.put("engine", "Chaquopy 3.11 + yt-dlp");
+            result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
             result.put("versionName", "2.5.0");
@@ -184,7 +197,7 @@ public class OmniEnginePlugin extends Plugin {
                 conn.setInstanceFollowRedirects(true);
                 conn.setConnectTimeout(20000);
                 conn.setReadTimeout(30000);
-                conn.setRequestProperty("User-Agent", "OmniDownloader/" + getAppVersionName());
+                conn.setRequestProperty("User-Agent", "DOWNI/" + getAppVersionName());
                 conn.connect();
 
                 int code = conn.getResponseCode();
@@ -266,7 +279,7 @@ public class OmniEnginePlugin extends Plugin {
                 PyObject response = Python.getInstance().getModule("downloader").callAttr("engine_info");
                 JSONObject info = new JSONObject(response.toString());
                 JSObject result = new JSObject();
-                result.put("engine", info.optString("engine", "Chaquopy 3.11 + yt-dlp"));
+                result.put("engine", info.optString("engine", "DOWNI Engine"));
                 result.put("ytDlpVersion", info.optString("yt_dlp_version", ""));
                 result.put("pythonVersion", info.optString("python", ""));
                 result.put("healthy", true);
@@ -330,7 +343,8 @@ public class OmniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void getThumbnail(PluginCall call) {
-        long id = (long) call.getDouble("id", 0.0).doubleValue();
+        Double idVal = call.getDouble("id");
+        long id = idVal == null ? 0L : idVal.longValue();
         boolean isVideo = call.getBoolean("isVideo", true);
         miscExecutor.execute(() -> {
             JSObject result = new JSObject();
@@ -374,7 +388,8 @@ public class OmniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void openMedia(PluginCall call) {
-        long id = (long) call.getDouble("id", 0.0).doubleValue();
+        Double idVal = call.getDouble("id");
+        long id = idVal == null ? 0L : idVal.longValue();
         boolean isVideo = call.getBoolean("isVideo", true);
         try {
             Uri uri = Uri.withAppendedPath(
@@ -392,7 +407,8 @@ public class OmniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void shareMedia(PluginCall call) {
-        long id = (long) call.getDouble("id", 0.0).doubleValue();
+        Double idVal = call.getDouble("id");
+        long id = idVal == null ? 0L : idVal.longValue();
         boolean isVideo = call.getBoolean("isVideo", true);
         try {
             Uri uri = Uri.withAppendedPath(
@@ -413,7 +429,8 @@ public class OmniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void deleteMedia(PluginCall call) {
-        long id = (long) call.getDouble("id", 0.0).doubleValue();
+        Double idVal = call.getDouble("id");
+        long id = idVal == null ? 0L : idVal.longValue();
         boolean isVideo = call.getBoolean("isVideo", true);
         try {
             Uri uri = Uri.withAppendedPath(
@@ -454,6 +471,8 @@ public class OmniEnginePlugin extends Plugin {
         call.resolve(result);
     }
 
+    // ---------- Parallel download queue ----------
+
     @PluginMethod
     public void download(PluginCall call) {
         String rawUrl = call.getString("directUrl", "");
@@ -464,33 +483,127 @@ public class OmniEnginePlugin extends Plugin {
             call.reject("Paste a valid http or https media link.");
             return;
         }
-        if (activeDownloadId != -1 || engineActive) {
-            call.reject("A download is already active. Wait for it to finish or cancel it first.");
+        if (jobs.size() >= MAX_QUEUED) {
+            call.reject("Queue is full. Wait for a download to finish or cancel one.");
             return;
         }
-        downloadPublicPage(rawUrl, call, call.getString("formatId", "best"));
+        String jobId = "dl" + System.currentTimeMillis() + (int) (Math.random() * 1000);
+        DownloadJob job = new DownloadJob(jobId, call, rawUrl, call.getString("formatId", "best"));
+        jobs.put(jobId, job);
+
+        JSObject started = new JSObject();
+        started.put("jobId", jobId);
+        started.put("percent", 0);
+        started.put("status", "Queued");
+        started.put("queued", true);
+        notifyListeners("onProgress", started);
+
+        OmniDownloadService.startJob(getContext(), jobId, "Queued");
+        call.setKeepAlive(true);
+        enginePool.execute(() -> runJob(job));
     }
 
     @PluginMethod
     public void cancelDownload(PluginCall call) {
-        cancelRequested = true;
-        if (engineActive) OmniDownloadService.finish(getContext(), false);
-        if (activeDownloadId != -1) {
-            downloadManager.remove(activeDownloadId);
-            activeDownloadId = -1;
+        String jobId = call.getString("jobId");
+        if (jobId != null && !jobId.trim().isEmpty()) {
+            DownloadJob job = jobs.remove(jobId);
+            if (job != null) {
+                job.cancelled.set(true);
+                try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
+                OmniDownloadService.finishJob(getContext(), jobId);
+                JSObject progress = new JSObject();
+                progress.put("jobId", jobId);
+                progress.put("failed", true);
+                progress.put("error", "Download cancelled.");
+                notifyListeners("onProgress", progress);
+            }
+        } else {
+            for (DownloadJob job : jobs.values()) {
+                job.cancelled.set(true);
+                try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
+                OmniDownloadService.finishJob(getContext(), job.id);
+            }
+            jobs.clear();
         }
-        if (activeCall != null) {
-            activeCall.reject("Download cancelled.");
-            activeCall = null;
-        }
-        if (engineActive) {
-            JSObject progress = new JSObject();
-            progress.put("failed", true);
-            progress.put("error", "Download cancelled.");
-            notifyListeners("onProgress", progress);
-        }
-        stopWatcher();
         call.resolve();
+    }
+
+    private void runJob(DownloadJob job) {
+        File workDir = new File(new File(getContext().getCacheDir(), "OmniEngine"), job.id);
+        try {
+            if (job.cancelled.get()) return;
+            if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
+
+            OmniDownloadService.updateJob(getContext(), job.id, "Starting engine…", 1);
+
+            DownloadProgressListener listener = new DownloadProgressListener() {
+                @Override
+                public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
+                    if (job.cancelled.get()) return;
+                    JSObject progress = new JSObject();
+                    progress.put("jobId", job.id);
+                    progress.put("percent", (int) percent);
+                    progress.put("downloadedBytes", downloadedBytes);
+                    progress.put("totalBytes", totalBytes);
+                    progress.put("speed", speedBytesPerSec);
+                    progress.put("speedFormatted", formatSpeed(speedBytesPerSec));
+                    progress.put("sizeFormatted", formatBytes(downloadedBytes) + (totalBytes > 0 ? " / " + formatBytes(totalBytes) : ""));
+                    progress.put("eta", etaSeconds);
+                    progress.put("etaFormatted", etaSeconds > 0 ? (etaSeconds + "s left") : "");
+                    progress.put("status", "Downloading…");
+                    notifyListeners("onProgress", progress);
+                    OmniDownloadService.updateJob(getContext(), job.id,
+                        progress.getString("sizeFormatted") + String.format(Locale.US, " (%.0f%%)", percent), (int) percent);
+                }
+
+                @Override
+                public boolean isCancelled() {
+                    return job.cancelled.get();
+                }
+            };
+
+            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId, listener);
+            if (job.cancelled.get()) return;
+
+            JSONObject file = new JSONObject(response.toString());
+            OmniDownloadService.updateJob(getContext(), job.id, "Saving to gallery…", 98);
+
+            JSObject saving = new JSObject();
+            saving.put("jobId", job.id);
+            saving.put("percent", 98);
+            saving.put("status", "Saving to gallery…");
+            notifyListeners("onProgress", saving);
+
+            String destination = copyToGallery(new File(file.getString("path")), file.getString("title"), file.getString("ext"));
+            if (job.cancelled.get()) return;
+
+            JSObject progress = new JSObject();
+            progress.put("jobId", job.id);
+            progress.put("percent", 100);
+            progress.put("status", "Saved to your gallery");
+            progress.put("complete", true);
+            progress.put("title", file.optString("title", "Video"));
+            progress.put("destination", destination);
+            notifyListeners("onProgress", progress);
+
+            OmniDownloadService.finishJob(getContext(), job.id);
+            try { job.call.resolve(progress); } catch (Exception ignored) {}
+        } catch (Exception error) {
+            if (!job.cancelled.get()) {
+                JSObject progress = new JSObject();
+                progress.put("jobId", job.id);
+                progress.put("failed", true);
+                String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
+                progress.put("error", friendlyError(detail));
+                notifyListeners("onProgress", progress);
+                OmniDownloadService.finishJob(getContext(), job.id);
+                try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
+            }
+        } finally {
+            jobs.remove(job.id);
+            cleanDir(workDir);
+        }
     }
 
     @PluginMethod
@@ -502,7 +615,7 @@ public class OmniEnginePlugin extends Plugin {
             return;
         }
         call.setKeepAlive(true);
-        engineExecutor.execute(() -> {
+        miscExecutor.execute(() -> {
             try {
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
                 PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url);
@@ -515,7 +628,7 @@ public class OmniEnginePlugin extends Plugin {
                 result.put("url", info.optString("webpage_url", url));
                 result.put("platform", info.optString("platform", "other"));
 
-                org.json.JSONArray fmts = info.optJSONArray("formats");
+                JSONArray fmts = info.optJSONArray("formats");
                 if (fmts != null) {
                     com.getcapacitor.JSArray jsFmts = new com.getcapacitor.JSArray();
                     for (int i = 0; i < fmts.length(); i++) {
@@ -555,102 +668,6 @@ public class OmniEnginePlugin extends Plugin {
         }
         result.put("url", shared);
         call.resolve(result);
-    }
-
-    private void downloadPublicPage(String url, PluginCall call, String formatId) {
-        call.setKeepAlive(true);
-        activeCall = call;
-        engineActive = true;
-        cancelRequested = false;
-
-        try {
-            OmniDownloadService.start(getContext(), "Connecting to video server…");
-        } catch (Exception ignored) {}
-
-        JSObject started = new JSObject();
-        started.put("percent", 1);
-        started.put("status", "Connecting to video server…");
-        notifyListeners("onProgress", started);
-
-        engineExecutor.execute(() -> {
-            File workDir = new File(getContext().getCacheDir(), "OmniEngine");
-            try {
-                if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
-
-                // Progress listener that streams progress directly to web UI
-                DownloadProgressListener progressListener = new DownloadProgressListener() {
-                    @Override
-                    public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
-                        if (cancelRequested) return;
-                        JSObject progress = new JSObject();
-                        progress.put("percent", (int) percent);
-                        progress.put("downloadedBytes", downloadedBytes);
-                        progress.put("totalBytes", totalBytes);
-                        progress.put("speed", speedBytesPerSec);
-                        progress.put("speedFormatted", formatSpeed(speedBytesPerSec));
-                        progress.put("sizeFormatted", formatBytes(downloadedBytes) + (totalBytes > 0 ? " / " + formatBytes(totalBytes) : ""));
-                        progress.put("eta", etaSeconds);
-                        progress.put("etaFormatted", etaSeconds > 0 ? (etaSeconds + "s left") : "");
-                        progress.put("status", "Downloading…");
-                        notifyListeners("onProgress", progress);
-                        OmniDownloadService.update(progress.getString("sizeFormatted") + String.format(Locale.US, " (%.0f%%)", percent), (int) percent);
-                    }
-
-                    @Override
-                    public boolean isCancelled() {
-                        return cancelRequested;
-                    }
-                };
-
-                PyObject response = Python.getInstance().getModule("downloader").callAttr("download", url, workDir.getAbsolutePath(), formatId, progressListener);
-                if (cancelRequested) return;
-
-                JSONObject file = new JSONObject(response.toString());
-                JSObject saving = new JSObject();
-                saving.put("percent", 98);
-                saving.put("status", "Saving to gallery…");
-                notifyListeners("onProgress", saving);
-                OmniDownloadService.update("Saving video to your gallery…", 98);
-
-                String destination = copyToGallery(new File(file.getString("path")), file.getString("title"), file.getString("ext"));
-                if (cancelRequested) return;
-
-                JSObject progress = new JSObject();
-                progress.put("percent", 100);
-                progress.put("status", "Saved to your gallery");
-                progress.put("complete", true);
-                progress.put("title", file.optString("title", "Video"));
-                progress.put("destination", destination);
-                notifyListeners("onProgress", progress);
-
-                OmniDownloadService.finish(getContext(), true);
-                if (activeCall != null) {
-                    JSObject result = new JSObject();
-                    result.put("destination", destination);
-                    result.put("title", file.optString("title", "Video"));
-                    activeCall.resolve(result);
-                    activeCall = null;
-                }
-            } catch (Exception error) {
-                if (!cancelRequested) {
-                    JSObject progress = new JSObject();
-                    progress.put("failed", true);
-                    String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
-                    progress.put("error", friendlyError(detail));
-                    notifyListeners("onProgress", progress);
-                    if (activeCall != null) {
-                        activeCall.reject(friendlyError(detail), error);
-                        activeCall = null;
-                    }
-                    OmniDownloadService.finish(getContext(), false);
-                }
-            } finally {
-                // Remove engine temp files (completed or cancelled) so cache never grows
-                cleanDir(workDir);
-                engineActive = false;
-                cancelRequested = false;
-            }
-        });
     }
 
     private void cleanDir(File dir) {
@@ -797,11 +814,6 @@ public class OmniEnginePlugin extends Plugin {
         return "Download failed: " + detail;
     }
 
-    private void stopWatcher() {
-        if (progressWatcher != null) handler.removeCallbacks(progressWatcher);
-        progressWatcher = null;
-    }
-
     private String safeFileName(String requested, Uri uri) {
         String base = requested.replaceAll("[^a-zA-Z0-9._ -]", " ").trim();
         if (base.isEmpty()) base = "video";
@@ -816,7 +828,7 @@ public class OmniEnginePlugin extends Plugin {
             PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
             return pInfo.versionName;
         } catch (Exception e) {
-            return "2.1.0";
+            return "2.5.0";
         }
     }
 

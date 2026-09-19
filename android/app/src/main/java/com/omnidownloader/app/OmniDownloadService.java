@@ -20,6 +20,8 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -32,36 +34,47 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
 /**
- * OmniDrop 2.0 Foreground Service.
- * Implements real-time progress callbacks, determinate system progress bar,
- * live download speed & ETA, and 1-tap "Play" / "Share" notification actions.
+ * DOWNI foreground service — V2.5 ELITE.
+ * Per-download notifications for the parallel queue, live progress,
+ * and a Cancel button on DowniDrop background notifications.
  */
 public class OmniDownloadService extends Service implements DownloadProgressListener {
     private static final String CHANNEL_ID = "omni_downloads";
-    private static final int NOTIFICATION_ID = 4811;
+    private static final int FG_NOTIFICATION_ID = 4811;
     private static volatile OmniDownloadService instance;
     private final ExecutorService shareExecutor = Executors.newSingleThreadExecutor();
     private long lastProgressNotify = 0;
     private String currentDownloadTitle = "Downi video";
     private static volatile boolean sharedCancelRequested = false;
 
-    public static void start(Context context, String status) {
+    /** Active in-app job ids (per-job notifications derive from these). */
+    private static final Set<String> activeJobs = ConcurrentHashMap.newKeySet();
+
+    // ---------- Public static API (called from OmniEnginePlugin) ----------
+
+    public static void startJob(Context context, String jobId, String status) {
+        activeJobs.add(jobId);
         Intent intent = new Intent(context, OmniDownloadService.class);
-        intent.setAction("start");
+        intent.setAction("job_start");
+        intent.putExtra("jobId", jobId);
         intent.putExtra("status", status);
         ContextCompat.startForegroundService(context, intent);
     }
 
-    public static void update(String status, int percent) {
+    public static void updateJob(Context context, String jobId, String status, int percent) {
         OmniDownloadService service = instance;
-        if (service != null) service.showStatus(status, percent);
+        if (service != null) service.showJobStatus(jobId, status, percent);
     }
 
-    public static void finish(Context context, boolean success) {
+    public static void finishJob(Context context, String jobId) {
+        activeJobs.remove(jobId);
         Intent intent = new Intent(context, OmniDownloadService.class);
-        intent.setAction(success ? "complete" : "stop");
-        context.startService(intent);
+        intent.setAction("job_finish");
+        intent.putExtra("jobId", jobId);
+        try { context.startService(intent); } catch (Exception ignored) {}
     }
+
+    // ---------- Shared (DowniDrop) API ----------
 
     public static void startShared(Context context, String url) {
         sharedCancelRequested = false;
@@ -71,10 +84,12 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         ContextCompat.startForegroundService(context, intent);
     }
 
-    /** Called from the app UI (or a future notification action) to abort an OmniDrop transfer. */
+    /** Called from the app UI (or the notification Cancel action) to abort an OmniDrop transfer. */
     public static void cancelShared() {
         sharedCancelRequested = true;
     }
+
+    // ---------- Lifecycle ----------
 
     @Override public void onCreate() {
         super.onCreate();
@@ -83,26 +98,35 @@ public class OmniDownloadService extends Service implements DownloadProgressList
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? "start" : intent.getAction();
+        String action = intent == null ? "job_start" : intent.getAction();
+        lastAction = action;
         try {
-            if ("complete".equals(action)) {
-                showSuccess(null, null, "Video saved to your gallery");
-                stopForeground(STOP_FOREGROUND_DETACH);
-                stopSelf();
-            } else if ("stop".equals(action)) {
-                stopForeground(STOP_FOREGROUND_REMOVE);
-                stopSelf();
+            if ("cancel_shared".equals(action)) {
+                sharedCancelRequested = true;
+                dismissNotification(FG_NOTIFICATION_ID);
+                if (activeJobs.isEmpty()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                    stopSelf();
+                }
             } else if ("shared_download".equals(action)) {
                 try {
-                    startForeground(NOTIFICATION_ID, buildProgressNotification("DowniDrop — Starting…", "Connecting to media server…", 0, true));
+                    startForeground(FG_NOTIFICATION_ID, buildProgressNotification("DowniDrop — Starting…", "Connecting to media server…", 0, true));
                 } catch (Exception ignored) {}
                 String url = intent == null ? "" : intent.getStringExtra("url");
                 shareExecutor.execute(() -> runSharedDownload(url));
-            } else {
-                String status = intent != null ? intent.getStringExtra("status") : "Preparing download…";
-                try {
-                    startForeground(NOTIFICATION_ID, buildProgressNotification("DOWNI", status, 0, true));
-                } catch (Exception ignored) {}
+            } else if ("job_finish".equals(action)) {
+                String jobId = intent == null ? "" : intent.getStringExtra("jobId");
+                dismissNotification(jobNotificationId(jobId));
+                refreshForeground();
+                if (activeJobs.isEmpty()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                    stopSelf();
+                }
+            } else { // job_start
+                String jobId = intent == null ? "dl" : intent.getStringExtra("jobId");
+                String status = intent == null ? "Queued" : intent.getStringExtra("status");
+                refreshForeground();
+                showJobStatus(jobId, status, 0);
             }
         } catch (Exception ignored) {}
         return START_NOT_STICKY;
@@ -116,10 +140,12 @@ public class OmniDownloadService extends Service implements DownloadProgressList
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
+    // ---------- Notifications ----------
+
     private void ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Downi Downloads", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("Real-time progress and notifications for DOWNI");
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Downi Downloads", NotificationManager.IMPORTANCE_LOW);
+            channel.setDescription("Real-time progress and notifications for DOWNI");
             channel.setShowBadge(false);
             channel.enableVibration(false);
             channel.enableLights(false);
@@ -127,36 +153,55 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         }
     }
 
-    @Override
-    public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
-        long now = System.currentTimeMillis();
-        // Throttle updates to Android notification manager to avoid UI lag
-        if (now - lastProgressNotify < 300 && percent < 99.0) {
-            return;
+    private static int jobNotificationId(String jobId) {
+        return 6000 + (Math.abs((jobId == null ? "dl" : jobId).hashCode()) % 1000);
+    }
+
+    private void refreshForeground() {
+        int count = activeJobs.size();
+        if (count > 0) {
+            try {
+                startForeground(FG_NOTIFICATION_ID, buildProgressNotification(
+                    "DOWNI", count + (count == 1 ? " download in progress" : " downloads in progress"), 0, true));
+            } catch (Exception ignored) {}
         }
-        lastProgressNotify = now;
-
-        String sizeStr = formatBytes(downloadedBytes) + (totalBytes > 0 ? " / " + formatBytes(totalBytes) : "");
-        String speedStr = formatSpeed(speedBytesPerSec);
-        String etaStr = etaSeconds > 0 ? (etaSeconds + "s left") : "";
-
-        StringBuilder info = new StringBuilder();
-        info.append(sizeStr).append(String.format(Locale.US, " (%.0f%%)", percent));
-        if (!speedStr.isEmpty()) info.append(" • ").append(speedStr);
-        if (!etaStr.isEmpty()) info.append(" • ").append(etaStr);
-
-        Notification notif = buildProgressNotification("DowniDrop — Downloading…", info.toString(), (int) percent, false);
-        getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notif);
     }
 
-    @Override
-    public boolean isCancelled() {
-        return sharedCancelRequested;
+    private void dismissNotification(int id) {
+        getSystemService(NotificationManager.class).cancel(id);
     }
 
-    private void showStatus(String status, int percent) {
-        Notification notif = buildProgressNotification("DOWNI", status, percent, percent <= 0 || percent >= 100);
-        getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notif);
+    private void showJobStatus(String jobId, String status, int percent) {
+        if (jobId == null || !activeJobs.contains(jobId)) return;
+        Notification notif = buildJobNotification("DOWNI", status, percent, percent <= 0 || percent >= 100);
+        getSystemService(NotificationManager.class).notify(jobNotificationId(jobId), notif);
+    }
+
+    private Notification buildJobNotification(String title, String content, int percent, boolean indeterminate) {
+        Intent openIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (openIntent == null) openIntent = new Intent(this, MainActivity.class);
+        openIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent openPending = PendingIntent.getActivity(
+            this, 100, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setSubText("DOWNI")
+            .setContentIntent(openPending)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW);
+
+        if (indeterminate) {
+            builder.setProgress(0, 0, true);
+        } else {
+            builder.setProgress(100, Math.max(0, Math.min(100, percent)), false);
+        }
+        return builder.build();
     }
 
     private Notification buildProgressNotification(String title, String content, int percent, boolean indeterminate) {
@@ -179,12 +224,56 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW);
 
+        // Cancel action for background shared downloads
+        if ("shared_download".equals(lastAction)) {
+            Intent cancelIntent = new Intent(this, OmniDownloadService.class).setAction("cancel_shared");
+            PendingIntent cancelPending = PendingIntent.getService(
+                this, 103, cancelIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+            builder.addAction(0, "✕ Cancel", cancelPending);
+        }
+
         if (indeterminate) {
             builder.setProgress(0, 0, true);
         } else {
             builder.setProgress(100, Math.max(0, Math.min(100, percent)), false);
         }
         return builder.build();
+    }
+
+    private volatile String lastAction = "";
+
+    @Override
+    public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
+        long now = System.currentTimeMillis();
+        // Throttle updates to Android notification manager to avoid UI lag
+        if (now - lastProgressNotify < 300 && percent < 99.0) {
+            return;
+        }
+        lastProgressNotify = now;
+
+        String sizeStr = formatBytes(downloadedBytes) + (totalBytes > 0 ? " / " + formatBytes(totalBytes) : "");
+        String speedStr = formatSpeed(speedBytesPerSec);
+        String etaStr = etaSeconds > 0 ? (etaSeconds + "s left") : "";
+
+        StringBuilder info = new StringBuilder();
+        info.append(sizeStr).append(String.format(Locale.US, " (%.0f%%)", percent));
+        if (!speedStr.isEmpty()) info.append(" • ").append(speedStr);
+        if (!etaStr.isEmpty()) info.append(" • ").append(etaStr);
+
+        Notification notif = buildProgressNotification("DowniDrop — Downloading…", info.toString(), (int) percent, false);
+        getSystemService(NotificationManager.class).notify(FG_NOTIFICATION_ID, notif);
+    }
+
+    @Override
+    public boolean isCancelled() {
+        return sharedCancelRequested;
+    }
+
+    private void showStatus(String status, int percent) {
+        Notification notif = buildProgressNotification("DOWNI", status, percent, percent <= 0 || percent >= 100);
+        getSystemService(NotificationManager.class).notify(FG_NOTIFICATION_ID, notif);
     }
 
     private void showSuccess(Uri videoUri, String mime, String title) {
@@ -205,7 +294,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             playIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             PendingIntent playPending = PendingIntent.getActivity(
                 this, 101, playIntent,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
             builder.setContentIntent(playPending);
             builder.addAction(android.R.drawable.ic_media_play, "▶ Play", playPending);
@@ -217,15 +306,16 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             PendingIntent sharePending = PendingIntent.getActivity(
                 this, 102, Intent.createChooser(shareIntent, "Share Video"),
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
             builder.addAction(android.R.drawable.ic_menu_share, "↗ Share", sharePending);
         }
 
-        getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, builder.build());
+        getSystemService(NotificationManager.class).notify(FG_NOTIFICATION_ID, builder.build());
     }
 
     private void runSharedDownload(String rawUrl) {
+        File work = new File(getCacheDir(), "OmniDrop");
         try {
             String url = extractUrl(rawUrl);
             if (url.isEmpty()) throw new IllegalArgumentException("Empty or invalid link");
@@ -233,12 +323,11 @@ public class OmniDownloadService extends Service implements DownloadProgressList
 
             showStatus("Finding best quality…", 5);
 
-            File work = new File(getCacheDir(), "OmniDrop");
             // Pass 'this' as DownloadProgressListener to Python
             PyObject response = Python.getInstance().getModule("downloader").callAttr("download", url.trim(), work.getAbsolutePath(), "best", this);
 
             org.json.JSONObject file = new org.json.JSONObject(response.toString());
-            String title = file.optString("title", "Omni video");
+            String title = file.optString("title", "Downi video");
             String ext = file.optString("ext", "mp4");
             currentDownloadTitle = title;
 
@@ -260,7 +349,6 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             stopSelf();
         } finally {
             // Remove engine temp files so cancelled/partial downloads never linger
-            File work = new File(getCacheDir(), "OmniDrop");
             try {
                 File[] files = work.listFiles();
                 if (files != null) for (File f : files) f.delete();
@@ -278,14 +366,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build();
-        getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification);
-    }
-
-    private String extractUrl(String value) {
-        if (value == null) return "";
-        Matcher matcher = Pattern.compile("https?://[^\\s<>\\\"']+", Pattern.CASE_INSENSITIVE).matcher(value);
-        if (!matcher.find()) return "";
-        return matcher.group().replaceAll("[.,;:!?)\\]]+$", "");
+        getSystemService(NotificationManager.class).notify(FG_NOTIFICATION_ID, notification);
     }
 
     private void showFailure(String status) {
@@ -298,7 +379,14 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build();
-        getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification);
+        getSystemService(NotificationManager.class).notify(FG_NOTIFICATION_ID, notification);
+    }
+
+    private String extractUrl(String value) {
+        if (value == null) return "";
+        Matcher matcher = Pattern.compile("https?://[^\\s<>\\\"']+", Pattern.CASE_INSENSITIVE).matcher(value);
+        if (!matcher.find()) return "";
+        return matcher.group().replaceAll("[.,;:!?)\\]]+$", "");
     }
 
     private Uri saveToGallery(File source, String title, String extension) throws Exception {

@@ -1,15 +1,17 @@
-"""On-device public-video downloader used by OmniDownloader Android bridge.
+"""DOWNI on-device download engine — V2.5 ELITE.
 
-yt-dlp runs locally via Chaquopy, augmented with direct high-speed stream
-extractors for TikTok (HD without watermark), a YouTube client fallback
-cascade, multi-tier format selection, and cooperative cancellation.
-No ffmpeg executable is required on device.
+yt-dlp (Chaquopy) with:
+- Segmented multi-connection streaming for direct CDN links (real speed multiply)
+- 4-way concurrent fragment downloads for YouTube/HLS/DASH
+- YouTube client fallback cascade (ios / tv / web_safari / android_vr / tv_embedded)
+- Cooperative cancellation, partial-file cleanup, lazy engine loading
 """
 
 import json
 import os
 import re
 import ssl
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -27,12 +29,24 @@ try:
 except Exception:
     pass
 
-import yt_dlp
-from yt_dlp import YoutubeDL
-
 
 class CancelledError(RuntimeError):
     """Raised when the Java side requests a download cancel."""
+
+
+_YDL_MODULE = None
+_YDL_LOCK = threading.Lock()
+
+
+def _yt_dlp():
+    """Lazy yt-dlp import: keeps engine cold-start instant."""
+    global _YDL_MODULE
+    if _YDL_MODULE is None:
+        with _YDL_LOCK:
+            if _YDL_MODULE is None:
+                import yt_dlp as module
+                _YDL_MODULE = module
+    return _YDL_MODULE
 
 
 def _get_ssl_context():
@@ -110,6 +124,152 @@ def _check_cancel(progress_listener):
             pass
 
 
+# ---------------------------------------------------------------------------
+# Segmented multi-connection downloader (ELITE speed path)
+# ---------------------------------------------------------------------------
+
+def _remote_size(url, headers):
+    """Resolve content length; verify the server honours Range requests."""
+    try:
+        probe = urllib.request.Request(url, headers=dict(headers, **{'Range': 'bytes=0-0'}))
+        with urllib.request.urlopen(probe, timeout=20, context=_get_ssl_context()) as resp:
+            code = resp.getcode()
+            if code == 206:
+                cr = resp.headers.get('Content-Range') or ''
+                m = re.search(r'/(\d+)\s*$', cr)
+                if m:
+                    return int(m.group(1))
+            length = resp.headers.get('Content-Length')
+            if code == 200 and length:
+                return -int(length)  # negative signals: size known but no Range support
+    except Exception:
+        pass
+    return 0
+
+
+def _segment_worker(url, headers, path, start, end, state, cancel_event):
+    """Download one byte range into its slot of the preallocated file."""
+    attempt = 0
+    while attempt < 3 and not cancel_event.is_set() and not state['failed']:
+        attempt += 1
+        try:
+            req = urllib.request.Request(url, headers=dict(headers, **{'Range': f'bytes={start}-{end}'}))
+            with urllib.request.urlopen(req, timeout=30, context=_get_ssl_context()) as resp:
+                with open(path, 'r+b') as f:
+                    f.seek(start)
+                    local = 0
+                    expected = end - start + 1
+                    while True:
+                        if cancel_event.is_set():
+                            raise CancelledError()
+                        chunk = resp.read(128 * 1024)
+                        if not chunk:
+                            break
+                        if local + len(chunk) > expected:
+                            chunk = chunk[:expected - local]
+                        f.write(chunk)
+                        f.flush()
+                        start += len(chunk)
+                        local += len(chunk)
+                        with state['lock']:
+                            state['downloaded'] += len(chunk)
+                        if local >= expected:
+                            return
+                if local >= expected:
+                    return
+            # short read: server closed early -> retry remaining
+            if start <= end:
+                continue
+            return
+        except CancelledError:
+            state['failed'] = True
+            return
+        except Exception:
+            if attempt >= 3:
+                state['failed'] = True
+                return
+            time.sleep(0.8 * attempt)
+
+
+def _download_stream_segmented(url, target_path, headers, listener=None, connections=6):
+    """Multi-connection range download. Falls back to single stream when the
+    server lacks Range support. Returns True when segmented path was used."""
+    total = _remote_size(url, headers)
+    if total <= 0:  # unknown size or no Range support
+        return False
+
+    try:
+        with open(target_path, 'wb') as f:
+            f.truncate(total)
+    except Exception:
+        return False
+
+    cancel_event = threading.Event()
+    state = {'downloaded': 0, 'lock': threading.Lock(), 'failed': False}
+    bounds = []
+    seg = total // connections
+    for i in range(connections):
+        s = i * seg
+        e = (total - 1) if i == connections - 1 else (s + seg - 1)
+        if s <= e:
+            bounds.append((s, e))
+
+    threads = [
+        threading.Thread(target=_segment_worker, args=(url, headers, target_path, s, e, state, cancel_event), daemon=True)
+        for s, e in bounds
+    ]
+    for t in threads:
+        t.start()
+
+    start_time = time.time()
+    last_cb = 0.0
+    alive = True
+    while alive:
+        alive = any(t.is_alive() for t in threads)
+        _check_cancel(listener)
+        if cancel_event.is_set():
+            state['failed'] = True
+        now = time.time()
+        if listener and (now - last_cb > 0.25):
+            last_cb = now
+            with state['lock']:
+                done = state['downloaded']
+            if state['failed']:
+                break
+            elapsed = max(0.001, now - start_time)
+            speed = done / elapsed
+            eta = int((total - done) / speed) if (speed > 0 and total > done) else 0
+            pct = (done / total * 100.0) if total > 0 else 0.0
+            try:
+                listener.onProgress(float(min(99.0, pct)), int(done), int(total), float(speed), int(eta))
+            except Exception:
+                pass
+        if alive:
+            time.sleep(0.2)
+
+    for t in threads:
+        t.join(timeout=5)
+
+    if state['failed'] or cancel_event.is_set():
+        try:
+            if os.path.exists(target_path):
+                os.remove(target_path)
+        except Exception:
+            pass
+        if cancel_event.is_set():
+            raise CancelledError("Download cancelled.")
+        return False  # fall back to single-stream on segment failure
+
+    with state['lock']:
+        done = state['downloaded']
+    if listener:
+        try:
+            listener.onProgress(100.0, int(done), int(total), 0.0, 0)
+        except Exception:
+            pass
+    return True
+
+
 def _download_stream_with_progress(stream_url, target_path, referer='', progress_listener=None):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -118,13 +278,23 @@ def _download_stream_with_progress(stream_url, target_path, referer='', progress
     if referer:
         headers['Referer'] = referer
 
+    # ELITE: try the 6-connection segmented path first (much faster on CDNs)
+    try:
+        if _download_stream_segmented(stream_url, target_path, headers, progress_listener, connections=6):
+            return
+    except CancelledError:
+        raise
+    except Exception:
+        pass
+
+    # Fallback: proven single-stream downloader
     req = urllib.request.Request(stream_url, headers=headers)
     with urllib.request.urlopen(req, timeout=35, context=_get_ssl_context()) as resp:
         total_size = int(resp.headers.get('Content-Length') or 0)
         downloaded = 0
         last_cb = 0.0
         start_time = time.time()
-        chunk_size = 64 * 1024
+        chunk_size = 128 * 1024
 
         try:
             with open(target_path, 'wb') as f:
@@ -221,7 +391,8 @@ def _base_ydl_options():
         'noplaylist': True,
         'nocheckcertificate': True,
         'socket_timeout': 20,
-        'retries': 2,
+        'retries': 3,
+        'fragment_retries': 3,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -285,7 +456,7 @@ def inspect(url):
     try:
         options = _base_ydl_options()
         options['skip_download'] = True
-        with YoutubeDL(options) as ydl:
+        with _yt_dlp().YoutubeDL(options) as ydl:
             info = ydl.extract_info(clean, download=False)
     except Exception:
         info = None
@@ -334,10 +505,11 @@ def inspect(url):
 
 
 def engine_info():
-    """Health check for the 'Sync Extractor Rules' button."""
+    """Health check for the 'Verify Engine Health' button."""
+    ytdlp = _yt_dlp()
     return json.dumps({
-        'engine': 'Chaquopy 3.11 + yt-dlp',
-        'yt_dlp_version': yt_dlp.version.__version__,
+        'engine': 'DOWNI Engine (Chaquopy 3.11 + yt-dlp)',
+        'yt_dlp_version': ytdlp.version.__version__,
         'python': __import__('platform').python_version(),
     })
 
@@ -444,7 +616,10 @@ def download(url, target_dir, format_id="best", progress_listener=None):
             'overwrites': True,
             'nopart': False,
             'socket_timeout': 20,
-            'retries': 2,
+            'retries': 3,
+            'fragment_retries': 3,
+            # ELITE: parallel fragment fetching for HLS/DASH streams
+            'concurrent_fragment_downloads': 4,
             'progress_hooks': [_progress_hook],
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
@@ -454,7 +629,7 @@ def download(url, target_dir, format_id="best", progress_listener=None):
         if extractor_args:
             options['extractor_args'] = extractor_args
         try:
-            with YoutubeDL(options) as ydl:
+            with _yt_dlp().YoutubeDL(options) as ydl:
                 info = ydl.extract_info(clean, download=True)
                 try:
                     path = ydl.prepare_filename(info)
@@ -484,7 +659,7 @@ def download(url, target_dir, format_id="best", progress_listener=None):
         raise RuntimeError('Media file was not created on storage. Check permissions or internet connection.')
 
     filesize = os.path.getsize(path) if os.path.exists(path) else 0
-    raw_title = info.get('title') if info else 'Omni Video'
+    raw_title = info.get('title') if info else 'DOWNI Video'
 
     return json.dumps({
         'path': path,
