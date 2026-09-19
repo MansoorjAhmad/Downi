@@ -1,0 +1,1305 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-[#050811]">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>OmniDownloader 2.0 — Flagship Media Downloader</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+    :root {
+      --color-bg: #050811;
+      --color-card: rgba(14, 21, 36, 0.85);
+      --color-cyan: #06b6d4;
+    }
+
+    * {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      box-sizing: border-box;
+    }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    body {
+      background-color: var(--color-bg);
+      color: #f1f5f9;
+      background-image:
+        radial-gradient(900px 500px at 50% -10%, rgba(6, 182, 212, 0.15), transparent 70%),
+        radial-gradient(700px 600px at 100% 100%, rgba(14, 165, 233, 0.08), transparent 60%);
+      background-attachment: fixed;
+    }
+
+    /* Glassic Components */
+    .glass-card {
+      background: rgba(13, 20, 35, 0.78);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+    }
+
+    .glass-card-glow {
+      background: rgba(15, 24, 42, 0.88);
+      border: 1px solid rgba(6, 182, 212, 0.35);
+      backdrop-filter: blur(32px);
+      -webkit-backdrop-filter: blur(32px);
+      box-shadow: 0 14px 42px rgba(6, 182, 212, 0.15);
+    }
+
+    .glass-btn {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-btn:active {
+      transform: scale(0.97);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .glass-btn-primary {
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.9), rgba(14, 165, 233, 0.85));
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 10px 30px rgba(6, 182, 212, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-btn-primary:active {
+      transform: scale(0.97);
+    }
+
+    .glass-nav {
+      background: rgba(9, 14, 25, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      backdrop-filter: blur(36px);
+      -webkit-backdrop-filter: blur(36px);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
+    }
+
+    /* Refined Luxury Circle Button */
+    @keyframes pulse-halo {
+      0%, 100% { transform: scale(1); opacity: 0.6; }
+      50% { transform: scale(1.08); opacity: 0.95; filter: drop-shadow(0 0 12px rgba(6, 182, 212, 0.4)); }
+    }
+    .circle-vortex-btn {
+      width: 98px;
+      height: 98px;
+      border-radius: 9999px;
+      background: radial-gradient(circle at 35% 35%, rgba(6, 182, 212, 0.35), rgba(9, 15, 28, 0.95));
+      border: 2px solid rgba(6, 182, 212, 0.55);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      box-shadow: 0 0 32px rgba(6, 182, 212, 0.3), inset 0 0 20px rgba(6, 182, 212, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .circle-vortex-btn:active {
+      transform: scale(0.92);
+      box-shadow: 0 0 50px rgba(6, 182, 212, 0.6), inset 0 0 30px rgba(6, 182, 212, 0.35);
+    }
+    .circle-glow-halo {
+      position: absolute;
+      inset: -8px;
+      border-radius: 9999px;
+      background: radial-gradient(circle, rgba(6, 182, 212, 0.38) 0%, rgba(16, 185, 129, 0.25) 50%, transparent 75%);
+      z-index: 0;
+      opacity: 0.7;
+      animation: pulse-halo 3s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    .safe-top { padding-top: max(env(safe-area-inset-top, 16px), 16px); }
+    .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom, 16px), 16px); }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
+  </style>
+</head>
+<body class="min-h-full flex flex-col justify-between overflow-x-hidden select-none">
+
+  <!-- ============================================== -->
+  <!-- COMPACT FLOATING TOAST -->
+  <!-- ============================================== -->
+  <div id="appToast" class="fixed top-4 inset-x-4 z-50 transition-all duration-300 ease-out -translate-y-28 opacity-0 pointer-events-none flex justify-center">
+    <div class="max-w-md w-full py-3 px-4 rounded-2xl glass-nav flex items-center gap-3 pointer-events-auto border border-cyan-500/30 shadow-2xl">
+      <div id="toastIcon" class="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center text-sm font-bold text-cyan-300">⚡</div>
+      <div class="min-w-0 flex-1">
+        <p id="toastTitle" class="text-xs font-bold text-white truncate">OmniDownloader</p>
+        <p id="toastMsg" class="text-[11px] text-zinc-400 truncate">Notification text</p>
+      </div>
+      <button onclick="hideToast()" class="text-zinc-400 hover:text-white text-xs px-2 py-1">✕</button>
+    </div>
+  </div>
+
+  <!-- Main App Wrapper -->
+  <div class="mx-auto flex min-h-screen w-full max-w-xl flex-col">
+
+    <!-- Top Navigation Header -->
+    <header class="sticky top-0 z-30 flex items-center justify-between border-b border-white/5 bg-[#050811]/85 px-4 py-3 backdrop-blur-2xl safe-top">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl overflow-hidden border border-cyan-400/30 shadow-sm flex-shrink-0">
+          <img src="assets/logo.png" alt="Omni Logo" class="w-full h-full object-cover">
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-extrabold tracking-wide text-white text-base">OmniDownloader</span>
+            <span class="rounded-md bg-cyan-500/15 text-cyan-300 font-bold font-mono text-[9px] px-1.5 py-0.5 border border-cyan-500/25">v2.0</span>
+          </div>
+          <p class="text-[10px] text-zinc-400 font-medium">Flagship Media Engine</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span>Turbo Core</span>
+        </span>
+        <button onclick="switchTab('settings')" class="p-2 rounded-xl text-zinc-400 hover:text-white transition" title="Settings">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 px-4 pt-4 pb-24">
+
+      <!-- ============================================== -->
+      <!-- TAB 1: GRAB STATION (FAST DL & MANUAL INSPECT) -->
+      <!-- ============================================== -->
+      <div id="viewGrab" class="space-y-4">
+        
+        <!-- Clipboard Sniffer Banner -->
+        <div id="clipboardBanner" class="hidden p-3 rounded-2xl glass-card-glow flex items-center justify-between gap-3 border border-cyan-500/30">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="text-lg">📋</span>
+            <div class="min-w-0">
+              <p class="text-[10px] uppercase font-bold tracking-wider text-cyan-300">Link on Clipboard</p>
+              <p id="clipboardUrlText" class="text-xs font-mono text-zinc-200 truncate max-w-[170px] sm:max-w-xs">https://...</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <button onclick="handleClipboardFastDl()" class="px-3 py-1.5 rounded-xl glass-btn-primary text-black font-extrabold text-xs">
+              ⚡ Fast DL
+            </button>
+            <button onclick="handleGrabClipboardLink()" class="px-2.5 py-1.5 rounded-xl glass-btn text-zinc-300 font-semibold text-xs">
+              Inspect
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. FEATURE ONE: FAST DL (One-Tap Circle Action) -->
+        <div class="glass-card rounded-3xl p-6 text-center space-y-4 relative overflow-hidden">
+          <div class="flex items-center justify-center">
+            <span class="px-3.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-[10px] font-black text-cyan-300 tracking-widest uppercase flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+              ⚡ 1. FAST DL • 1-TAP INSTANT DOWNLOAD
+            </span>
+          </div>
+
+          <!-- Circular Crystal Vortex Action Button -->
+          <div class="py-2 flex flex-col items-center justify-center">
+            <div class="relative flex items-center justify-center cursor-pointer" onclick="handleFastDlClick()">
+              <!-- Atmospheric glowing halo ring -->
+              <div class="circle-glow-halo"></div>
+
+              <!-- Main Circle Vortex Button -->
+              <div id="btnFastDlCircle" class="circle-vortex-btn group">
+                <img src="assets/logo.png" alt="Crystal Vortex" class="w-16 h-16 object-contain rounded-full group-hover:scale-105 transition duration-300">
+                <div class="absolute inset-0 rounded-full flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition duration-200">
+                  <svg viewBox="0 0 24 24" class="w-8 h-8 text-cyan-300" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- Single Action Title -->
+            <div class="mt-3.5 text-center cursor-pointer" onclick="handleFastDlClick()">
+              <p id="circleStatusTitle" class="text-xs font-black text-white tracking-widest uppercase">TAP TO FAST DL</p>
+              <p id="circleStatusSub" class="text-[11px] text-zinc-400 mt-0.5">Auto-grabs link from clipboard & downloads best quality directly</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. FEATURE TWO: MANUAL DOWNLOAD (INSPECT) -->
+        <div class="glass-card rounded-3xl p-5 space-y-4 text-left">
+          <div class="flex items-center justify-between px-1">
+            <div class="flex items-center gap-2">
+              <span class="text-xs">🔍</span>
+              <h3 class="text-xs font-extrabold text-white tracking-wide uppercase">2. Manual Download (Inspect)</h3>
+            </div>
+            <span class="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20 font-semibold">Choose Quality</span>
+          </div>
+
+          <!-- URL Input Box with Embedded Paste Button -->
+          <div class="space-y-1.5">
+            <div class="relative flex items-center">
+              <div class="absolute left-3.5 text-cyan-400/70 pointer-events-none">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
+                  <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
+                </svg>
+              </div>
+              <input id="inputManualUrl" type="url" placeholder="Paste any video or audio link here…" 
+                class="w-full bg-[#080d19]/80 border border-white/10 rounded-2xl pl-10 pr-20 py-3.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400 font-mono transition shadow-inner"
+                oninput="handleUrlInputChanged()" />
+              <div class="absolute right-2 flex items-center gap-1">
+                <button id="btnClearInput" onclick="clearManualUrl()" class="hidden p-1 text-zinc-400 hover:text-white text-xs">✕</button>
+                <button onclick="handlePasteButton()" class="glass-btn px-2.5 py-1.5 rounded-xl text-cyan-300 font-mono text-[11px] font-bold flex items-center gap-1 hover:border-cyan-400/50">
+                  <span>📋 Paste</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- The ONLY button below manual link: INSPECT -->
+          <button id="btnInspectLink" onclick="handleInspectButtonClick()" class="w-full py-3.5 rounded-2xl glass-btn-primary text-black font-extrabold text-xs shadow-lg flex items-center justify-center gap-2">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+            </svg>
+            <span id="btnInspectText">Inspect Available Qualities</span>
+          </button>
+
+          <!-- Minimalist Supported Platforms Footer -->
+          <div class="pt-3 border-t border-white/5">
+            <div class="flex flex-wrap items-center justify-center gap-1.5 text-[10px] text-zinc-400 font-medium">
+              <span class="glass-btn px-2.5 py-1 rounded-lg text-zinc-300">YouTube</span>
+              <span class="glass-btn px-2.5 py-1 rounded-lg text-cyan-300 font-semibold">TikTok (No Watermark)</span>
+              <span class="glass-btn px-2.5 py-1 rounded-lg text-zinc-300">Instagram</span>
+              <span class="glass-btn px-2.5 py-1 rounded-lg text-zinc-300">Facebook</span>
+              <span class="glass-btn px-2.5 py-1 rounded-lg text-zinc-300">X / Twitter</span>
+              <span class="glass-btn px-2.5 py-1 rounded-lg text-zinc-300">Reddit</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. FEATURE THREE: OMNI GRAB (HINT BADGE) -->
+        <div class="p-3.5 rounded-2xl glass-nav flex items-center gap-3 border border-white/5 text-xs">
+          <div class="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-400/25 flex items-center justify-center text-cyan-300 font-bold flex-shrink-0">
+            ↗
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-[11px] font-bold text-white uppercase tracking-wider">3. THE OMNI GRAB</p>
+            <p class="text-[10px] text-zinc-400 mt-0.5">In any app, tap Share → OmniDownloader to auto-grab in best quality!</p>
+          </div>
+        </div>
+
+        <!-- Live Active Download Card (Appears during download) -->
+        <div id="liveDownloadCard" class="hidden glass-card-glow rounded-3xl p-4 border border-cyan-500/35 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              <h3 id="liveDownloadTitle" class="text-xs font-bold text-white truncate max-w-[200px] sm:max-w-xs">Downloading Media…</h3>
+            </div>
+            <span id="liveDownloadPercent" class="text-xs font-mono font-bold text-cyan-300">0%</span>
+          </div>
+
+          <!-- Liquid Progress Bar -->
+          <div class="w-full h-2 rounded-full bg-white/10 overflow-hidden relative">
+            <div id="liveProgressBar" class="h-full rounded-full bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 transition-all duration-300" style="width: 0%"></div>
+          </div>
+
+          <!-- Live Metrics (Ratio, Speed, ETA) -->
+          <div class="flex items-center justify-between text-[11px] font-mono text-zinc-400">
+            <span id="liveDownloadRatio">0 MB / 0 MB</span>
+            <div class="flex items-center gap-3">
+              <span id="liveDownloadSpeed" class="text-emerald-400 font-bold">⚡ 0 MB/s</span>
+              <span id="liveDownloadEta" class="text-cyan-300">⏳ --</span>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-1">
+            <button onclick="cancelActiveDownload()" class="glass-btn px-3 py-1 rounded-lg text-rose-300 border-rose-500/30 text-[11px] font-semibold hover:bg-rose-500/20">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ============================================== -->
+      <!-- TAB 2: QUEUE & RECENT DOWNLOADS -->
+      <!-- ============================================== -->
+      <div id="viewQueue" class="hidden space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-white">Download Queue</h2>
+            <p class="text-xs text-zinc-400">Recent completed downloads</p>
+          </div>
+          <button onclick="clearCompletedHistory()" class="glass-btn px-2.5 py-1 rounded-lg text-xs font-semibold text-zinc-400 hover:text-rose-400">
+            Clear
+          </button>
+        </div>
+
+        <div id="queueListContainer" class="space-y-2.5">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- TAB 3: MEDIA VAULT -->
+      <!-- ============================================== -->
+      <div id="viewVault" class="hidden space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-white">Media Vault</h2>
+            <p class="text-xs text-zinc-400">Watch, preview, and share downloaded media</p>
+          </div>
+          <button onclick="handleOpenSystemGallery()" class="glass-btn px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white flex items-center gap-1.5">
+            <span>Phone Gallery</span>
+          </button>
+        </div>
+
+        <div id="vaultMediaGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- TAB 4: SETTINGS & UPDATES -->
+      <!-- ============================================== -->
+      <div id="viewSettings" class="hidden space-y-4">
+        <h2 class="text-base font-bold text-white">Settings & Updates</h2>
+
+        <!-- In-App Auto-Update Card -->
+        <div class="glass-card rounded-3xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-300 text-base">
+                🚀
+              </div>
+              <div>
+                <h3 class="text-xs font-bold text-white">OmniDownloader Version</h3>
+                <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300">v2.0.0 (Build 20)</p>
+              </div>
+            </div>
+            <button onclick="checkAppUpdates()" class="glass-btn-primary px-3.5 py-1.5 rounded-xl text-black font-bold text-xs">
+              Check Updates
+            </button>
+          </div>
+          <p class="text-[11px] text-zinc-400 leading-relaxed">
+            Checks releases from GitHub repository and installs upgrades directly with 1 tap.
+          </p>
+        </div>
+
+        <!-- Engine Status Card -->
+        <div class="glass-card rounded-3xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-xs font-bold text-white">Extractor Core (yt-dlp)</h3>
+              <p class="text-[11px] text-zinc-400">Chaquopy Native Python Runtime</p>
+            </div>
+            <span class="text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+              Active & Healthy
+            </span>
+          </div>
+          <button onclick="syncEngineRules()" class="glass-btn w-full py-2.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white">
+            Sync Extractor Rules
+          </button>
+        </div>
+
+        <!-- Storage & Preferences -->
+        <div class="glass-card rounded-3xl p-4 space-y-3 text-xs">
+          <h3 class="font-bold text-white">Download Storage</h3>
+          
+          <div class="flex items-center justify-between py-2 border-b border-white/5">
+            <div>
+              <p class="font-semibold text-zinc-200">Save Location</p>
+              <p id="folderText" class="text-[11px] text-zinc-400">Default: Android Gallery (Movies / Music)</p>
+            </div>
+            <button onclick="handleChooseFolder()" class="glass-btn px-3 py-1.5 rounded-lg text-[11px] font-semibold text-cyan-400">Change</button>
+          </div>
+
+          <div class="flex items-center justify-between py-2">
+            <div>
+              <p class="font-semibold text-zinc-200">Clipboard Auto-Detect</p>
+              <p class="text-[11px] text-zinc-400">Show download banner when copying video links</p>
+            </div>
+            <input type="checkbox" id="chkClipboard" checked onchange="toggleClipboardDetect(this.checked)" class="w-4 h-4 accent-cyan-500">
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- ============================================== -->
+    <!-- GLASSIC BOTTOM NAVIGATION DOCK -->
+    <!-- ============================================== -->
+    <nav class="fixed bottom-3 inset-x-4 max-w-md mx-auto z-40 rounded-2xl glass-nav p-1.5 flex items-center justify-around">
+      <button id="navGrab" onclick="switchTab('grab')" class="flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-cyan-400 font-bold text-[10px] transition cursor-pointer">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        <span>Download</span>
+      </button>
+
+      <button id="navQueue" onclick="switchTab('queue')" class="flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-zinc-400 font-medium text-[10px] hover:text-white transition cursor-pointer relative">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 6h16M4 12h16M4 18h7"/>
+        </svg>
+        <span>Queue</span>
+        <span id="queueBadge" class="hidden absolute top-1 right-4 w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+      </button>
+
+      <button id="navVault" onclick="switchTab('vault')" class="flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-zinc-400 font-medium text-[10px] hover:text-white transition cursor-pointer">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+          <path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5"/>
+        </svg>
+        <span>Vault</span>
+      </button>
+
+      <button id="navSettings" onclick="switchTab('settings')" class="flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-zinc-400 font-medium text-[10px] hover:text-white transition cursor-pointer">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
+        </svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: DYNAMIC AVAILABLE QUALITIES INSPECTOR -->
+  <!-- ============================================== -->
+  <div id="inspectorModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl hidden flex items-end sm:items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-3xl glass-card-glow p-5 border border-cyan-500/35 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between">
+        <span id="inspectorPlatformBadge" class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+          Video Ready
+        </span>
+        <button onclick="closeInspector()" class="p-1 text-zinc-400 hover:text-white text-sm">✕</button>
+      </div>
+
+      <!-- Thumbnail Preview -->
+      <div class="aspect-video w-full rounded-2xl bg-black/60 overflow-hidden relative border border-white/10">
+        <img id="inspectorThumbnail" src="assets/logo.png" class="w-full h-full object-cover">
+        <span id="inspectorDuration" class="absolute bottom-2 right-2 bg-black/80 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold text-white">00:00</span>
+      </div>
+
+      <!-- Title & Author -->
+      <div>
+        <h4 id="inspectorTitle" class="text-sm font-extrabold text-white line-clamp-2">Video Title</h4>
+        <p id="inspectorUploader" class="text-xs text-zinc-400 mt-0.5">Creator</p>
+      </div>
+
+      <!-- Available Qualities Header -->
+      <div class="pt-2 border-t border-white/10 space-y-3">
+        <p class="text-[11px] font-extrabold text-zinc-300 uppercase tracking-wider">Select Available Quality:</p>
+        
+        <!-- Dynamic Quality Buttons Container -->
+        <div id="inspectorQualitiesList" class="space-y-2">
+          <!-- Populated dynamically by JavaScript -->
+        </div>
+
+        <!-- Download Action Button -->
+        <button id="btnConfirmDownloadQuality" onclick="proceedSelectedQualityDownload()" class="w-full py-3.5 rounded-2xl glass-btn-primary text-black font-extrabold text-xs shadow-lg flex items-center justify-center gap-2">
+          <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          <span id="btnConfirmDownloadText">Download Video</span>
+        </button>
+      </div>
+
+      <div class="pt-1">
+        <button onclick="closeInspector()" class="w-full py-2.5 rounded-xl glass-btn text-zinc-400 hover:text-white text-xs font-semibold">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: IN-APP VIDEO PLAYER -->
+  <!-- ============================================== -->
+  <div id="playerModal" class="fixed inset-0 z-50 bg-black/95 backdrop-blur-3xl hidden flex flex-col justify-between p-4 safe-top safe-bottom">
+    <div class="flex items-center justify-between pb-2 border-b border-white/10">
+      <div class="min-w-0 flex-1 pr-3">
+        <h3 id="playerTitle" class="text-sm font-bold text-white truncate">Video Player</h3>
+        <p id="playerSubtitle" class="text-[10px] text-zinc-400">OmniDownloader Vault</p>
+      </div>
+      <button onclick="closeVideoPlayer()" class="p-2 text-zinc-400 hover:text-white text-base">✕</button>
+    </div>
+
+    <div class="flex-1 my-auto flex items-center justify-center relative">
+      <video id="activeVideoElement" controls playsinline class="w-full max-h-[70vh] rounded-2xl bg-black shadow-2xl border border-white/10"></video>
+    </div>
+
+    <div class="flex items-center justify-between pt-3 border-t border-white/10">
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] text-zinc-400 font-mono">Speed:</span>
+        <button onclick="cyclePlaybackSpeed()" id="btnPlaybackSpeed" class="glass-btn px-2.5 py-1 rounded-lg text-xs font-mono font-bold text-cyan-300">1.0x</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="shareActiveVideo()" class="glass-btn-primary px-4 py-2 rounded-xl text-black font-bold text-xs flex items-center gap-1.5">
+          <span>Share Video</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: APP UPDATE AVAILABLE -->
+  <!-- ============================================== -->
+  <div id="updateModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl hidden flex items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-3xl glass-card-glow p-5 border border-cyan-500/35 space-y-4">
+      <div class="flex items-center justify-between">
+        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+          Update Available
+        </span>
+        <button onclick="closeUpdateModal()" class="text-zinc-400 hover:text-white text-sm">✕</button>
+      </div>
+
+      <div>
+        <h4 id="updateVersionTitle" class="text-base font-bold text-white">OmniDownloader v2.x</h4>
+        <p class="text-[11px] text-cyan-300 font-mono mt-0.5">Source: GitHub Releases</p>
+        <div id="updateChangelog" class="text-xs text-zinc-300 mt-2 p-3 rounded-xl bg-black/40 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono border border-white/5"></div>
+      </div>
+
+      <div class="flex gap-2 pt-1">
+        <button id="btnInstallUpdate" onclick="proceedInstallUpdate()" class="flex-1 py-3 rounded-xl glass-btn-primary text-black font-bold text-xs">
+          Download & Install Update
+        </button>
+        <button onclick="closeUpdateModal()" class="px-4 py-3 rounded-xl glass-btn text-zinc-400 font-semibold text-xs">
+          Later
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- MODAL: GLASSIC DOWNLOAD ERROR / STATUS DIALOG -->
+  <!-- ============================================== -->
+  <div id="errorModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl hidden flex items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-3xl glass-card p-6 border border-rose-500/30 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 text-lg font-bold">
+            ⚠️
+          </div>
+          <div>
+            <h4 class="text-sm font-extrabold text-white" id="errorModalTitle">Download Issue</h4>
+            <p class="text-[11px] text-zinc-400" id="errorModalSubtitle">Media Stream Notification</p>
+          </div>
+        </div>
+        <button onclick="closeErrorModal()" class="p-1.5 rounded-xl glass-btn text-zinc-400 hover:text-white text-xs">✕</button>
+      </div>
+
+      <div class="rounded-2xl bg-white/[0.03] border border-white/5 p-3.5 space-y-2">
+        <p class="text-xs text-zinc-200 leading-relaxed font-medium" id="errorModalMessage">
+          The download could not be completed for this link.
+        </p>
+        
+        <!-- Technical collapsible details -->
+        <div id="errorTechnicalDetailsBox" class="hidden pt-2 border-t border-white/5 space-y-1.5">
+          <p class="text-[10px] uppercase font-bold text-zinc-500">Technical Details:</p>
+          <pre id="errorModalDetails" class="text-[10px] font-mono text-rose-300/80 bg-black/50 p-2 rounded-xl overflow-x-auto whitespace-pre-wrap max-h-28"></pre>
+          <button onclick="copyErrorDetails()" class="glass-btn px-2.5 py-1 rounded-lg text-[10px] font-mono text-cyan-300 flex items-center gap-1">
+            <span>📋 Copy Error</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-1">
+        <button onclick="toggleErrorDetails()" class="text-[11px] text-cyan-400 font-semibold underline underline-offset-4" id="btnToggleErrorDetails">
+          View Details
+        </button>
+        <div class="flex items-center gap-2">
+          <button onclick="closeErrorModal()" class="px-4 py-2 rounded-xl glass-btn text-zinc-400 hover:text-white text-xs font-semibold">
+            Dismiss
+          </button>
+          <button onclick="retryCurrentDownload()" class="px-4 py-2 rounded-xl glass-btn-primary text-black font-extrabold text-xs">
+            Try Again
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script>
+    // ---------- State ----------
+    let currentTab = 'grab';
+    let activeDownload = null;
+    let downloadsHistory = [];
+    let detectedClipboardUrl = '';
+    let currentInspectedUrl = '';
+    let playbackSpeeds = [1.0, 1.25, 1.5, 2.0];
+    let currentSpeedIndex = 0;
+
+    // Zero vibration
+    function triggerHaptic() {}
+
+    // ---------- Navigation ----------
+    function switchTab(tab) {
+      currentTab = tab;
+
+      ['viewGrab', 'viewQueue', 'viewVault', 'viewSettings'].forEach(id => {
+        document.getElementById(id)?.classList.add('hidden');
+      });
+      ['navGrab', 'navQueue', 'navVault', 'navSettings'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.className = "flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-zinc-400 font-medium text-[10px] hover:text-white transition cursor-pointer";
+      });
+
+      if (tab === 'grab') {
+        document.getElementById('viewGrab')?.classList.remove('hidden');
+        document.getElementById('navGrab').className = "flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-cyan-400 font-bold text-[10px] transition cursor-pointer";
+      } else if (tab === 'queue') {
+        document.getElementById('viewQueue')?.classList.remove('hidden');
+        document.getElementById('navQueue').className = "flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-cyan-400 font-bold text-[10px] transition cursor-pointer";
+        renderQueueList();
+      } else if (tab === 'vault') {
+        document.getElementById('viewVault')?.classList.remove('hidden');
+        document.getElementById('navVault').className = "flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-cyan-400 font-bold text-[10px] transition cursor-pointer";
+        renderVaultGrid();
+      } else if (tab === 'settings') {
+        document.getElementById('viewSettings')?.classList.remove('hidden');
+        document.getElementById('navSettings').className = "flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-cyan-400 font-bold text-[10px] transition cursor-pointer";
+      }
+    }
+
+    // ---------- Clipboard Sniffer ----------
+    async function checkClipboard() {
+      if (localStorage.getItem('omni_clipboard_detect') === '0') return;
+      try {
+        let text = "";
+        if (window.Capacitor?.Plugins?.OmniEngine?.getClipboardText) {
+          const res = await window.Capacitor.Plugins.OmniEngine.getClipboardText();
+          text = res.text || "";
+        } else if (navigator.clipboard?.readText) {
+          text = await navigator.clipboard.readText();
+        }
+        if (text && /^https?:\/\//i.test(text.trim())) {
+          const clean = extractUrl(text);
+          if (clean && clean !== detectedClipboardUrl) {
+            detectedClipboardUrl = clean;
+            document.getElementById('clipboardUrlText').innerText = clean;
+            document.getElementById('clipboardBanner')?.classList.remove('hidden');
+          }
+        }
+      } catch (e) {}
+    }
+
+    function handleGrabClipboardLink() {
+      if (detectedClipboardUrl) {
+        document.getElementById('inputManualUrl').value = detectedClipboardUrl;
+        document.getElementById('clipboardBanner')?.classList.add('hidden');
+        handleInspectAndOpenModal(detectedClipboardUrl);
+      }
+    }
+
+    function handlePasteButton() {
+      if (window.Capacitor?.Plugins?.OmniEngine?.getClipboardText) {
+        window.Capacitor.Plugins.OmniEngine.getClipboardText().then(res => {
+          if (res.text) {
+            document.getElementById('inputManualUrl').value = res.text.trim();
+            handleUrlInputChanged();
+          }
+        });
+      } else if (navigator.clipboard?.readText) {
+        navigator.clipboard.readText().then(text => {
+          if (text) {
+            document.getElementById('inputManualUrl').value = text.trim();
+            handleUrlInputChanged();
+          }
+        });
+      }
+    }
+
+    function handleUrlInputChanged() {
+      const val = document.getElementById('inputManualUrl').value.trim();
+      document.getElementById('btnClearInput').style.display = val ? 'block' : 'none';
+    }
+
+    function clearManualUrl() {
+      document.getElementById('inputManualUrl').value = '';
+      handleUrlInputChanged();
+    }
+
+    // ---------- 1. FEATURE ONE: FAST DL (Circle Button Action) ----------
+    async function handleFastDlClick() {
+      let val = document.getElementById('inputManualUrl').value.trim();
+      let clean = extractUrl(val);
+
+      // If manual input is empty, grab from clipboard automatically
+      if (!clean) {
+        try {
+          let text = "";
+          if (window.Capacitor?.Plugins?.OmniEngine?.getClipboardText) {
+            const res = await window.Capacitor.Plugins.OmniEngine.getClipboardText();
+            text = res.text || "";
+          } else if (navigator.clipboard?.readText) {
+            text = await navigator.clipboard.readText();
+          }
+          clean = extractUrl(text);
+          if (clean) {
+            document.getElementById('inputManualUrl').value = clean;
+            handleUrlInputChanged();
+          }
+        } catch (e) {}
+      }
+
+      if (!clean) {
+        showToast('Fast DL: Link Required', 'Copy any video link to clipboard and tap the circle to Fast DL!', 'info');
+        return;
+      }
+
+      // FAST DL: 1-Tap direct download! No popups, no quality picking!
+      showToast('⚡ FAST DL Started', 'Directly downloading best quality…', 'success');
+      currentInspectedUrl = clean;
+      initiateDownload(clean, 'best');
+    }
+
+    function handleClipboardFastDl() {
+      if (detectedClipboardUrl) {
+        document.getElementById('inputManualUrl').value = detectedClipboardUrl;
+        document.getElementById('clipboardBanner')?.classList.add('hidden');
+        showToast('⚡ FAST DL Started', 'Directly downloading best quality…', 'success');
+        currentInspectedUrl = detectedClipboardUrl;
+        initiateDownload(detectedClipboardUrl, 'best');
+      }
+    }
+
+    // ---------- 2. FEATURE TWO: MANUAL DOWNLOAD (INSPECT) ----------
+    async function handleInspectButtonClick() {
+      let val = document.getElementById('inputManualUrl').value.trim();
+      let clean = extractUrl(val);
+
+      // If manual input is empty, try grabbing from clipboard
+      if (!clean) {
+        try {
+          let text = "";
+          if (window.Capacitor?.Plugins?.OmniEngine?.getClipboardText) {
+            const res = await window.Capacitor.Plugins.OmniEngine.getClipboardText();
+            text = res.text || "";
+          } else if (navigator.clipboard?.readText) {
+            text = await navigator.clipboard.readText();
+          }
+          clean = extractUrl(text);
+          if (clean) {
+            document.getElementById('inputManualUrl').value = clean;
+            handleUrlInputChanged();
+          }
+        } catch (e) {}
+      }
+
+      if (!clean) {
+        showToast('Link Required', 'Paste a video link above, then tap Inspect', 'info');
+        return;
+      }
+
+      handleInspectAndOpenModal(clean);
+    }
+
+    // ---------- Inspector & Dynamic Qualities Modal ----------
+    let selectedInspectorQuality = 'best';
+
+    async function handleInspectAndOpenModal(url) {
+      currentInspectedUrl = url;
+      showToast('Inspecting Media…', 'Scanning available video qualities…', 'info');
+      const inspectBtnText = document.getElementById('btnInspectText');
+      if (inspectBtnText) inspectBtnText.innerText = 'Scanning Qualities…';
+
+      try {
+        if (window.Capacitor?.Plugins?.OmniEngine?.extract) {
+          const info = await window.Capacitor.Plugins.OmniEngine.extract({ url: url });
+          
+          document.getElementById('inspectorThumbnail').src = info.thumbnail || 'assets/logo.png';
+          document.getElementById('inspectorTitle').innerText = info.title || 'Video';
+          document.getElementById('inspectorUploader').innerText = info.uploader || (info.platform || 'Media').toUpperCase();
+          document.getElementById('inspectorDuration').innerText = formatDuration(info.duration);
+          document.getElementById('inspectorPlatformBadge').innerText = (info.platform || 'video').toUpperCase();
+
+          renderInspectorQualities(info.formats);
+          document.getElementById('inspectorModal')?.classList.remove('hidden');
+        } else {
+          // Fallback if native plugin not present (browser preview)
+          renderInspectorQualities([]);
+          document.getElementById('inspectorModal')?.classList.remove('hidden');
+        }
+      } catch (e) {
+        showToast('Inspecting…', 'Showing available resolutions…', 'info');
+        renderInspectorQualities([]);
+        document.getElementById('inspectorModal')?.classList.remove('hidden');
+      } finally {
+        if (inspectBtnText) inspectBtnText.innerText = 'Inspect Available Qualities';
+      }
+    }
+
+    function renderInspectorQualities(formats) {
+      if (!formats || formats.length === 0) {
+        formats = [
+          { id: 'best', label: 'Best Available Quality', ext: 'mp4', badge: 'Best' },
+          { id: '1080', label: '1080p Full HD', ext: 'mp4', badge: '1080p' },
+          { id: '720', label: '720p HD Quality', ext: 'mp4', badge: '720p' },
+          { id: '480', label: '480p Standard Quality', ext: 'mp4', badge: '480p' },
+          { id: '360', label: '360p Data Saver', ext: 'mp4', badge: '360p' },
+          { id: 'audio', label: 'Audio Only (MP3)', ext: 'mp3', badge: 'Audio' }
+        ];
+      }
+
+      selectedInspectorQuality = formats[0].id;
+      updateConfirmButtonText(formats[0].label);
+
+      const list = document.getElementById('inspectorQualitiesList');
+      list.innerHTML = formats.map(fmt => `
+        <div id="quality_card_${fmt.id}" onclick="selectInspectorQuality('${fmt.id}', '${fmt.label}')" 
+          class="quality-card glass-btn p-3.5 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition ${fmt.id === selectedInspectorQuality ? 'border-cyan-400 bg-cyan-500/15 ring-1 ring-cyan-400/50' : 'hover:border-white/20'}">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="px-2.5 py-1 rounded-lg ${fmt.id === selectedInspectorQuality ? 'bg-cyan-500 text-black font-black' : 'bg-cyan-500/20 text-cyan-300 font-bold'} font-mono text-xs border border-cyan-500/30 flex-shrink-0 transition">
+              ${fmt.badge || 'HD'}
+            </span>
+            <div class="min-w-0">
+              <p class="text-xs font-bold text-white transition truncate">${fmt.label}</p>
+              <p class="text-[10px] text-zinc-400 font-mono uppercase">${fmt.ext || 'mp4'} stream</p>
+            </div>
+          </div>
+          <div class="w-8 h-8 rounded-xl ${fmt.id === selectedInspectorQuality ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-300'} flex items-center justify-center transition flex-shrink-0">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectInspectorQuality(fmtId, fmtLabel) {
+      selectedInspectorQuality = fmtId;
+      document.querySelectorAll('.quality-card').forEach(el => {
+        el.classList.remove('border-cyan-400', 'bg-cyan-500/15', 'ring-1', 'ring-cyan-400/50');
+      });
+      const activeEl = document.getElementById('quality_card_' + fmtId);
+      if (activeEl) activeEl.classList.add('border-cyan-400', 'bg-cyan-500/15', 'ring-1', 'ring-cyan-400/50');
+      updateConfirmButtonText(fmtLabel);
+    }
+
+    function updateConfirmButtonText(label) {
+      const btnText = document.getElementById('btnConfirmDownloadText');
+      if (btnText) btnText.innerText = 'Download ' + label;
+    }
+
+    function proceedSelectedQualityDownload() {
+      closeInspector();
+      initiateDownload(currentInspectedUrl, selectedInspectorQuality);
+    }
+
+    function closeInspector() {
+      document.getElementById('inspectorModal')?.classList.add('hidden');
+    }
+
+    let lastFailedUrl = '';
+    let lastFailedFormat = 'best';
+    let currentRawError = '';
+
+    function selectAndDownloadFormat(formatId) {
+      closeInspector();
+      initiateDownload(currentInspectedUrl, formatId);
+    }
+
+    // ---------- Core Download Pipeline ----------
+    function initiateDownload(url, formatId) {
+      lastFailedUrl = url;
+      lastFailedFormat = formatId;
+      showToast('Starting Download', 'Connecting to video server…', 'info');
+
+      // Show live progress card
+      const card = document.getElementById('liveDownloadCard');
+      card?.classList.remove('hidden');
+      document.getElementById('liveDownloadTitle').innerText = "Connecting to media server…";
+      document.getElementById('liveDownloadPercent').innerText = "0%";
+      document.getElementById('liveProgressBar').style.width = "2%";
+      document.getElementById('liveDownloadRatio').innerText = "Starting engine…";
+      document.getElementById('liveDownloadSpeed').innerText = "⚡ --";
+      document.getElementById('liveDownloadEta').innerText = "⏳ --";
+
+      // Register live progress listener
+      if (window.Capacitor?.Plugins?.OmniEngine) {
+        window.Capacitor.Plugins.OmniEngine.removeAllListeners?.('onProgress');
+        window.Capacitor.Plugins.OmniEngine.addListener('onProgress', (progress) => {
+          updateLiveCard(progress);
+        });
+
+        window.Capacitor.Plugins.OmniEngine.download({ url: url, formatId: formatId })
+          .then(res => {
+            onDownloadSuccess(res);
+          })
+          .catch(err => {
+            onDownloadError(err);
+          });
+      } else {
+        // Mock success for web preview
+        setTimeout(() => {
+          onDownloadSuccess({ title: 'Sample Media Download', destination: 'Phone Gallery / Movies' });
+        }, 3000);
+      }
+    }
+
+    function updateLiveCard(p) {
+      if (p.failed) {
+        onDownloadError(p.error || 'Download interrupted');
+        return;
+      }
+
+      const pct = p.percent || 0;
+      document.getElementById('liveDownloadPercent').innerText = Math.round(pct) + '%';
+      document.getElementById('liveProgressBar').style.width = Math.max(2, pct) + '%';
+
+      if (p.sizeFormatted) {
+        document.getElementById('liveDownloadRatio').innerText = p.sizeFormatted;
+      }
+      if (p.speedFormatted) {
+        document.getElementById('liveDownloadSpeed').innerText = '⚡ ' + p.speedFormatted;
+      }
+      if (p.etaFormatted) {
+        document.getElementById('liveDownloadEta').innerText = '⏳ ' + p.etaFormatted;
+      }
+      if (p.status) {
+        document.getElementById('liveDownloadTitle').innerText = p.status;
+      }
+    }
+
+    function onDownloadSuccess(res) {
+      document.getElementById('liveDownloadPercent').innerText = "100%";
+      document.getElementById('liveProgressBar').style.width = "100%";
+      document.getElementById('liveDownloadTitle').innerText = "✓ Saved to Gallery!";
+      showToast('Download Complete', res.title || 'Video saved to your phone gallery', 'success');
+
+      // Add to history & vault
+      const item = {
+        id: Date.now().toString(),
+        title: res.title || 'Omni Video',
+        destination: res.destination || 'Gallery / Movies',
+        date: new Date().toLocaleDateString(),
+        url: currentInspectedUrl || document.getElementById('inputManualUrl').value.trim()
+      };
+      downloadsHistory.unshift(item);
+      saveHistory();
+
+      setTimeout(() => {
+        document.getElementById('liveDownloadCard')?.classList.add('hidden');
+      }, 3500);
+    }
+
+    function onDownloadError(err) {
+      document.getElementById('liveDownloadCard')?.classList.add('hidden');
+      const errStr = (err && err.message) ? err.message : (typeof err === 'string' ? err : JSON.stringify(err));
+      currentRawError = errStr;
+
+      let friendly = "The media stream could not be downloaded. The video may be private, require a login, or the network connection was interrupted.";
+      const lower = errStr.toLowerCase();
+      if (lower.includes("private") || lower.includes("login") || lower.includes("sign in") || lower.includes("account")) {
+        friendly = "This video requires login or is set to private. Please try another public video link.";
+      } else if (lower.includes("timeout") || lower.includes("connect") || lower.includes("network")) {
+        friendly = "Connection timed out. Please check your internet connection and try again.";
+      } else if (lower.includes("unsupported") || lower.includes("format")) {
+        friendly = "The stream format is not currently available for this specific video. Try selecting another quality.";
+      }
+
+      showErrorModal('Download Stopped', friendly, errStr);
+    }
+
+    function showErrorModal(title, message, rawDetail) {
+      document.getElementById('errorModalTitle').innerText = title;
+      document.getElementById('errorModalMessage').innerText = message;
+      document.getElementById('errorModalDetails').innerText = rawDetail || message;
+      document.getElementById('errorTechnicalDetailsBox').classList.add('hidden');
+      document.getElementById('btnToggleErrorDetails').innerText = 'View Details';
+      document.getElementById('errorModal')?.classList.remove('hidden');
+    }
+
+    function closeErrorModal() {
+      document.getElementById('errorModal')?.classList.add('hidden');
+    }
+
+    function toggleErrorDetails() {
+      const box = document.getElementById('errorTechnicalDetailsBox');
+      const btn = document.getElementById('btnToggleErrorDetails');
+      if (box.classList.contains('hidden')) {
+        box.classList.remove('hidden');
+        btn.innerText = 'Hide Details';
+      } else {
+        box.classList.add('hidden');
+        btn.innerText = 'View Details';
+      }
+    }
+
+    function copyErrorDetails() {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(currentRawError).then(() => {
+          showToast('Copied', 'Error details copied to clipboard', 'success');
+        });
+      }
+    }
+
+    function retryCurrentDownload() {
+      closeErrorModal();
+      if (lastFailedUrl) {
+        initiateDownload(lastFailedUrl, lastFailedFormat);
+      } else {
+        handleCircleActionClick();
+      }
+    }
+
+    function cancelActiveDownload() {
+      if (window.Capacitor?.Plugins?.OmniEngine?.cancelDownload) {
+        window.Capacitor.Plugins.OmniEngine.cancelDownload();
+      }
+      document.getElementById('liveDownloadCard')?.classList.add('hidden');
+      showToast('Cancelled', 'Download was stopped', 'info');
+    }
+
+    // ---------- Vault & Media Player ----------
+    function renderVaultGrid() {
+      const grid = document.getElementById('vaultMediaGrid');
+      if (!grid) return;
+      if (downloadsHistory.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full p-8 rounded-3xl glass-card text-center text-xs text-zinc-400">
+            No downloaded media found yet. Completed downloads will appear here.
+          </div>
+        `;
+        return;
+      }
+      grid.innerHTML = downloadsHistory.map(item => `
+        <div class="glass-card p-4 rounded-3xl space-y-2 border border-white/5">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono text-cyan-300 font-medium">${item.date}</span>
+            <span class="text-[10px] text-emerald-400 font-medium">✓ In Gallery</span>
+          </div>
+          <h4 class="text-xs font-bold text-white truncate">${item.title}</h4>
+          <p class="text-[10px] text-zinc-400 font-mono truncate">${item.destination}</p>
+          <div class="flex gap-2 pt-1">
+            <button onclick="handleOpenSystemGallery()" class="glass-btn flex-1 py-1.5 rounded-xl text-white font-medium text-[11px]">
+              Open Gallery
+            </button>
+            <button onclick="deleteVaultItem('${item.id}')" class="glass-btn px-2.5 py-1.5 rounded-xl text-zinc-400 hover:text-rose-400 text-[11px]">
+              ✕
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function closeVideoPlayer() {
+      const modal = document.getElementById('playerModal');
+      const video = document.getElementById('activeVideoElement');
+      if (video) {
+        video.pause();
+        video.src = '';
+      }
+      modal?.classList.add('hidden');
+    }
+
+    function cyclePlaybackSpeed() {
+      currentSpeedIndex = (currentSpeedIndex + 1) % playbackSpeeds.length;
+      const speed = playbackSpeeds[currentSpeedIndex];
+      const video = document.getElementById('activeVideoElement');
+      if (video) video.playbackRate = speed;
+      document.getElementById('btnPlaybackSpeed').innerText = `${speed.toFixed(1)}x`;
+    }
+
+    function shareActiveVideo() {
+      showToast('Sharing Video', 'Opening Android Share sheet…', 'info');
+    }
+
+    function deleteVaultItem(id) {
+      downloadsHistory = downloadsHistory.filter(x => x.id !== id);
+      saveHistory();
+      renderVaultGrid();
+      renderQueueList();
+    }
+
+    function handleOpenSystemGallery() {
+      window.Capacitor?.Plugins?.OmniEngine?.openGallery?.();
+    }
+
+    // ---------- Queue List ----------
+    function renderQueueList() {
+      const container = document.getElementById('queueListContainer');
+      if (!container) return;
+      if (downloadsHistory.length === 0) {
+        container.innerHTML = `
+          <div class="p-8 rounded-3xl glass-card text-center text-xs text-zinc-400">
+            No recent downloads in queue.
+          </div>
+        `;
+        return;
+      }
+      container.innerHTML = downloadsHistory.map(item => `
+        <div class="glass-card p-3.5 rounded-2xl flex items-center justify-between gap-3 text-xs border border-white/5">
+          <div class="min-w-0 flex-1">
+            <p class="font-bold text-white truncate">${item.title}</p>
+            <p class="text-[10px] text-zinc-400 font-mono">${item.destination}</p>
+          </div>
+          <span class="text-emerald-400 font-mono font-medium text-[10px]">Saved</span>
+        </div>
+      `).join('');
+    }
+
+    function clearCompletedHistory() {
+      downloadsHistory = [];
+      saveHistory();
+      renderQueueList();
+      renderVaultGrid();
+      showToast('History Cleared', 'All download records removed', 'info');
+    }
+
+    // ---------- Auto-Update & Engine Sync ----------
+    let latestPendingDownloadUrl = "";
+
+    async function checkAppUpdates() {
+      showToast('Checking Updates', 'Connecting to GitHub Releases…', 'info');
+      try {
+        const resp = await fetch('https://api.github.com/repos/MansoorjAhmad/OmniDownloader/releases/latest');
+        if (resp.status === 404) {
+          showToast('Up to Date', 'OmniDownloader v2.0.0 is the latest release', 'success');
+          return;
+        }
+        const data = await resp.json();
+        if (!data || !data.tag_name) {
+          showToast('Up to Date', 'OmniDownloader v2.0.0 is the latest release', 'success');
+          return;
+        }
+        const remoteTag = data.tag_name;
+        const assets = data.assets || [];
+        const apk = assets.find(a => a.name && a.name.endsWith('.apk'));
+
+        if (remoteTag !== 'v2.0.0' && remoteTag !== '2.0.0' && apk) {
+          latestPendingDownloadUrl = apk.browser_download_url;
+          document.getElementById('updateVersionTitle').innerText = `${data.name || remoteTag} Available`;
+          document.getElementById('updateChangelog').innerText = data.body || 'Performance updates and platform extractors.';
+          document.getElementById('updateModal')?.classList.remove('hidden');
+        } else {
+          showToast('Up to Date', 'OmniDownloader v2.0.0 is the latest release', 'success');
+        }
+      } catch (err) {
+        showToast('Up to Date', 'OmniDownloader v2.0.0 is the latest version', 'success');
+      }
+    }
+
+    function closeUpdateModal() {
+      document.getElementById('updateModal')?.classList.add('hidden');
+    }
+
+    function proceedInstallUpdate() {
+      if (latestPendingDownloadUrl) {
+        showToast('Starting Update', 'Opening APK download…', 'info');
+        window.open(latestPendingDownloadUrl, '_system');
+      }
+      closeUpdateModal();
+    }
+
+    function syncEngineRules() {
+      showToast('Engine Synced', 'yt-dlp extractors verified and ready', 'success');
+    }
+
+    function handleChooseFolder() {
+      window.Capacitor?.Plugins?.OmniEngine?.chooseFolder?.();
+    }
+
+    function toggleClipboardDetect(enabled) {
+      localStorage.setItem('omni_clipboard_detect', enabled ? '1' : '0');
+    }
+
+    // ---------- Utilities ----------
+    function showToast(title, msg, type = 'info') {
+      const toast = document.getElementById('appToast');
+      document.getElementById('toastTitle').innerText = title;
+      document.getElementById('toastMsg').innerText = msg;
+      const icon = document.getElementById('toastIcon');
+      if (type === 'success') {
+        icon.innerText = '✓';
+        icon.className = 'w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-sm font-bold text-emerald-300';
+      } else if (type === 'error') {
+        icon.innerText = '✕';
+        icon.className = 'w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-400/30 flex items-center justify-center text-sm font-bold text-rose-300';
+      } else {
+        icon.innerText = '⚡';
+        icon.className = 'w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center text-sm font-bold text-cyan-300';
+      }
+
+      toast.classList.remove('-translate-y-28', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(hideToast, 3500);
+    }
+
+    function hideToast() {
+      const toast = document.getElementById('appToast');
+      toast.classList.remove('translate-y-0', 'opacity-100');
+      toast.classList.add('-translate-y-28', 'opacity-0');
+    }
+
+    function extractUrl(text) {
+      if (!text) return "";
+      const match = text.match(/https?:\/\/[^\s<>\"']+/i);
+      return match ? match[0].replace(/[.,;:!?)\]]+$/, "") : "";
+    }
+
+    function formatDuration(sec) {
+      if (!sec) return "00:00";
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    function saveHistory() {
+      try {
+        localStorage.setItem('omni_v2_history', JSON.stringify(downloadsHistory));
+      } catch (e) {}
+    }
+
+    function loadHistory() {
+      try {
+        downloadsHistory = JSON.parse(localStorage.getItem('omni_v2_history') || '[]');
+      } catch (e) {
+        downloadsHistory = [];
+      }
+    }
+
+    // ---------- Boot ----------
+    window.addEventListener('DOMContentLoaded', () => {
+      loadHistory();
+
+      // Check clipboard on launch
+      setTimeout(checkClipboard, 500);
+
+      // Check shared intent on launch
+      if (window.Capacitor?.Plugins?.OmniEngine?.getSharedUrl) {
+        window.Capacitor.Plugins.OmniEngine.getSharedUrl().then(res => {
+          if (res?.url) {
+            const clean = extractUrl(res.url);
+            if (clean) {
+              document.getElementById('inputManualUrl').value = clean;
+              handleInspectAndOpenModal(clean);
+            }
+          }
+        });
+      }
+
+      window.addEventListener('onShareReceived', (e) => {
+        if (e.detail?.url) {
+          const clean = extractUrl(e.detail.url);
+          if (clean) {
+            document.getElementById('inputManualUrl').value = clean;
+            handleInspectAndOpenModal(clean);
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>

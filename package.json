@@ -1,0 +1,22 @@
+{
+  "name": "omni-downloader-mobile",
+  "version": "1.0.0",
+  "description": "OmniDownloader Mobile - Ultra-Luxury 1-Tap Video Downloader for Android",
+  "scripts": {
+    "build": "echo Built www folder",
+    "cap:sync": "cap sync",
+    "cap:open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/clipboard": "^6.0.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/haptics": "^6.0.1",
+    "@capacitor/local-notifications": "^6.0.2",
+    "@capacitor/filesystem": "^6.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}

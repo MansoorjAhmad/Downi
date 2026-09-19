@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Local Android SDK and Caches
+.android-home/
+.gradle-cache/
+.npm-cache/
+android-sdk/
+test_out/
+tools/
+__pycache__/
+*.pyc
+*.pyo
+
+# Android Build Outputs & Local configs
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/.idea/
+*.iml
+.gradle/
+build/
+
+# Binary files & local archives
+*.apk
+*.exe
+*.zip
+*.keystore
+*.jks
+original-OmniDownloader.apk
+recovered-apk-ui.html
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
