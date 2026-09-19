@@ -536,6 +536,7 @@ public class OmniEnginePlugin extends Plugin {
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
 
             OmniDownloadService.updateJob(getContext(), job.id, "Starting engine…", 1);
+            String igSession = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
 
             DownloadProgressListener listener = new DownloadProgressListener() {
                 @Override
@@ -563,7 +564,7 @@ public class OmniEnginePlugin extends Plugin {
                 }
             };
 
-            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId, listener);
+            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId, listener, igSession);
             if (job.cancelled.get()) return;
 
             JSONObject file = new JSONObject(response.toString());
@@ -618,7 +619,8 @@ public class OmniEnginePlugin extends Plugin {
         miscExecutor.execute(() -> {
             try {
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
-                PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url);
+                String igSession = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
+                PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url, igSession);
                 JSONObject info = new JSONObject(response.toString());
                 JSObject result = new JSObject();
                 result.put("title", info.optString("title", "Video"));
@@ -647,6 +649,25 @@ public class OmniEnginePlugin extends Plugin {
                 call.reject("This public link could not be inspected. It may be private, protected, or temporarily unsupported.", error);
             }
         });
+    }
+
+    @PluginMethod
+    public void setInstagramSession(PluginCall call) {
+        String value = call.getString("value", "");
+        getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
+            .edit().putString("ig_session", value == null ? "" : value.trim()).apply();
+        JSObject result = new JSObject();
+        result.put("saved", true);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getInstagramSession(PluginCall call) {
+        String value = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
+        JSObject result = new JSObject();
+        result.put("value", value);
+        result.put("hasSession", value != null && !value.isEmpty());
+        call.resolve(result);
     }
 
     @PluginMethod

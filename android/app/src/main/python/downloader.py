@@ -124,6 +124,23 @@ def _check_cancel(progress_listener):
             pass
 
 
+def _ig_extra_headers(ig_session):
+    """Optional Instagram session cookie headers (user-provided sessionid)."""
+    if not ig_session:
+        return None
+    return {'Cookie': f'sessionid={ig_session}', 'X-IG-App-ID': '936619743392459'}
+
+
+def _merge_ig_headers(options, platform, ig_session):
+    if platform == 'instagram':
+        extra = _ig_extra_headers(ig_session)
+        if extra:
+            merged = dict(options.get('http_headers') or {})
+            merged.update(extra)
+            options['http_headers'] = merged
+    return options
+
+
 # ---------------------------------------------------------------------------
 # Segmented multi-connection downloader (ELITE speed path)
 # ---------------------------------------------------------------------------
@@ -226,7 +243,13 @@ def _download_stream_segmented(url, target_path, headers, listener=None, connect
     alive = True
     while alive:
         alive = any(t.is_alive() for t in threads)
-        _check_cancel(listener)
+        # Stop worker threads BEFORE raising so they exit cleanly
+        try:
+            if listener is not None and listener.isCancelled():
+                cancel_event.set()
+                state['failed'] = True
+        except Exception:
+            pass
         if cancel_event.is_set():
             state['failed'] = True
         now = time.time()
@@ -424,7 +447,7 @@ def _label_for_height(h):
     return (str(h), f'{h}p Quality', f'{h}p')
 
 
-def inspect(url):
+def inspect(url, ig_session=""):
     clean = _clean_url(url)
     platform = _detect_platform(clean)
 
@@ -456,6 +479,7 @@ def inspect(url):
     try:
         options = _base_ydl_options()
         options['skip_download'] = True
+        _merge_ig_headers(options, platform, ig_session)
         with _yt_dlp().YoutubeDL(options) as ydl:
             info = ydl.extract_info(clean, download=False)
     except Exception:
@@ -542,7 +566,7 @@ def _attempt_configs(format_id, is_audio, platform):
     return attempts
 
 
-def download(url, target_dir, format_id="best", progress_listener=None):
+def download(url, target_dir, format_id="best", progress_listener=None, ig_session=""):
     os.makedirs(target_dir, exist_ok=True)
     clean = _clean_url(url)
     platform = _detect_platform(clean)
@@ -628,6 +652,7 @@ def download(url, target_dir, format_id="best", progress_listener=None):
         }
         if extractor_args:
             options['extractor_args'] = extractor_args
+        _merge_ig_headers(options, platform, ig_session)
         try:
             with _yt_dlp().YoutubeDL(options) as ydl:
                 info = ydl.extract_info(clean, download=True)
@@ -655,7 +680,10 @@ def download(url, target_dir, format_id="best", progress_listener=None):
 
     if not path or not os.path.exists(path):
         if last_error is not None:
-            raise RuntimeError(f"Could not download stream: {last_error}")
+            err_text = str(last_error)
+            if platform == 'instagram' and ('empty media response' in err_text or 'login' in err_text.lower() or 'cookies' in err_text.lower()):
+                raise RuntimeError("Instagram is blocking anonymous downloads for this post. Add your Instagram session in Settings → Instagram Access, then try again.")
+            raise RuntimeError(f"Could not download stream: {err_text}")
         raise RuntimeError('Media file was not created on storage. Check permissions or internet connection.')
 
     filesize = os.path.getsize(path) if os.path.exists(path) else 0

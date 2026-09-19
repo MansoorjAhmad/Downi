@@ -344,6 +344,26 @@
           <button onclick="syncEngineRules()" class="btn w-full py-2.5 text-[11px] font-bold text-zinc-300">Verify engine health</button>
         </div>
 
+        <!-- Instagram access -->
+        <div class="card p-4 space-y-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-base flex-shrink-0" style="background:rgba(244,114,182,.1); border:1px solid rgba(244,114,182,.25)">📷</div>
+            <div class="min-w-0">
+              <p class="text-[12px] font-extrabold text-white">Instagram access</p>
+              <p id="igStatusText" class="text-[11px] mt-0.5" style="color:var(--muted)">Optional — fixes "empty media response" errors</p>
+            </div>
+          </div>
+          <input id="igSessionInput" type="password" placeholder="Paste your Instagram sessionid…"
+            class="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3.5 text-[12px] text-white placeholder-zinc-500 font-mono focus:border-cyan-300/50 transition" />
+          <div class="flex gap-2">
+            <button onclick="saveIgSession()" class="btn-hero flex-1 py-2.5 text-[11px] font-extrabold">Save session</button>
+            <button onclick="clearIgSession()" class="btn px-4 py-2.5 text-[11px] font-bold text-zinc-400">Clear</button>
+          </div>
+          <p class="text-[10px] leading-relaxed" style="color:var(--muted)">
+            How: open <b>instagram.com</b> in your phone browser and log in → browser menu → <b>Site settings / Cookies</b> → find the cookie named <b>sessionid</b> → copy its value → paste above. Stored only on this device, used only for Instagram.
+          </p>
+        </div>
+
         <!-- Storage -->
         <div class="card p-4 space-y-1">
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">Storage</p>
@@ -518,8 +538,8 @@
     let detectedClipboardUrl = '';
     let currentInspectedUrl = '';
     let selectedInspectorQuality = 'best';
-    let installedVersion = '2.5.0';
-    let installedVersionCode = 25;
+    let installedVersion = '2.5.1';
+    let installedVersionCode = 26;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -905,7 +925,11 @@
       currentRawError = errStr;
       let friendly = "The media stream could not be downloaded. The video may be private, require a login, or the connection dropped.";
       const lower = errStr.toLowerCase();
-      if (lower.includes("private") || lower.includes("login") || lower.includes("sign in") || lower.includes("account")) {
+      if (lower.includes("instagram is blocking")) {
+        friendly = errStr; // Already user-friendly from the engine
+      } else if (lower.includes("instagram") || (lower.includes("empty media response"))) {
+        friendly = "Instagram blocked this anonymous download. Fix: Settings → Instagram access → save your sessionid.";
+      } else if (lower.includes("private") || lower.includes("login") || lower.includes("sign in") || lower.includes("account")) {
         friendly = "This video requires login or is private. Try another public link.";
       } else if (lower.includes("timeout") || lower.includes("connect") || lower.includes("network")) {
         friendly = "Connection timed out. Check your internet and try again.";
@@ -1331,6 +1355,45 @@
     }
 
     function openGitHubRepo() { window.open(`https://github.com/${GITHUB_REPO}`, '_system'); }
+
+    // ---------- Instagram session ----------
+    function refreshIgStatus() {
+      const engine = getEngine();
+      if (!engine?.getInstagramSession) return;
+      engine.getInstagramSession().then(res => {
+        const el = document.getElementById('igStatusText');
+        if (res?.hasSession) {
+          el.innerText = 'Session saved ✓ — Instagram extraction active';
+          el.style.color = 'var(--ok)';
+        } else {
+          el.innerText = 'Optional — fixes "empty media response" errors';
+          el.style.color = 'var(--muted)';
+        }
+      }).catch(() => {});
+    }
+    function saveIgSession() {
+      const value = document.getElementById('igSessionInput').value.trim();
+      if (!value) { showToast('Empty session', 'Paste the sessionid value first.', 'info'); return; }
+      const engine = getEngine();
+      if (engine?.setInstagramSession) {
+        engine.setInstagramSession({ value: value }).then(() => {
+          document.getElementById('igSessionInput').value = '';
+          refreshIgStatus();
+          showToast('Session saved', 'Instagram extraction upgraded.', 'success');
+        }).catch(err => showToast('Save failed', err?.message || 'Error', 'error'));
+      } else {
+        showToast('Not available', 'Update the app to use this feature.', 'info');
+      }
+    }
+    function clearIgSession() {
+      const engine = getEngine();
+      if (engine?.setInstagramSession) {
+        engine.setInstagramSession({ value: '' }).then(() => {
+          refreshIgStatus();
+          showToast('Session cleared', 'Instagram back to anonymous mode.', 'info');
+        });
+      }
+    }
     function handleChooseFolder() { getEngine()?.chooseFolder?.(); }
     function toggleClipboardDetect(enabled) { localStorage.setItem('omni_clipboard_detect', enabled ? '1' : '0'); }
 
@@ -1377,6 +1440,7 @@
       });
 
       syncEngineRules();
+      refreshIgStatus();
       setTimeout(checkClipboard, 600);
       setTimeout(() => checkAppUpdates(true), 4000);
 
