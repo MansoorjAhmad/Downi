@@ -17,7 +17,7 @@ public class ShareReceiverActivity extends Activity {
         Intent source = getIntent();
         String text = sharedText(source);
         if (text != null && !text.trim().isEmpty()) {
-            Toast.makeText(this, "OmniDrop: Downloading in background…", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "DowniDrop: Downloading in background…", Toast.LENGTH_SHORT).show();
             OmniDownloadService.startShared(this, text.trim());
         }
         finish();

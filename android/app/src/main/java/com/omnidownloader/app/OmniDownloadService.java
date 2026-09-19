@@ -42,7 +42,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
     private static volatile OmniDownloadService instance;
     private final ExecutorService shareExecutor = Executors.newSingleThreadExecutor();
     private long lastProgressNotify = 0;
-    private String currentDownloadTitle = "Omni video";
+    private String currentDownloadTitle = "Downi video";
     private static volatile boolean sharedCancelRequested = false;
 
     public static void start(Context context, String status) {
@@ -94,14 +94,14 @@ public class OmniDownloadService extends Service implements DownloadProgressList
                 stopSelf();
             } else if ("shared_download".equals(action)) {
                 try {
-                    startForeground(NOTIFICATION_ID, buildProgressNotification("OmniDrop — Starting…", "Connecting to media server…", 0, true));
+                    startForeground(NOTIFICATION_ID, buildProgressNotification("DowniDrop — Starting…", "Connecting to media server…", 0, true));
                 } catch (Exception ignored) {}
                 String url = intent == null ? "" : intent.getStringExtra("url");
                 shareExecutor.execute(() -> runSharedDownload(url));
             } else {
                 String status = intent != null ? intent.getStringExtra("status") : "Preparing download…";
                 try {
-                    startForeground(NOTIFICATION_ID, buildProgressNotification("OmniDownloader", status, 0, true));
+                    startForeground(NOTIFICATION_ID, buildProgressNotification("DOWNI", status, 0, true));
                 } catch (Exception ignored) {}
             }
         } catch (Exception ignored) {}
@@ -118,8 +118,8 @@ public class OmniDownloadService extends Service implements DownloadProgressList
 
     private void ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Omni Downloads", NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("Real-time progress and notifications for OmniDownloader");
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Downi Downloads", NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("Real-time progress and notifications for DOWNI");
             channel.setShowBadge(false);
             channel.enableVibration(false);
             channel.enableLights(false);
@@ -145,7 +145,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         if (!speedStr.isEmpty()) info.append(" • ").append(speedStr);
         if (!etaStr.isEmpty()) info.append(" • ").append(etaStr);
 
-        Notification notif = buildProgressNotification("OmniDrop — Downloading…", info.toString(), (int) percent, false);
+        Notification notif = buildProgressNotification("DowniDrop — Downloading…", info.toString(), (int) percent, false);
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notif);
     }
 
@@ -155,7 +155,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
     }
 
     private void showStatus(String status, int percent) {
-        Notification notif = buildProgressNotification("OmniDownloader", status, percent, percent <= 0 || percent >= 100);
+        Notification notif = buildProgressNotification("DOWNI", status, percent, percent <= 0 || percent >= 100);
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notif);
     }
 
@@ -173,7 +173,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(content)
-            .setSubText("OmniDrop 2.0")
+            .setSubText("DowniDrop")
             .setContentIntent(openPending)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
@@ -190,7 +190,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
     private void showSuccess(Uri videoUri, String mime, String title) {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("OmniDrop — Download Complete! 🎉")
+            .setContentTitle("DowniDrop — Download Complete! 🎉")
             .setContentText(title != null ? title : "Video saved to your gallery")
             .setSubText("Ready in Gallery")
             .setOnlyAlertOnce(false)
@@ -271,7 +271,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
     private void showCancelled() {
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_close_clear_cancel)
-            .setContentTitle("OmniDrop cancelled")
+            .setContentTitle("DowniDrop cancelled")
             .setContentText("The background download was stopped.")
             .setOnlyAlertOnce(true)
             .setOngoing(false)
@@ -291,7 +291,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
     private void showFailure(String status) {
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle("OmniDrop download failed")
+            .setContentTitle("DowniDrop download failed")
             .setContentText(status)
             .setOnlyAlertOnce(true)
             .setOngoing(false)
@@ -303,7 +303,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
 
     private Uri saveToGallery(File source, String title, String extension) throws Exception {
         String ext = extension == null ? "mp4" : extension.toLowerCase();
-        String base = (title == null || title.trim().isEmpty() ? "Omni video" : title).replaceAll("[\\\\/:*?\\\"<>|]+", " ").trim();
+        String base = (title == null || title.trim().isEmpty() ? "Downi video" : title).replaceAll("[\\\\/:*?\\\"<>|]+", " ").trim();
         String name = nextGalleryName(base, ext);
         String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
         if (mime == null) mime = ext.startsWith("m4") || ext.equals("mp3") ? "audio/" + ext : "video/mp4";

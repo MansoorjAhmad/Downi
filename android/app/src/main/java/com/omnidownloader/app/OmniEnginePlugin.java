@@ -129,8 +129,8 @@ public class OmniEnginePlugin extends Plugin {
             result.put("engine", "Chaquopy 3.11 + yt-dlp");
             call.resolve(result);
         } catch (Exception e) {
-            result.put("versionName", "2.1.0");
-            result.put("versionCode", 21);
+            result.put("versionName", "2.5.0");
+            result.put("versionCode", 25);
             call.resolve(result);
         }
     }
