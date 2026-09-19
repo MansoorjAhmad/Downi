@@ -43,6 +43,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
     private final ExecutorService shareExecutor = Executors.newSingleThreadExecutor();
     private long lastProgressNotify = 0;
     private String currentDownloadTitle = "Omni video";
+    private static volatile boolean sharedCancelRequested = false;
 
     public static void start(Context context, String status) {
         Intent intent = new Intent(context, OmniDownloadService.class);
@@ -63,10 +64,16 @@ public class OmniDownloadService extends Service implements DownloadProgressList
     }
 
     public static void startShared(Context context, String url) {
+        sharedCancelRequested = false;
         Intent intent = new Intent(context, OmniDownloadService.class);
         intent.setAction("shared_download");
         intent.putExtra("url", url);
         ContextCompat.startForegroundService(context, intent);
+    }
+
+    /** Called from the app UI (or a future notification action) to abort an OmniDrop transfer. */
+    public static void cancelShared() {
+        sharedCancelRequested = true;
     }
 
     @Override public void onCreate() {
@@ -142,17 +149,32 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notif);
     }
 
+    @Override
+    public boolean isCancelled() {
+        return sharedCancelRequested;
+    }
+
     private void showStatus(String status, int percent) {
         Notification notif = buildProgressNotification("OmniDownloader", status, percent, percent <= 0 || percent >= 100);
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notif);
     }
 
     private Notification buildProgressNotification(String title, String content, int percent, boolean indeterminate) {
+        // Tapping the progress notification opens the app
+        Intent openIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (openIntent == null) openIntent = new Intent(this, MainActivity.class);
+        openIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent openPending = PendingIntent.getActivity(
+            this, 100, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(content)
             .setSubText("OmniDrop 2.0")
+            .setContentIntent(openPending)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW);
@@ -229,10 +251,34 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             stopSelf();
         } catch (Exception error) {
             String detail = error.getMessage();
-            showFailure(detail == null || detail.trim().isEmpty() ? "Could not download this link. Video may be private or protected." : detail);
+            if (detail != null && detail.toLowerCase(Locale.US).contains("cancel")) {
+                showCancelled();
+            } else {
+                showFailure(detail == null || detail.trim().isEmpty() ? "Could not download this link. Video may be private or protected." : detail);
+            }
             stopForeground(STOP_FOREGROUND_DETACH);
             stopSelf();
+        } finally {
+            // Remove engine temp files so cancelled/partial downloads never linger
+            File work = new File(getCacheDir(), "OmniDrop");
+            try {
+                File[] files = work.listFiles();
+                if (files != null) for (File f : files) f.delete();
+            } catch (Exception ignored) {}
         }
+    }
+
+    private void showCancelled() {
+        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_close_clear_cancel)
+            .setContentTitle("OmniDrop cancelled")
+            .setContentText("The background download was stopped.")
+            .setOnlyAlertOnce(true)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build();
+        getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification);
     }
 
     private String extractUrl(String value) {

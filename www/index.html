@@ -3,11 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>OmniDownloader 2.0 — Flagship Media Downloader</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>OmniDownloader 2.1 — Flagship Media Downloader</title>
+  <!-- V2.1: Tailwind + fonts are bundled locally — the UI renders perfectly offline -->
+  <script src="assets/vendor/tailwind.js"></script>
   <link rel="icon" type="image/png" href="assets/icon.png">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+    @font-face {
+      font-family: 'Plus Jakarta Sans';
+      font-style: normal;
+      font-weight: 200 800;
+      font-display: swap;
+      src: url('assets/vendor/PlusJakartaSans.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'JetBrains Mono';
+      font-style: normal;
+      font-weight: 400 700;
+      font-display: swap;
+      src: url('assets/vendor/JetBrainsMono.woff2') format('woff2');
+    }
 
     :root {
       --color-bg: #050811;
@@ -153,7 +167,7 @@
         <div>
           <div class="flex items-center gap-1.5">
             <span class="font-extrabold tracking-wide text-white text-base">OmniDownloader</span>
-            <span class="rounded-md bg-cyan-500/15 text-cyan-300 font-bold font-mono text-[9px] px-1.5 py-0.5 border border-cyan-500/25">v2.0</span>
+            <span id="headerVersionBadge" class="rounded-md bg-cyan-500/15 text-cyan-300 font-bold font-mono text-[9px] px-1.5 py-0.5 border border-cyan-500/25">v2.1</span>
           </div>
           <p class="text-[10px] text-zinc-400 font-medium">Flagship Media Engine</p>
         </div>
@@ -179,7 +193,7 @@
       <!-- TAB 1: GRAB STATION (FAST DL & MANUAL INSPECT) -->
       <!-- ============================================== -->
       <div id="viewGrab" class="space-y-4">
-        
+
         <!-- Clipboard Sniffer Banner -->
         <div id="clipboardBanner" class="hidden p-3 rounded-2xl glass-card-glow flex items-center justify-between gap-3 border border-cyan-500/30">
           <div class="flex items-center gap-2.5 min-w-0">
@@ -252,7 +266,7 @@
                   <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
                 </svg>
               </div>
-              <input id="inputManualUrl" type="url" placeholder="Paste any video or audio link here…" 
+              <input id="inputManualUrl" type="url" placeholder="Paste any video or audio link here…"
                 class="w-full bg-[#080d19]/80 border border-white/10 rounded-2xl pl-10 pr-20 py-3.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400 font-mono transition shadow-inner"
                 oninput="handleUrlInputChanged()" />
               <div class="absolute right-2 flex items-center gap-1">
@@ -355,11 +369,23 @@
         <div class="flex items-center justify-between">
           <div>
             <h2 class="text-base font-bold text-white">Media Vault</h2>
-            <p class="text-xs text-zinc-400">Watch, preview, and share downloaded media</p>
+            <p class="text-xs text-zinc-400">Real media library — watch, share, delete</p>
           </div>
-          <button onclick="handleOpenSystemGallery()" class="glass-btn px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white flex items-center gap-1.5">
-            <span>Phone Gallery</span>
-          </button>
+          <div class="flex items-center gap-2">
+            <button onclick="refreshVault()" class="glass-btn px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white">
+              ↻ Refresh
+            </button>
+            <button onclick="handleOpenSystemGallery()" class="glass-btn px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white">
+              Gallery
+            </button>
+          </div>
+        </div>
+
+        <!-- Vault filter chips -->
+        <div class="flex items-center gap-2">
+          <button id="vaultChipAll" onclick="setVaultFilter('all')" class="px-3 py-1 rounded-full text-[10px] font-bold border transition bg-cyan-500/15 text-cyan-300 border-cyan-500/30">ALL</button>
+          <button id="vaultChipVideo" onclick="setVaultFilter('video')" class="px-3 py-1 rounded-full text-[10px] font-bold border transition bg-white/5 text-zinc-400 border-white/10">VIDEO</button>
+          <button id="vaultChipAudio" onclick="setVaultFilter('audio')" class="px-3 py-1 rounded-full text-[10px] font-bold border transition bg-white/5 text-zinc-400 border-white/10">AUDIO</button>
         </div>
 
         <div id="vaultMediaGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -382,15 +408,15 @@
               </div>
               <div>
                 <h3 class="text-xs font-bold text-white">OmniDownloader Version</h3>
-                <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300">v2.0.0 (Build 20)</p>
+                <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300">v2.1.0 (Build 21)</p>
               </div>
             </div>
-            <button onclick="checkAppUpdates()" class="glass-btn-primary px-3.5 py-1.5 rounded-xl text-black font-bold text-xs">
+            <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="glass-btn-primary px-3.5 py-1.5 rounded-xl text-black font-bold text-xs">
               Check Updates
             </button>
           </div>
           <p class="text-[11px] text-zinc-400 leading-relaxed">
-            Checks releases from GitHub repository and installs upgrades directly with 1 tap.
+            Checks GitHub Releases and installs the update right inside the app — with a live download progress bar and 1-tap install.
           </p>
         </div>
 
@@ -399,21 +425,21 @@
           <div class="flex items-center justify-between">
             <div>
               <h3 class="text-xs font-bold text-white">Extractor Core (yt-dlp)</h3>
-              <p class="text-[11px] text-zinc-400">Chaquopy Native Python Runtime</p>
+              <p id="engineVersionText" class="text-[11px] text-zinc-400">Chaquopy Native Python Runtime</p>
             </div>
-            <span class="text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-              Active & Healthy
+            <span id="engineHealthBadge" class="text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+              Checking…
             </span>
           </div>
           <button onclick="syncEngineRules()" class="glass-btn w-full py-2.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white">
-            Sync Extractor Rules
+            Verify Engine Health
           </button>
         </div>
 
         <!-- Storage & Preferences -->
         <div class="glass-card rounded-3xl p-4 space-y-3 text-xs">
           <h3 class="font-bold text-white">Download Storage</h3>
-          
+
           <div class="flex items-center justify-between py-2 border-b border-white/5">
             <div>
               <p class="font-semibold text-zinc-200">Save Location</p>
@@ -429,6 +455,26 @@
             </div>
             <input type="checkbox" id="chkClipboard" checked onchange="toggleClipboardDetect(this.checked)" class="w-4 h-4 accent-cyan-500">
           </div>
+        </div>
+
+        <!-- About -->
+        <div class="glass-card rounded-3xl p-4 space-y-2 text-xs">
+          <h3 class="font-bold text-white">About</h3>
+          <div class="flex items-center justify-between py-1.5 border-b border-white/5">
+            <span class="text-zinc-400">App</span>
+            <span class="font-semibold text-zinc-200">OmniDownloader <span id="aboutVersion">v2.1.0</span></span>
+          </div>
+          <div class="flex items-center justify-between py-1.5 border-b border-white/5">
+            <span class="text-zinc-400">Engine</span>
+            <span class="font-mono text-[10px] text-zinc-200" id="aboutEngine">Chaquopy 3.11 + yt-dlp</span>
+          </div>
+          <div class="flex items-center justify-between py-1.5 border-b border-white/5">
+            <span class="text-zinc-400">Developer</span>
+            <span class="font-semibold text-zinc-200">MansoorjAhmad</span>
+          </div>
+          <button onclick="openGitHubRepo()" class="glass-btn w-full py-2.5 rounded-xl mt-1 text-xs font-semibold text-cyan-300 hover:text-white flex items-center justify-center gap-2">
+            ⭐ View on GitHub
+          </button>
         </div>
 
       </div>
@@ -464,7 +510,7 @@
 
       <button id="navSettings" onclick="switchTab('settings')" class="flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-zinc-400 font-medium text-[10px] hover:text-white transition cursor-pointer">
         <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
         </svg>
         <span>Settings</span>
       </button>
@@ -499,7 +545,7 @@
       <!-- Available Qualities Header -->
       <div class="pt-2 border-t border-white/10 space-y-3">
         <p class="text-[11px] font-extrabold text-zinc-300 uppercase tracking-wider">Select Available Quality:</p>
-        
+
         <!-- Dynamic Quality Buttons Container -->
         <div id="inspectorQualitiesList" class="space-y-2">
           <!-- Populated dynamically by JavaScript -->
@@ -523,36 +569,7 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- MODAL: IN-APP VIDEO PLAYER -->
-  <!-- ============================================== -->
-  <div id="playerModal" class="fixed inset-0 z-50 bg-black/95 backdrop-blur-3xl hidden flex flex-col justify-between p-4 safe-top safe-bottom">
-    <div class="flex items-center justify-between pb-2 border-b border-white/10">
-      <div class="min-w-0 flex-1 pr-3">
-        <h3 id="playerTitle" class="text-sm font-bold text-white truncate">Video Player</h3>
-        <p id="playerSubtitle" class="text-[10px] text-zinc-400">OmniDownloader Vault</p>
-      </div>
-      <button onclick="closeVideoPlayer()" class="p-2 text-zinc-400 hover:text-white text-base">✕</button>
-    </div>
-
-    <div class="flex-1 my-auto flex items-center justify-center relative">
-      <video id="activeVideoElement" controls playsinline class="w-full max-h-[70vh] rounded-2xl bg-black shadow-2xl border border-white/10"></video>
-    </div>
-
-    <div class="flex items-center justify-between pt-3 border-t border-white/10">
-      <div class="flex items-center gap-2">
-        <span class="text-[11px] text-zinc-400 font-mono">Speed:</span>
-        <button onclick="cyclePlaybackSpeed()" id="btnPlaybackSpeed" class="glass-btn px-2.5 py-1 rounded-lg text-xs font-mono font-bold text-cyan-300">1.0x</button>
-      </div>
-      <div class="flex items-center gap-2">
-        <button onclick="shareActiveVideo()" class="glass-btn-primary px-4 py-2 rounded-xl text-black font-bold text-xs flex items-center gap-1.5">
-          <span>Share Video</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================== -->
-  <!-- MODAL: APP UPDATE AVAILABLE -->
+  <!-- MODAL: APP UPDATE AVAILABLE (WITH LIVE PROGRESS) -->
   <!-- ============================================== -->
   <div id="updateModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl hidden flex items-center justify-center p-4">
     <div class="w-full max-w-md rounded-3xl glass-card-glow p-5 border border-cyan-500/35 space-y-4">
@@ -560,16 +577,31 @@
         <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
           Update Available
         </span>
-        <button onclick="closeUpdateModal()" class="text-zinc-400 hover:text-white text-sm">✕</button>
+        <button onclick="closeUpdateModal()" class="text-zinc-400 hover:text-white text-sm" id="updateModalClose">✕</button>
       </div>
 
-      <div>
+      <div id="updateInfoSection">
         <h4 id="updateVersionTitle" class="text-base font-bold text-white">OmniDownloader v2.x</h4>
         <p class="text-[11px] text-cyan-300 font-mono mt-0.5">Source: GitHub Releases</p>
         <div id="updateChangelog" class="text-xs text-zinc-300 mt-2 p-3 rounded-xl bg-black/40 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono border border-white/5"></div>
       </div>
 
-      <div class="flex gap-2 pt-1">
+      <!-- Live update download progress (V2.1) -->
+      <div id="updateProgressSection" class="hidden space-y-2">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-bold text-white">Downloading update…</p>
+          <span id="updateProgressPercent" class="text-xs font-mono font-bold text-cyan-300">0%</span>
+        </div>
+        <div class="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
+          <div id="updateProgressBar" class="h-full rounded-full bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="flex items-center justify-between text-[11px] font-mono text-zinc-400">
+          <span id="updateProgressRatio">0 MB / 0 MB</span>
+          <span id="updateProgressSpeed" class="text-emerald-400">⚡ --</span>
+        </div>
+      </div>
+
+      <div class="flex gap-2 pt-1" id="updateActionButtons">
         <button id="btnInstallUpdate" onclick="proceedInstallUpdate()" class="flex-1 py-3 rounded-xl glass-btn-primary text-black font-bold text-xs">
           Download & Install Update
         </button>
@@ -577,6 +609,11 @@
           Later
         </button>
       </div>
+
+      <!-- Cancel shown only during update download -->
+      <button id="btnCancelUpdate" onclick="cancelUpdateDownload()" class="hidden w-full py-2.5 rounded-xl glass-btn text-rose-300 border border-rose-500/30 text-xs font-semibold">
+        Cancel Update Download
+      </button>
     </div>
   </div>
 
@@ -602,7 +639,7 @@
         <p class="text-xs text-zinc-200 leading-relaxed font-medium" id="errorModalMessage">
           The download could not be completed for this link.
         </p>
-        
+
         <!-- Technical collapsible details -->
         <div id="errorTechnicalDetailsBox" class="hidden pt-2 border-t border-white/5 space-y-1.5">
           <p class="text-[10px] uppercase font-bold text-zinc-500">Technical Details:</p>
@@ -632,16 +669,28 @@
   <!-- JavaScript Logic -->
   <script>
     // ---------- State ----------
+    const GITHUB_REPO = 'MansoorjAhmad/OmniDownloader';
     let currentTab = 'grab';
     let activeDownload = null;
     let downloadsHistory = [];
     let detectedClipboardUrl = '';
     let currentInspectedUrl = '';
-    let playbackSpeeds = [1.0, 1.25, 1.5, 2.0];
-    let currentSpeedIndex = 0;
+    let installedVersion = '2.1.0';
+    let installedVersionCode = 21;
+    let latestPendingDownloadUrl = '';
+    let updateListenerAttached = false;
+
+    // Vault state
+    let vaultItems = [];
+    let vaultFilter = 'all';
+    const vaultThumbCache = {};
 
     // Zero vibration
     function triggerHaptic() {}
+
+    function getEngine() {
+      return window.Capacitor?.Plugins?.OmniEngine || null;
+    }
 
     // ---------- Navigation ----------
     function switchTab(tab) {
@@ -665,7 +714,7 @@
       } else if (tab === 'vault') {
         document.getElementById('viewVault')?.classList.remove('hidden');
         document.getElementById('navVault').className = "flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-cyan-400 font-bold text-[10px] transition cursor-pointer";
-        renderVaultGrid();
+        refreshVault();
       } else if (tab === 'settings') {
         document.getElementById('viewSettings')?.classList.remove('hidden');
         document.getElementById('navSettings').className = "flex-1 py-2 rounded-xl flex flex-col items-center gap-0.5 text-cyan-400 font-bold text-[10px] transition cursor-pointer";
@@ -677,8 +726,9 @@
       if (localStorage.getItem('omni_clipboard_detect') === '0') return;
       try {
         let text = "";
-        if (window.Capacitor?.Plugins?.OmniEngine?.getClipboardText) {
-          const res = await window.Capacitor.Plugins.OmniEngine.getClipboardText();
+        const engine = getEngine();
+        if (engine?.getClipboardText) {
+          const res = await engine.getClipboardText();
           text = res.text || "";
         } else if (navigator.clipboard?.readText) {
           text = await navigator.clipboard.readText();
@@ -703,8 +753,9 @@
     }
 
     function handlePasteButton() {
-      if (window.Capacitor?.Plugins?.OmniEngine?.getClipboardText) {
-        window.Capacitor.Plugins.OmniEngine.getClipboardText().then(res => {
+      const engine = getEngine();
+      if (engine?.getClipboardText) {
+        engine.getClipboardText().then(res => {
           if (res.text) {
             document.getElementById('inputManualUrl').value = res.text.trim();
             handleUrlInputChanged();
@@ -730,6 +781,18 @@
       handleUrlInputChanged();
     }
 
+    async function grabClipboardUrl() {
+      const engine = getEngine();
+      let text = "";
+      if (engine?.getClipboardText) {
+        const res = await engine.getClipboardText();
+        text = res.text || "";
+      } else if (navigator.clipboard?.readText) {
+        text = await navigator.clipboard.readText();
+      }
+      return extractUrl(text);
+    }
+
     // ---------- 1. FEATURE ONE: FAST DL (Circle Button Action) ----------
     async function handleFastDlClick() {
       let val = document.getElementById('inputManualUrl').value.trim();
@@ -738,14 +801,7 @@
       // If manual input is empty, grab from clipboard automatically
       if (!clean) {
         try {
-          let text = "";
-          if (window.Capacitor?.Plugins?.OmniEngine?.getClipboardText) {
-            const res = await window.Capacitor.Plugins.OmniEngine.getClipboardText();
-            text = res.text || "";
-          } else if (navigator.clipboard?.readText) {
-            text = await navigator.clipboard.readText();
-          }
-          clean = extractUrl(text);
+          clean = await grabClipboardUrl();
           if (clean) {
             document.getElementById('inputManualUrl').value = clean;
             handleUrlInputChanged();
@@ -782,14 +838,7 @@
       // If manual input is empty, try grabbing from clipboard
       if (!clean) {
         try {
-          let text = "";
-          if (window.Capacitor?.Plugins?.OmniEngine?.getClipboardText) {
-            const res = await window.Capacitor.Plugins.OmniEngine.getClipboardText();
-            text = res.text || "";
-          } else if (navigator.clipboard?.readText) {
-            text = await navigator.clipboard.readText();
-          }
-          clean = extractUrl(text);
+          clean = await grabClipboardUrl();
           if (clean) {
             document.getElementById('inputManualUrl').value = clean;
             handleUrlInputChanged();
@@ -815,9 +864,10 @@
       if (inspectBtnText) inspectBtnText.innerText = 'Scanning Qualities…';
 
       try {
-        if (window.Capacitor?.Plugins?.OmniEngine?.extract) {
-          const info = await window.Capacitor.Plugins.OmniEngine.extract({ url: url });
-          
+        const engine = getEngine();
+        if (engine?.extract) {
+          const info = await engine.extract({ url: url });
+
           document.getElementById('inspectorThumbnail').src = info.thumbnail || 'assets/logo.png';
           document.getElementById('inspectorTitle').innerText = info.title || 'Video';
           document.getElementById('inspectorUploader').innerText = info.uploader || (info.platform || 'Media').toUpperCase();
@@ -832,9 +882,8 @@
           document.getElementById('inspectorModal')?.classList.remove('hidden');
         }
       } catch (e) {
-        showToast('Inspecting…', 'Showing available resolutions…', 'info');
-        renderInspectorQualities([]);
-        document.getElementById('inspectorModal')?.classList.remove('hidden');
+        const msg = (e && e.message) ? e.message : 'This public link could not be inspected.';
+        showToast('Inspect Failed', msg, 'error');
       } finally {
         if (inspectBtnText) inspectBtnText.innerText = 'Inspect Available Qualities';
       }
@@ -857,7 +906,7 @@
 
       const list = document.getElementById('inspectorQualitiesList');
       list.innerHTML = formats.map(fmt => `
-        <div id="quality_card_${fmt.id}" onclick="selectInspectorQuality('${fmt.id}', '${fmt.label}')" 
+        <div id="quality_card_${fmt.id}" onclick="selectInspectorQuality('${fmt.id}', '${fmt.label}')"
           class="quality-card glass-btn p-3.5 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition ${fmt.id === selectedInspectorQuality ? 'border-cyan-400 bg-cyan-500/15 ring-1 ring-cyan-400/50' : 'hover:border-white/20'}">
           <div class="flex items-center gap-3 min-w-0">
             <span class="px-2.5 py-1 rounded-lg ${fmt.id === selectedInspectorQuality ? 'bg-cyan-500 text-black font-black' : 'bg-cyan-500/20 text-cyan-300 font-bold'} font-mono text-xs border border-cyan-500/30 flex-shrink-0 transition">
@@ -927,13 +976,14 @@
       document.getElementById('liveDownloadEta').innerText = "⏳ --";
 
       // Register live progress listener
-      if (window.Capacitor?.Plugins?.OmniEngine) {
-        window.Capacitor.Plugins.OmniEngine.removeAllListeners?.('onProgress');
-        window.Capacitor.Plugins.OmniEngine.addListener('onProgress', (progress) => {
+      const engine = getEngine();
+      if (engine) {
+        engine.removeAllListeners?.('onProgress');
+        engine.addListener('onProgress', (progress) => {
           updateLiveCard(progress);
         });
 
-        window.Capacitor.Plugins.OmniEngine.download({ url: url, formatId: formatId })
+        engine.download({ url: url, formatId: formatId })
           .then(res => {
             onDownloadSuccess(res);
           })
@@ -999,6 +1049,11 @@
       const errStr = (err && err.message) ? err.message : (typeof err === 'string' ? err : JSON.stringify(err));
       currentRawError = errStr;
 
+      if (errStr.toLowerCase().includes('cancel')) {
+        showToast('Download Cancelled', 'The download was stopped.', 'info');
+        return;
+      }
+
       let friendly = "The media stream could not be downloaded. The video may be private, require a login, or the network connection was interrupted.";
       const lower = errStr.toLowerCase();
       if (lower.includes("private") || lower.includes("login") || lower.includes("sign in") || lower.includes("account")) {
@@ -1050,81 +1105,166 @@
       if (lastFailedUrl) {
         initiateDownload(lastFailedUrl, lastFailedFormat);
       } else {
-        handleCircleActionClick();
+        handleFastDlClick();
       }
     }
 
     function cancelActiveDownload() {
-      if (window.Capacitor?.Plugins?.OmniEngine?.cancelDownload) {
-        window.Capacitor.Plugins.OmniEngine.cancelDownload();
-      }
+      const engine = getEngine();
+      engine?.cancelDownload?.();
       document.getElementById('liveDownloadCard')?.classList.add('hidden');
       showToast('Cancelled', 'Download was stopped', 'info');
     }
 
-    // ---------- Vault & Media Player ----------
+    // ---------- Media Vault (real library) ----------
+    function setVaultFilter(filter) {
+      vaultFilter = filter;
+      renderVaultGrid();
+    }
+
+    function refreshVault() {
+      const engine = getEngine();
+      if (engine?.listMedia) {
+        engine.listMedia().then(res => {
+          const videos = (res.videos || []).map(v => ({ ...v, kind: 'video' }));
+          const audios = (res.audios || []).map(a => ({ ...a, kind: 'audio' }));
+          vaultItems = [...videos, ...audios];
+          renderVaultGrid();
+        }).catch(() => {
+          vaultItems = [];
+          renderVaultGrid();
+        });
+      } else {
+        // Web preview fallback: show download history records
+        vaultItems = [];
+        renderVaultGrid();
+      }
+    }
+
+    function filteredVaultItems() {
+      if (vaultFilter === 'video') return vaultItems.filter(i => i.isVideo);
+      if (vaultFilter === 'audio') return vaultItems.filter(i => !i.isVideo);
+      return vaultItems;
+    }
+
     function renderVaultGrid() {
       const grid = document.getElementById('vaultMediaGrid');
       if (!grid) return;
-      if (downloadsHistory.length === 0) {
+
+      ['vaultChipAll', 'vaultChipVideo', 'vaultChipAudio'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.className = "px-3 py-1 rounded-full text-[10px] font-bold border transition bg-white/5 text-zinc-400 border-white/10";
+      });
+      const activeChip = { all: 'vaultChipAll', video: 'vaultChipVideo', audio: 'vaultChipAudio' }[vaultFilter];
+      if (activeChip) {
+        document.getElementById(activeChip).className = "px-3 py-1 rounded-full text-[10px] font-bold border transition bg-cyan-500/15 text-cyan-300 border-cyan-500/30";
+      }
+
+      // Real library empty state (or history fallback for web preview)
+      const items = filteredVaultItems();
+      if (items.length === 0) {
+        const engine = getEngine();
+        if (!engine?.listMedia && downloadsHistory.length > 0) {
+          grid.innerHTML = downloadsHistory.map(item => `
+            <div class="glass-card p-4 rounded-3xl space-y-2 border border-white/5">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-mono text-cyan-300 font-medium">${item.date}</span>
+                <span class="text-[10px] text-emerald-400 font-medium">✓ In Gallery</span>
+              </div>
+              <h4 class="text-xs font-bold text-white truncate">${item.title}</h4>
+              <p class="text-[10px] text-zinc-400 font-mono truncate">${item.destination}</p>
+            </div>
+          `).join('');
+          return;
+        }
         grid.innerHTML = `
           <div class="col-span-full p-8 rounded-3xl glass-card text-center text-xs text-zinc-400">
-            No downloaded media found yet. Completed downloads will appear here.
+            No ${vaultFilter !== 'all' ? vaultFilter + ' ' : ''}media found on this device yet. Completed downloads appear here automatically.
           </div>
         `;
         return;
       }
-      grid.innerHTML = downloadsHistory.map(item => `
-        <div class="glass-card p-4 rounded-3xl space-y-2 border border-white/5">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-mono text-cyan-300 font-medium">${item.date}</span>
-            <span class="text-[10px] text-emerald-400 font-medium">✓ In Gallery</span>
+
+      grid.innerHTML = items.map(item => {
+        const key = (item.isVideo ? 'v' : 'a') + item.id;
+        const thumb = vaultThumbCache[key];
+        const dateStr = item.dateModified ? new Date(item.dateModified * 1000).toLocaleDateString() : '';
+        return `
+        <div class="glass-card rounded-3xl overflow-hidden border border-white/5">
+          <div class="aspect-video w-full bg-black/50 relative flex items-center justify-center overflow-hidden">
+            ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover">` : `
+              <div class="text-center">
+                <div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
+                <p class="text-[9px] text-zinc-500 font-mono">${item.isVideo ? 'VIDEO' : 'AUDIO'}</p>
+              </div>`}
+            <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 hover:opacity-100 active:opacity-100 transition">
+              <span class="w-12 h-12 rounded-full glass-btn-primary flex items-center justify-center text-black text-lg font-bold">▶</span>
+            </button>
           </div>
-          <h4 class="text-xs font-bold text-white truncate">${item.title}</h4>
-          <p class="text-[10px] text-zinc-400 font-mono truncate">${item.destination}</p>
-          <div class="flex gap-2 pt-1">
-            <button onclick="handleOpenSystemGallery()" class="glass-btn flex-1 py-1.5 rounded-xl text-white font-medium text-[11px]">
-              Open Gallery
-            </button>
-            <button onclick="deleteVaultItem('${item.id}')" class="glass-btn px-2.5 py-1.5 rounded-xl text-zinc-400 hover:text-rose-400 text-[11px]">
-              ✕
-            </button>
+          <div class="p-3 space-y-1.5">
+            <h4 class="text-xs font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
+            <div class="flex items-center justify-between text-[10px] font-mono text-zinc-400">
+              <span class="truncate">${escapeHtml(item.folder || '')}</span>
+              <span>${formatBytesJs(item.size)}${dateStr ? ' • ' + dateStr : ''}</span>
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="glass-btn flex-1 py-1.5 rounded-xl text-white font-medium text-[11px]">Play</button>
+              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="glass-btn px-2.5 py-1.5 rounded-xl text-cyan-300 text-[11px]">↗</button>
+              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="glass-btn px-2.5 py-1.5 rounded-xl text-rose-300 text-[11px]">✕</button>
+            </div>
           </div>
         </div>
-      `).join('');
+        `;
+      }).join('');
+
+      // Lazy-load thumbnails
+      items.forEach(item => {
+        const key = (item.isVideo ? 'v' : 'a') + item.id;
+        if (vaultThumbCache[key] !== undefined) return;
+        vaultThumbCache[key] = '';
+        const engine = getEngine();
+        if (engine?.getThumbnail) {
+          engine.getThumbnail({ id: item.id, isVideo: item.isVideo }).then(res => {
+            if (res && res.data) {
+              vaultThumbCache[key] = res.data;
+              renderVaultGrid();
+            }
+          }).catch(() => {});
+        }
+      });
     }
 
-    function closeVideoPlayer() {
-      const modal = document.getElementById('playerModal');
-      const video = document.getElementById('activeVideoElement');
-      if (video) {
-        video.pause();
-        video.src = '';
+    function playVaultMedia(id, isVideo) {
+      const engine = getEngine();
+      const res = engine?.openMedia?.({ id: id, isVideo: isVideo });
+      if (res && res.catch) {
+        res.catch(err => showToast('Cannot Play', err?.message || 'No media player found', 'error'));
       }
-      modal?.classList.add('hidden');
     }
 
-    function cyclePlaybackSpeed() {
-      currentSpeedIndex = (currentSpeedIndex + 1) % playbackSpeeds.length;
-      const speed = playbackSpeeds[currentSpeedIndex];
-      const video = document.getElementById('activeVideoElement');
-      if (video) video.playbackRate = speed;
-      document.getElementById('btnPlaybackSpeed').innerText = `${speed.toFixed(1)}x`;
+    function shareVaultMedia(id, isVideo) {
+      const engine = getEngine();
+      const res = engine?.shareMedia?.({ id: id, isVideo: isVideo });
+      if (res && res.catch) {
+        res.catch(err => showToast('Cannot Share', err?.message || 'Sharing failed', 'error'));
+      }
     }
 
-    function shareActiveVideo() {
-      showToast('Sharing Video', 'Opening Android Share sheet…', 'info');
-    }
-
-    function deleteVaultItem(id) {
-      downloadsHistory = downloadsHistory.filter(x => x.id !== id);
-      saveHistory();
-      renderVaultGrid();
-      renderQueueList();
+    function deleteVaultMedia(id, isVideo) {
+      const engine = getEngine();
+      if (!engine?.deleteMedia) return;
+      engine.deleteMedia({ id: id, isVideo: isVideo })
+        .then(() => {
+          showToast('Delete Requested', 'Confirm the deletion in the system dialog.', 'info');
+          setTimeout(refreshVault, 1200);
+        })
+        .catch(() => {
+          showToast('Cannot Delete', 'Storage did not allow deleting this file.', 'error');
+        });
     }
 
     function handleOpenSystemGallery() {
-      window.Capacitor?.Plugins?.OmniEngine?.openGallery?.();
+      getEngine()?.openGallery?.();
     }
 
     // ---------- Queue List ----------
@@ -1154,61 +1294,198 @@
       downloadsHistory = [];
       saveHistory();
       renderQueueList();
-      renderVaultGrid();
       showToast('History Cleared', 'All download records removed', 'info');
     }
 
-    // ---------- Auto-Update & Engine Sync ----------
-    let latestPendingDownloadUrl = "";
+    // ---------- In-App Auto-Update (V2.1: real download + install) ----------
+    async function getInstalledVersionInfo() {
+      const engine = getEngine();
+      if (engine?.getAppInfo) {
+        try {
+          const info = await engine.getAppInfo();
+          installedVersion = info.versionName || installedVersion;
+          installedVersionCode = info.versionCode || installedVersionCode;
+        } catch (e) {}
+      }
+      return { versionName: installedVersion, versionCode: installedVersionCode };
+    }
 
-    async function checkAppUpdates() {
-      showToast('Checking Updates', 'Connecting to GitHub Releases…', 'info');
+    function parseVersion(v) {
+      return String(v || '0').replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+    }
+
+    function isNewerVersion(remote, local) {
+      const r = parseVersion(remote), l = parseVersion(local);
+      const len = Math.max(r.length, l.length);
+      for (let i = 0; i < len; i++) {
+        const rv = r[i] || 0, lv = l[i] || 0;
+        if (rv > lv) return true;
+        if (rv < lv) return false;
+      }
+      return false;
+    }
+
+    async function checkAppUpdates(silent) {
+      const btn = document.getElementById('btnCheckUpdates');
+      if (!silent && btn) { btn.disabled = true; btn.innerText = 'Checking…'; }
+      if (!silent) showToast('Checking Updates', 'Connecting to GitHub Releases…', 'info');
+
+      const local = await getInstalledVersionInfo();
+
       try {
-        const resp = await fetch('https://api.github.com/repos/MansoorjAhmad/OmniDownloader/releases/latest');
-        if (resp.status === 404) {
-          showToast('Up to Date', 'OmniDownloader v2.0.0 is the latest release', 'success');
-          return;
-        }
-        const data = await resp.json();
-        if (!data || !data.tag_name) {
-          showToast('Up to Date', 'OmniDownloader v2.0.0 is the latest release', 'success');
-          return;
-        }
-        const remoteTag = data.tag_name;
-        const assets = data.assets || [];
-        const apk = assets.find(a => a.name && a.name.endsWith('.apk'));
+        const resp = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+          headers: { 'Accept': 'application/vnd.github+json' }
+        });
 
-        if (remoteTag !== 'v2.0.0' && remoteTag !== '2.0.0' && apk) {
+        if (resp.status === 404) {
+          if (!silent) showToast('No Releases Yet', 'No published release found on GitHub.', 'info');
+          return;
+        }
+        if (!resp.ok) {
+          if (!silent) showToast('Update Check Failed', `GitHub returned HTTP ${resp.status}.`, 'error');
+          return;
+        }
+
+        const data = await resp.json();
+        const remoteTag = data.tag_name || '';
+        const apk = (data.assets || []).find(a => a.name && a.name.toLowerCase().endsWith('.apk'));
+
+        if (apk && isNewerVersion(remoteTag, local.versionName)) {
           latestPendingDownloadUrl = apk.browser_download_url;
           document.getElementById('updateVersionTitle').innerText = `${data.name || remoteTag} Available`;
-          document.getElementById('updateChangelog').innerText = data.body || 'Performance updates and platform extractors.';
+          document.getElementById('updateChangelog').innerText =
+            `Installed: v${local.versionName}\nLatest: ${remoteTag}\nSize: ${formatBytesJs(apk.size)}\n\n` + (data.body || 'Performance updates and platform extractors.');
+          resetUpdateModalUI();
           document.getElementById('updateModal')?.classList.remove('hidden');
         } else {
-          showToast('Up to Date', 'OmniDownloader v2.0.0 is the latest release', 'success');
+          if (!silent) showToast('Up to Date', `OmniDownloader v${local.versionName} is the latest release.`, 'success');
         }
       } catch (err) {
-        showToast('Up to Date', 'OmniDownloader v2.0.0 is the latest version', 'success');
+        if (!silent) showToast('Update Check Failed', 'No internet connection — try again when online.', 'error');
+      } finally {
+        if (!silent && btn) { btn.disabled = false; btn.innerText = 'Check Updates'; }
       }
+    }
+
+    function resetUpdateModalUI() {
+      document.getElementById('updateInfoSection')?.classList.remove('hidden');
+      document.getElementById('updateProgressSection')?.classList.add('hidden');
+      document.getElementById('updateActionButtons')?.classList.remove('hidden');
+      document.getElementById('btnCancelUpdate')?.classList.add('hidden');
+      document.getElementById('updateModalClose').style.display = '';
+      const bar = document.getElementById('updateProgressBar');
+      bar.style.width = '0%';
+      bar.classList.remove('animate-pulse');
+      document.getElementById('updateProgressPercent').innerText = '0%';
+      document.getElementById('updateProgressRatio').innerText = '0 MB / 0 MB';
+      document.getElementById('updateProgressSpeed').innerText = '⚡ --';
     }
 
     function closeUpdateModal() {
       document.getElementById('updateModal')?.classList.add('hidden');
     }
 
-    function proceedInstallUpdate() {
-      if (latestPendingDownloadUrl) {
-        showToast('Starting Update', 'Opening APK download…', 'info');
-        window.open(latestPendingDownloadUrl, '_system');
+    function attachUpdateProgressListener() {
+      if (updateListenerAttached) return;
+      const engine = getEngine();
+      if (engine?.addListener) {
+        engine.addListener('onUpdateProgress', (p) => {
+          const bar = document.getElementById('updateProgressBar');
+          if (p.indeterminate) {
+            bar.style.width = '100%';
+            bar.classList.add('animate-pulse');
+            document.getElementById('updateProgressPercent').innerText = '--';
+          } else {
+            bar.classList.remove('animate-pulse');
+            const pct = p.percent || 0;
+            bar.style.width = Math.max(2, pct) + '%';
+            document.getElementById('updateProgressPercent').innerText = pct + '%';
+          }
+          if (p.sizeFormatted) document.getElementById('updateProgressRatio').innerText = p.sizeFormatted;
+          if (p.speedFormatted) document.getElementById('updateProgressSpeed').innerText = '⚡ ' + p.speedFormatted;
+        });
+        updateListenerAttached = true;
       }
-      closeUpdateModal();
     }
 
+    async function proceedInstallUpdate() {
+      const engine = getEngine();
+      if (!latestPendingDownloadUrl) return;
+
+      if (!engine?.downloadUpdate || !engine?.installApk) {
+        // Web preview fallback: open the release page
+        window.open(latestPendingDownloadUrl, '_system');
+        return;
+      }
+
+      // Switch modal into progress mode
+      document.getElementById('updateInfoSection')?.classList.add('hidden');
+      document.getElementById('updateActionButtons')?.classList.add('hidden');
+      document.getElementById('updateProgressSection')?.classList.remove('hidden');
+      document.getElementById('btnCancelUpdate')?.classList.remove('hidden');
+      document.getElementById('updateModalClose').style.display = 'none';
+      attachUpdateProgressListener();
+
+      try {
+        const res = await engine.downloadUpdate({ url: latestPendingDownloadUrl });
+        document.getElementById('updateProgressBar').style.width = '100%';
+        showToast('Update Downloaded', 'Launching installer…', 'success');
+        try {
+          await engine.installApk({ path: res.path });
+          closeUpdateModal();
+        } catch (installErr) {
+          const msg = (installErr && installErr.message) ? installErr.message : 'Install failed';
+          if (msg.toLowerCase().includes('unknown') || msg.toLowerCase().includes('permission')) {
+            showToast('Permission Needed', 'Allow "Install unknown apps" for OmniDownloader in Android settings, then retry.', 'info');
+          } else {
+            showToast('Install Failed', msg, 'error');
+          }
+        }
+      } catch (err) {
+        const msg = (err && err.message) ? err.message : 'Update failed';
+        if (msg.toLowerCase().includes('cancel')) {
+          showToast('Update Cancelled', 'The update download was stopped.', 'info');
+        } else {
+          showToast('Update Failed', msg, 'error');
+        }
+      } finally {
+        resetUpdateModalUI();
+      }
+    }
+
+    function cancelUpdateDownload() {
+      getEngine()?.cancelUpdateDownload?.();
+    }
+
+    // ---------- Engine health ----------
     function syncEngineRules() {
-      showToast('Engine Synced', 'yt-dlp extractors verified and ready', 'success');
+      const engine = getEngine();
+      const badge = document.getElementById('engineHealthBadge');
+      const versionText = document.getElementById('engineVersionText');
+      if (engine?.engineInfo) {
+        badge.innerText = 'Checking…';
+        engine.engineInfo().then(info => {
+          badge.innerText = '✓ Healthy';
+          badge.className = 'text-[10px] font-mono font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full';
+          versionText.innerText = `yt-dlp ${info.ytDlpVersion} • Python ${info.pythonVersion}`;
+          document.getElementById('aboutEngine').innerText = `yt-dlp ${info.ytDlpVersion}`;
+          showToast('Engine Healthy', `yt-dlp ${info.ytDlpVersion} verified and ready.`, 'success');
+        }).catch(err => {
+          badge.innerText = '✕ Error';
+          badge.className = 'text-[10px] font-mono font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full';
+          showToast('Engine Error', err?.message || 'Engine check failed', 'error');
+        });
+      } else {
+        showToast('Engine Synced', 'yt-dlp extractors verified and ready', 'success');
+      }
+    }
+
+    function openGitHubRepo() {
+      window.open(`https://github.com/${GITHUB_REPO}`, '_system');
     }
 
     function handleChooseFolder() {
-      window.Capacitor?.Plugins?.OmniEngine?.chooseFolder?.();
+      getEngine()?.chooseFolder?.();
     }
 
     function toggleClipboardDetect(enabled) {
@@ -1256,6 +1533,18 @@
       return `${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
+    function formatBytesJs(bytes) {
+      if (!bytes || bytes <= 0) return '0 MB';
+      const mb = bytes / (1024 * 1024);
+      if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
+      if (mb >= 1) return mb.toFixed(1) + ' MB';
+      return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    }
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
     function saveHistory() {
       try {
         localStorage.setItem('omni_v2_history', JSON.stringify(downloadsHistory));
@@ -1274,12 +1563,27 @@
     window.addEventListener('DOMContentLoaded', () => {
       loadHistory();
 
+      // Dynamic version display everywhere (header badge, settings, about)
+      getInstalledVersionInfo().then(local => {
+        const shortVer = 'v' + String(local.versionName).replace(/^v/i, '').split('.').slice(0, 2).join('.');
+        document.getElementById('headerVersionBadge').innerText = shortVer;
+        document.getElementById('appVersionDisplay').innerText = `v${local.versionName} (Build ${local.versionCode})`;
+        document.getElementById('aboutVersion').innerText = 'v' + local.versionName;
+      });
+
+      // Verify engine badge in settings
+      syncEngineRules();
+
       // Check clipboard on launch
       setTimeout(checkClipboard, 500);
 
+      // Silent update check shortly after launch (only pops a modal when an update exists)
+      setTimeout(() => checkAppUpdates(true), 4000);
+
       // Check shared intent on launch
-      if (window.Capacitor?.Plugins?.OmniEngine?.getSharedUrl) {
-        window.Capacitor.Plugins.OmniEngine.getSharedUrl().then(res => {
+      const engine = getEngine();
+      if (engine?.getSharedUrl) {
+        engine.getSharedUrl().then(res => {
           if (res?.url) {
             const clean = extractUrl(res.url);
             if (clean) {

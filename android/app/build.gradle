@@ -5,11 +5,24 @@ chaquopy {
     defaultConfig {
         version = "3.11"
         pip {
-            install("yt-dlp")
+            install("yt-dlp==2026.8.19")
             install("certifi")
         }
     }
 }
+
+// Signing: read from android/keystore.properties (gitignored) or environment
+// variables (CI). Never hardcode credentials in this file.
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+def ksStoreFile = System.getenv("KEYSTORE_FILE") ?: keystoreProps.getProperty("storeFile")
+def ksStorePassword = System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps.getProperty("storePassword")
+def ksKeyAlias = System.getenv("KEY_ALIAS") ?: keystoreProps.getProperty("keyAlias")
+def ksKeyPassword = System.getenv("KEY_PASSWORD") ?: keystoreProps.getProperty("keyPassword")
+def releaseSigningAvailable = ksStoreFile != null && file(ksStoreFile).exists()
 
 android {
     namespace "com.omnidownloader.app"
@@ -21,8 +34,8 @@ android {
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
-        versionCode 20
-        versionName "2.0.0"
+        versionCode 21
+        versionName "2.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -31,20 +44,18 @@ android {
         }
     }
     signingConfigs {
-        release {
-            def keystoreFile = file('C:/Users/Manso/.gemini/antigravity/scratch/omni-release.keystore')
-            if (keystoreFile.exists()) {
-                storeFile keystoreFile
-                storePassword 'omni12345'
-                keyAlias 'omnikey'
-                keyPassword 'omni12345'
+        if (releaseSigningAvailable) {
+            release {
+                storeFile file(ksStoreFile)
+                storePassword ksStorePassword
+                keyAlias ksKeyAlias
+                keyPassword ksKeyPassword
             }
         }
     }
     buildTypes {
         release {
-            def keystoreFile = file('C:/Users/Manso/.gemini/antigravity/scratch/omni-release.keystore')
-            if (keystoreFile.exists()) {
+            if (releaseSigningAvailable) {
                 signingConfig signingConfigs.release
             }
             minifyEnabled false

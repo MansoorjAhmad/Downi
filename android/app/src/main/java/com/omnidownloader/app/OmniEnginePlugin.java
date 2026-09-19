@@ -1,21 +1,25 @@
 package com.omnidownloader.app;
 
-import android.app.DownloadManager;
 import android.Manifest;
+import android.app.DownloadManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Build;
 import android.provider.MediaStore;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.provider.DocumentsContract;
+import android.util.Base64;
 import android.webkit.MimeTypeMap;
 
 import com.getcapacitor.JSObject;
@@ -33,20 +37,24 @@ import com.chaquo.python.android.AndroidPlatform;
 import com.chaquo.python.Python;
 import com.chaquo.python.PyObject;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.Locale;
 
 /**
- * Native download bridge for OmniDownloader V2.0.
- * Passes real-time download progress, file size, speed, and ETA to WebView.
- * Provides in-app APK installer and device info methods.
+ * Native download bridge for OmniDownloader V2.1.
+ * Real-time download progress, file size, speed, and ETA to WebView.
+ * True in-app updater (download with progress bar + APK install),
+ * engine health check, and Media Vault backed by MediaStore.
  */
 @CapacitorPlugin(name = "OmniEngine", permissions = {
     @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS })
@@ -58,8 +66,10 @@ public class OmniEnginePlugin extends Plugin {
     private PluginCall activeCall;
     private Runnable progressWatcher;
     private final ExecutorService engineExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService miscExecutor = Executors.newFixedThreadPool(2);
     private volatile boolean engineActive = false;
     private volatile boolean cancelRequested = false;
+    private volatile boolean updateCancelled = false;
 
     @PluginMethod
     public void chooseFolder(PluginCall call) {
@@ -119,8 +129,8 @@ public class OmniEnginePlugin extends Plugin {
             result.put("engine", "Chaquopy 3.11 + yt-dlp");
             call.resolve(result);
         } catch (Exception e) {
-            result.put("versionName", "2.0.0");
-            result.put("versionCode", 20);
+            result.put("versionName", "2.1.0");
+            result.put("versionCode", 21);
             call.resolve(result);
         }
     }
@@ -147,6 +157,282 @@ public class OmniEnginePlugin extends Plugin {
             call.resolve();
         } catch (Exception e) {
             call.reject("Could not launch package installer: " + e.getMessage(), e);
+        }
+    }
+
+    // ---------- In-App Updater: download APK with live progress ----------
+
+    @PluginMethod
+    public void downloadUpdate(PluginCall call) {
+        final String fileUrl = call.getString("url", "");
+        if (fileUrl == null || !fileUrl.startsWith("http")) {
+            call.reject("Invalid update URL.");
+            return;
+        }
+        if (updateCancelled) updateCancelled = false;
+        call.setKeepAlive(true);
+
+        miscExecutor.execute(() -> {
+            File destDir = getContext().getExternalFilesDir("updates");
+            if (destDir == null) destDir = getContext().getFilesDir();
+            if (!destDir.exists()) destDir.mkdirs();
+            final File destFile = new File(destDir, "omni-update.apk");
+            long lastEvent = 0;
+
+            try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(fileUrl).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(20000);
+                conn.setReadTimeout(30000);
+                conn.setRequestProperty("User-Agent", "OmniDownloader/" + getAppVersionName());
+                conn.connect();
+
+                int code = conn.getResponseCode();
+                if (code < 200 || code >= 300) {
+                    call.reject("Update server returned HTTP " + code);
+                    return;
+                }
+
+                long total = conn.getContentLength();
+                InputStream input = conn.getInputStream();
+                OutputStream output = new java.io.FileOutputStream(destFile);
+                byte[] buffer = new byte[64 * 1024];
+                long downloaded = 0;
+                long start = System.currentTimeMillis();
+
+                try {
+                    int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (updateCancelled) {
+                            call.reject("Update download cancelled.");
+                            return;
+                        }
+                        output.write(buffer, 0, read);
+                        downloaded += read;
+                        long now = System.currentTimeMillis();
+                        if (now - lastEvent > 250) {
+                            lastEvent = now;
+                            long elapsed = Math.max(1, now - start);
+                            double speed = downloaded / (elapsed / 1000.0);
+                            int percent = total > 0 ? (int) (downloaded * 100 / total) : 0;
+                            JSObject progress = new JSObject();
+                            progress.put("percent", percent);
+                            progress.put("downloadedBytes", downloaded);
+                            progress.put("totalBytes", total);
+                            progress.put("indeterminate", total <= 0);
+                            progress.put("sizeFormatted", formatBytes(downloaded) + (total > 0 ? " / " + formatBytes(total) : ""));
+                            progress.put("speedFormatted", formatSpeed(speed));
+                            notifyListeners("onUpdateProgress", progress);
+                        }
+                    }
+                } finally {
+                    try { input.close(); } catch (Exception ignored) {}
+                    try { output.close(); } catch (Exception ignored) {}
+                    conn.disconnect();
+                }
+
+                if (destFile.length() <= 0) {
+                    call.reject("Downloaded update file is empty.");
+                    return;
+                }
+
+                JSObject result = new JSObject();
+                result.put("path", destFile.getAbsolutePath());
+                result.put("size", destFile.length());
+                call.resolve(result);
+            } catch (Exception error) {
+                if (updateCancelled) {
+                    call.reject("Update download cancelled.");
+                } else {
+                    call.reject("Update download failed: " + (error.getMessage() != null ? error.getMessage() : "network error"), error);
+                }
+            }
+        });
+    }
+
+    @PluginMethod
+    public void cancelUpdateDownload(PluginCall call) {
+        updateCancelled = true;
+        call.resolve();
+    }
+
+    // ---------- Engine health check ----------
+
+    @PluginMethod
+    public void engineInfo(PluginCall call) {
+        miscExecutor.execute(() -> {
+            try {
+                if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
+                PyObject response = Python.getInstance().getModule("downloader").callAttr("engine_info");
+                JSONObject info = new JSONObject(response.toString());
+                JSObject result = new JSObject();
+                result.put("engine", info.optString("engine", "Chaquopy 3.11 + yt-dlp"));
+                result.put("ytDlpVersion", info.optString("yt_dlp_version", ""));
+                result.put("pythonVersion", info.optString("python", ""));
+                result.put("healthy", true);
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject("Engine check failed: " + error.getMessage(), error);
+            }
+        });
+    }
+
+    // ---------- Media Vault (real MediaStore library) ----------
+
+    @PluginMethod
+    public void listMedia(PluginCall call) {
+        miscExecutor.execute(() -> {
+            JSObject result = new JSObject();
+            result.put("videos", queryMedia(true));
+            result.put("audios", queryMedia(false));
+            call.resolve(result);
+        });
+    }
+
+    private JSONArray queryMedia(boolean video) {
+        JSONArray items = new JSONArray();
+        Uri collection = video ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        String[] projection = {
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.MIME_TYPE
+        };
+        try (Cursor cursor = getContext().getContentResolver().query(
+                collection, projection, null, null,
+                MediaStore.MediaColumns.DATE_MODIFIED + " DESC")) {
+            if (cursor == null) return items;
+            int count = 0;
+            while (cursor.moveToNext() && count < 300) {
+                try {
+                    JSONObject item = new JSONObject();
+                    item.put("id", cursor.getLong(0));
+                    item.put("name", cursor.getString(1) != null ? cursor.getString(1) : "Media");
+                    item.put("size", cursor.getLong(2));
+                    item.put("dateModified", cursor.getLong(3));
+                    String mime = cursor.getString(4);
+                    item.put("mime", mime != null ? mime : (video ? "video/mp4" : "audio/mp4"));
+                    item.put("isVideo", video);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        String rel = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH));
+                        item.put("folder", rel != null ? rel.replace("/", " ").trim() : "");
+                    } else {
+                        item.put("folder", video ? "Movies" : "Music");
+                    }
+                    items.put(item);
+                    count++;
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+        return items;
+    }
+
+    @PluginMethod
+    public void getThumbnail(PluginCall call) {
+        long id = (long) call.getDouble("id", 0.0).doubleValue();
+        boolean isVideo = call.getBoolean("isVideo", true);
+        miscExecutor.execute(() -> {
+            JSObject result = new JSObject();
+            result.put("data", thumbnailBase64(id, isVideo));
+            call.resolve(result);
+        });
+    }
+
+    private String thumbnailBase64(long id, boolean isVideo) {
+        try {
+            Uri uri = Uri.withAppendedPath(
+                isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                String.valueOf(id));
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            try {
+                retriever.setDataSource(getContext(), uri);
+                Bitmap frame = null;
+                if (isVideo) {
+                    frame = retriever.getFrameAtTime(500_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                    if (frame == null) frame = retriever.getFrameAtTime(0);
+                } else {
+                    byte[] art = retriever.getEmbeddedPicture();
+                    if (art != null) frame = BitmapFactory.decodeByteArray(art, 0, art.length);
+                }
+                if (frame == null) return "";
+                if (frame.getWidth() > 512) {
+                    float scale = 512f / frame.getWidth();
+                    frame = Bitmap.createScaledBitmap(frame, 512, Math.max(1, (int) (frame.getHeight() * scale)), true);
+                }
+                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                frame.compress(Bitmap.CompressFormat.JPEG, 70, bytes);
+                frame.recycle();
+                return Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP);
+            } finally {
+                try { retriever.release(); } catch (Exception ignored) {}
+            }
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    @PluginMethod
+    public void openMedia(PluginCall call) {
+        long id = (long) call.getDouble("id", 0.0).doubleValue();
+        boolean isVideo = call.getBoolean("isVideo", true);
+        try {
+            Uri uri = Uri.withAppendedPath(
+                isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                String.valueOf(id));
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, isVideo ? "video/*" : "audio/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("No app found to play this media.", e);
+        }
+    }
+
+    @PluginMethod
+    public void shareMedia(PluginCall call) {
+        long id = (long) call.getDouble("id", 0.0).doubleValue();
+        boolean isVideo = call.getBoolean("isVideo", true);
+        try {
+            Uri uri = Uri.withAppendedPath(
+                isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                String.valueOf(id));
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType(isVideo ? "video/*" : "audio/*");
+            intent.putExtra(Intent.EXTRA_STREAM, uri);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(intent, "Share Media");
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not share this media.", e);
+        }
+    }
+
+    @PluginMethod
+    public void deleteMedia(PluginCall call) {
+        long id = (long) call.getDouble("id", 0.0).doubleValue();
+        boolean isVideo = call.getBoolean("isVideo", true);
+        try {
+            Uri uri = Uri.withAppendedPath(
+                isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                String.valueOf(id));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.app.PendingIntent pi = MediaStore.createDeleteRequest(getContext().getContentResolver(), java.util.Collections.singletonList(uri));
+                getActivity().startIntentSenderForResult(pi.getIntentSender(), 10291, null, 0, 0, 0);
+                JSObject result = new JSObject();
+                result.put("requested", true);
+                call.resolve(result);
+            } else {
+                int rows = getContext().getContentResolver().delete(uri, null, null);
+                JSObject result = new JSObject();
+                result.put("deleted", rows > 0);
+                call.resolve(result);
+            }
+        } catch (Exception e) {
+            call.reject("Could not delete this media from storage.", e);
         }
     }
 
@@ -287,9 +573,9 @@ public class OmniEnginePlugin extends Plugin {
         notifyListeners("onProgress", started);
 
         engineExecutor.execute(() -> {
+            File workDir = new File(getContext().getCacheDir(), "OmniEngine");
             try {
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
-                File workDir = new File(getContext().getCacheDir(), "OmniEngine");
 
                 // Progress listener that streams progress directly to web UI
                 DownloadProgressListener progressListener = new DownloadProgressListener() {
@@ -308,6 +594,11 @@ public class OmniEnginePlugin extends Plugin {
                         progress.put("status", "Downloading…");
                         notifyListeners("onProgress", progress);
                         OmniDownloadService.update(progress.getString("sizeFormatted") + String.format(Locale.US, " (%.0f%%)", percent), (int) percent);
+                    }
+
+                    @Override
+                    public boolean isCancelled() {
+                        return cancelRequested;
                     }
                 };
 
@@ -354,10 +645,21 @@ public class OmniEnginePlugin extends Plugin {
                     OmniDownloadService.finish(getContext(), false);
                 }
             } finally {
+                // Remove engine temp files (completed or cancelled) so cache never grows
+                cleanDir(workDir);
                 engineActive = false;
                 cancelRequested = false;
             }
         });
+    }
+
+    private void cleanDir(File dir) {
+        try {
+            if (dir != null && dir.exists()) {
+                File[] files = dir.listFiles();
+                if (files != null) for (File f : files) f.delete();
+            }
+        } catch (Exception ignored) {}
     }
 
     private String copyToGallery(File source, String title, String extension) {
@@ -507,6 +809,15 @@ public class OmniEnginePlugin extends Plugin {
         String ext = path.contains(".") ? path.substring(path.lastIndexOf('.')).toLowerCase(Locale.US) : ".mp4";
         if (!base.toLowerCase(Locale.US).endsWith(ext)) base += ext;
         return base.length() > 100 ? base.substring(0, 100 - ext.length()) + ext : base;
+    }
+
+    private String getAppVersionName() {
+        try {
+            PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+            return pInfo.versionName;
+        } catch (Exception e) {
+            return "2.1.0";
+        }
     }
 
     private String formatBytes(long bytes) {

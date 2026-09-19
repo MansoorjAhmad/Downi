@@ -1,8 +1,8 @@
 """On-device public-video downloader used by OmniDownloader Android bridge.
 
-This uses yt-dlp locally via Chaquopy, augmented with direct high-speed stream extractors
-for platforms like TikTok (HD without watermark), universal single-stream muxed formats,
-multi-tier download fallbacks, and bulletproof SSL error protection.
+yt-dlp runs locally via Chaquopy, augmented with direct high-speed stream
+extractors for TikTok (HD without watermark), a YouTube client fallback
+cascade, multi-tier format selection, and cooperative cancellation.
 No ffmpeg executable is required on device.
 """
 
@@ -14,7 +14,7 @@ import time
 import urllib.parse
 import urllib.request
 
-# Ensure CA bundle and unverified SSL context are active globally
+# Ensure CA bundle is active for all Python HTTPS calls
 try:
     import certifi
     os.environ['SSL_CERT_FILE'] = certifi.where()
@@ -27,7 +27,12 @@ try:
 except Exception:
     pass
 
+import yt_dlp
 from yt_dlp import YoutubeDL
+
+
+class CancelledError(RuntimeError):
+    """Raised when the Java side requests a download cancel."""
 
 
 def _get_ssl_context():
@@ -93,6 +98,18 @@ def _detect_platform(url):
     return 'other'
 
 
+def _check_cancel(progress_listener):
+    """Cooperative cancel: the Java listener reports a user cancel request."""
+    if progress_listener is not None:
+        try:
+            if progress_listener.isCancelled():
+                raise CancelledError("Download cancelled.")
+        except CancelledError:
+            raise
+        except Exception:
+            pass
+
+
 def _download_stream_with_progress(stream_url, target_path, referer='', progress_listener=None):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -109,24 +126,33 @@ def _download_stream_with_progress(stream_url, target_path, referer='', progress
         start_time = time.time()
         chunk_size = 64 * 1024
 
-        with open(target_path, 'wb') as f:
-            while True:
-                chunk = resp.read(chunk_size)
-                if not chunk:
-                    break
-                f.write(chunk)
-                downloaded += len(chunk)
-                now = time.time()
-                if progress_listener and (now - last_cb > 0.25):
-                    last_cb = now
-                    elapsed = max(0.001, now - start_time)
-                    speed = downloaded / elapsed
-                    eta = int((total_size - downloaded) / speed) if (total_size > downloaded and speed > 0) else 0
-                    pct = (downloaded / total_size * 100.0) if total_size > 0 else 50.0
-                    try:
-                        progress_listener.onProgress(float(min(99.0, pct)), int(downloaded), int(total_size), float(speed), int(eta))
-                    except Exception:
-                        pass
+        try:
+            with open(target_path, 'wb') as f:
+                while True:
+                    _check_cancel(progress_listener)
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    now = time.time()
+                    if progress_listener and (now - last_cb > 0.25):
+                        last_cb = now
+                        elapsed = max(0.001, now - start_time)
+                        speed = downloaded / elapsed
+                        eta = int((total_size - downloaded) / speed) if (total_size > downloaded and speed > 0) else 0
+                        pct = (downloaded / total_size * 100.0) if total_size > 0 else 50.0
+                        try:
+                            progress_listener.onProgress(float(min(99.0, pct)), int(downloaded), int(total_size), float(speed), int(eta))
+                        except Exception:
+                            pass
+        except CancelledError:
+            try:
+                if os.path.exists(target_path):
+                    os.remove(target_path)
+            except Exception:
+                pass
+            raise
 
     if progress_listener:
         try:
@@ -188,6 +214,45 @@ def _download_tiktok_direct(url, target_dir, is_audio=False, progress_listener=N
     }
 
 
+def _base_ydl_options():
+    return {
+        'quiet': True,
+        'no_warnings': True,
+        'noplaylist': True,
+        'nocheckcertificate': True,
+        'socket_timeout': 20,
+        'retries': 2,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
+    }
+
+
+def _format_heights(info):
+    """Extract distinct available video heights from a yt-dlp info dict, descending."""
+    heights = set()
+    for fmt in info.get('formats') or []:
+        if fmt.get('vcodec') in (None, 'none'):
+            continue
+        h = fmt.get('height')
+        if h:
+            heights.add(int(h))
+    return sorted(heights, reverse=True)
+
+
+def _label_for_height(h):
+    if h >= 1080:
+        return ('1080', '1080p Full HD', '1080p')
+    if h >= 720:
+        return ('720', '720p HD Quality', '720p')
+    if h >= 480:
+        return ('480', '480p Standard Quality', '480p')
+    if h >= 360:
+        return ('360', '360p Data Saver', '360p')
+    return (str(h), f'{h}p Quality', f'{h}p')
+
+
 def inspect(url):
     clean = _clean_url(url)
     platform = _detect_platform(clean)
@@ -216,40 +281,46 @@ def inspect(url):
         except Exception:
             pass
 
-    options = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'noplaylist': True,
-        'nocheckcertificate': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-        },
-    }
-
+    info = None
     try:
+        options = _base_ydl_options()
+        options['skip_download'] = True
         with YoutubeDL(options) as ydl:
             info = ydl.extract_info(clean, download=False)
-            title = _safe_name(info.get('title'))
-            uploader = info.get('uploader') or info.get('channel') or platform.capitalize()
-            duration = int(info.get('duration') or 0)
-            thumbnail = info.get('thumbnail') or ''
     except Exception:
+        info = None
+
+    if info:
+        title = _safe_name(info.get('title'))
+        uploader = info.get('uploader') or info.get('channel') or platform.capitalize()
+        duration = int(info.get('duration') or 0)
+        thumbnail = info.get('thumbnail') or ''
+        heights = _format_heights(info)
+    else:
         # Resilient fallback: don't block user if metadata extraction is throttled
         title = _safe_name(platform.capitalize() + ' Media')
         uploader = platform.capitalize()
         duration = 0
         thumbnail = ''
+        heights = []
 
-    formats = [
-        {'id': 'best', 'label': 'Best Available Quality', 'ext': 'mp4', 'badge': 'Best'},
-        {'id': '1080', 'label': '1080p Full HD', 'ext': 'mp4', 'badge': '1080p'},
-        {'id': '720', 'label': '720p HD Quality', 'ext': 'mp4', 'badge': '720p'},
-        {'id': '480', 'label': '480p Standard Quality', 'ext': 'mp4', 'badge': '480p'},
-        {'id': '360', 'label': '360p Data Saver', 'ext': 'mp4', 'badge': '360p'},
-        {'id': 'audio', 'label': 'Audio Only (MP3)', 'ext': 'mp3', 'badge': 'Audio'}
-    ]
+    # Real quality list from the source's own formats; static fallback if unknown
+    formats = [{'id': 'best', 'label': 'Best Available Quality', 'ext': 'mp4', 'badge': 'Best'}]
+    seen_ids = {'best'}
+    for h in heights:
+        fid, label, badge = _label_for_height(h)
+        if fid in seen_ids:
+            continue
+        seen_ids.add(fid)
+        formats.append({'id': fid, 'label': label, 'ext': 'mp4', 'badge': badge})
+        if len(formats) >= 5:
+            break
+    has_audio = bool(heights) or info is None or any(
+        (f.get('acodec') not in (None, 'none')) and (f.get('vcodec') in (None, 'none'))
+        for f in (info.get('formats') or [])
+    )
+    if has_audio:
+        formats.append({'id': 'audio', 'label': 'Audio Only (MP3)', 'ext': 'mp3', 'badge': 'Audio'})
 
     return json.dumps({
         'title': title,
@@ -262,33 +333,60 @@ def inspect(url):
     })
 
 
+def engine_info():
+    """Health check for the 'Sync Extractor Rules' button."""
+    return json.dumps({
+        'engine': 'Chaquopy 3.11 + yt-dlp',
+        'yt_dlp_version': yt_dlp.version.__version__,
+        'python': __import__('platform').python_version(),
+    })
+
+
+def _selected_format(format_id, is_audio):
+    if is_audio:
+        return "ba[ext=m4a]/ba/b/best"
+    fid = str(format_id).lower()
+    if fid in ("1080", "1080p"):
+        return "b[height<=1080][ext=mp4]/b[height<=1080]/b/best"
+    if fid in ("720", "720p"):
+        return "b[height<=720][ext=mp4]/b[height<=720]/b/best"
+    if fid in ("480", "480p"):
+        return "b[height<=480][ext=mp4]/b[height<=480]/b/best"
+    if fid in ("360", "360p"):
+        return "b[height<=360][ext=mp4]/b[height<=360]/b/best"
+    return "b[ext=mp4]/b/best"
+
+
+def _attempt_configs(format_id, is_audio, platform):
+    """Ordered (format, extractor_args) attempts: preferred quality first, then
+    YouTube client spoof cascade, then universal pre-muxed and best fallbacks."""
+    primary = _selected_format(format_id, is_audio)
+    attempts = [(primary, None)]
+    if platform == 'youtube':
+        for client in (['ios', 'tv', 'web_safari'], ['android_vr'], ['tv_embedded']):
+            attempts.append((primary, {'youtube': {'player_client': client}}))
+    attempts.append(('b/best', None))
+    attempts.append(('best', None))
+    return attempts
+
+
 def download(url, target_dir, format_id="best", progress_listener=None):
     os.makedirs(target_dir, exist_ok=True)
     clean = _clean_url(url)
     platform = _detect_platform(clean)
     is_audio = str(format_id).lower() in ("audio", "mp3", "m4a")
 
+    _check_cancel(progress_listener)
+
     # If TikTok, attempt direct fast extraction first
     if platform == 'tiktok':
         try:
             result = _download_tiktok_direct(clean, target_dir, is_audio, progress_listener)
             return json.dumps(result)
+        except CancelledError:
+            raise
         except Exception:
             pass
-
-    # Universal muxed single-stream format selector (guaranteed to never require ffmpeg)
-    if is_audio:
-        selected_format = "ba[ext=m4a]/ba/b/best"
-    elif str(format_id).lower() in ("1080", "1080p"):
-        selected_format = "b[height<=1080][ext=mp4]/b[height<=1080]/b/best"
-    elif str(format_id).lower() in ("720", "720p"):
-        selected_format = "b[height<=720][ext=mp4]/b[height<=720]/b/best"
-    elif str(format_id).lower() in ("480", "480p"):
-        selected_format = "b[height<=480][ext=mp4]/b[height<=480]/b/best"
-    elif str(format_id).lower() in ("360", "360p"):
-        selected_format = "b[height<=360][ext=mp4]/b[height<=360]/b/best"
-    else:
-        selected_format = "b[ext=mp4]/b/best"
 
     last_callback_time = [0.0]
 
@@ -297,6 +395,7 @@ def download(url, target_dir, format_id="best", progress_listener=None):
             return
         status = d.get('status')
         if status == 'downloading':
+            _check_cancel(progress_listener)
             now = time.time()
             if now - last_callback_time[0] < 0.25:
                 return
@@ -327,52 +426,49 @@ def download(url, target_dir, format_id="best", progress_listener=None):
     # Safe outtmpl using %(id)s to eliminate any Python format character errors
     safe_outtmpl = os.path.join(target_dir, '%(id)s.%(ext)s')
 
-    options = {
-        'quiet': True,
-        'no_warnings': True,
-        'noplaylist': True,
-        'nocheckcertificate': True,
-        'format': selected_format,
-        'outtmpl': safe_outtmpl,
-        'restrictfilenames': True,
-        'windowsfilenames': True,
-        'overwrites': True,
-        'nopart': False,
-        'progress_hooks': [_progress_hook],
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-        },
-    }
-
     info = None
-    # Tier 1: Try selected format
-    try:
-        with YoutubeDL(options) as ydl:
-            info = ydl.extract_info(clean, download=True)
-    except Exception as e1:
-        # Tier 2: Universal pre-muxed single stream
+    path = None
+    last_error = None
+
+    for fmt, extractor_args in _attempt_configs(format_id, is_audio, platform):
+        _check_cancel(progress_listener)
+        options = {
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+            'nocheckcertificate': True,
+            'format': fmt,
+            'outtmpl': safe_outtmpl,
+            'restrictfilenames': True,
+            'windowsfilenames': True,
+            'overwrites': True,
+            'nopart': False,
+            'socket_timeout': 20,
+            'retries': 2,
+            'progress_hooks': [_progress_hook],
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+        }
+        if extractor_args:
+            options['extractor_args'] = extractor_args
         try:
-            options['format'] = 'b/best'
             with YoutubeDL(options) as ydl:
                 info = ydl.extract_info(clean, download=True)
-        except Exception as e2:
-            # Tier 3: Universal best format
-            try:
-                options['format'] = 'best'
-                with YoutubeDL(options) as ydl:
-                    info = ydl.extract_info(clean, download=True)
-            except Exception as e3:
-                err_msg = str(e3) or str(e2) or str(e1)
-                raise RuntimeError(f"Could not download stream: {err_msg}")
-
-    # Determine downloaded file path
-    path = None
-    try:
-        with YoutubeDL(options) as ydl:
-            path = ydl.prepare_filename(info)
-    except Exception:
-        pass
+                try:
+                    path = ydl.prepare_filename(info)
+                except Exception:
+                    path = None
+            if path and os.path.exists(path):
+                break
+        except CancelledError:
+            raise
+        except Exception as exc:
+            last_error = exc
+            info = None
+            path = None
+            continue
 
     if not path or not os.path.exists(path):
         candidates = [
@@ -383,6 +479,8 @@ def download(url, target_dir, format_id="best", progress_listener=None):
             path = max(candidates, key=os.path.getmtime)
 
     if not path or not os.path.exists(path):
+        if last_error is not None:
+            raise RuntimeError(f"Could not download stream: {last_error}")
         raise RuntimeError('Media file was not created on storage. Check permissions or internet connection.')
 
     filesize = os.path.getsize(path) if os.path.exists(path) else 0
