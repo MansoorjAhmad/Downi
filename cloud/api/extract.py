@@ -8,56 +8,112 @@ GET /api/extract?health=1
 """
 
 import json
-import os
 from http.server import BaseHTTPRequestHandler
 
 from yt_dlp import YoutubeDL
 
 _FORMATS = {
-    "audio": "ba[ext=m4a]/ba/b",
-    "1080": "b[height<=1080][ext=mp4]/b[height<=1080]/b/best",
-    "720": "b[height<=720][ext=mp4]/b[height<=720]/b/best",
-    "480": "b[height<=480][ext=mp4]/b[height<=480]/b/best",
-    "360": "b[height<=360][ext=mp4]/b[height<=360]/b/best",
-    "best": "b[ext=mp4]/b/best",
+    "audio": "ba/b",
+    "1080": "b[height<=1080]/b/best",
+    "720": "b[height<=720]/b/best",
+    "480": "b[height<=480]/b/best",
+    "360": "b[height<=360]/b/best",
+    "best": "b/best",
+}
+
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 
-def _resolve(link, fmt):
-    options = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "socket_timeout": 20,
-        "retries": 2,
-        "format": _FORMATS.get((fmt or "best").lower(), _FORMATS["best"]),
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        },
-    }
-    with YoutubeDL(options) as ydl:
-        info = ydl.extract_info(link, download=False)
+def _pick_muxed(info):
+    """Pick the best format that has BOTH video and audio (no ffmpeg on device)."""
+    # 1) yt-dlp already selected a single format -> info['url'] is its direct link
+    url = info.get("url")
+    if url and (info.get("acodec") != "none" or not info.get("formats")):
+        return url, info.get("ext") or "mp4", info.get("filesize") or 0
 
-    chosen = None
-    fmts = info.get("formats") or []
-    if fmts:
-        playable = [f for f in fmts if f.get("url") and f.get("vcodec") != "none"]
-        candidates = playable or [f for f in fmts if f.get("url")]
-        if candidates:
-            chosen = max(candidates, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))
-    url = (chosen or {}).get("url") or info.get("url")
-    if not url:
-        raise RuntimeError("No downloadable stream found")
-    ext = (chosen or {}).get("ext") or info.get("ext") or "mp4"
-    return {
-        "ok": True,
-        "title": info.get("title") or "DOWNI Video",
-        "uploader": info.get("uploader") or "",
-        "ext": ext,
-        "filesize": (chosen or {}).get("filesize") or 0,
-        "url": url,
-    }
+    # 2) scan for muxed formats only (vcodec AND acodec present)
+    muxed = [
+        f for f in (info.get("formats") or [])
+        if f.get("url")
+        and f.get("vcodec") not in (None, "none")
+        and f.get("acodec") not in (None, "none")
+    ]
+    if muxed:
+        best = max(muxed, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))
+        return best["url"], best.get("ext") or "mp4", best.get("filesize") or 0
+    return None, None, 0
+
+
+def _resolve(link, fmt):
+    selector = _FORMATS.get((fmt or "best").lower(), _FORMATS["best"])
+    is_audio = (fmt or "").lower() in ("audio", "mp3", "m4a")
+
+    # YouTube needs client rotation to expose muxed (video+audio) formats
+    attempts = [
+        (selector, None),
+        (selector, {"youtube": {"player_client": ["ios"]}}),
+        (selector, {"youtube": {"player_client": ["tv", "web_embedded"]}}),
+        ("b/best", None),
+    ]
+
+    last_error = None
+    for sel, extractor_args in attempts:
+        options = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "socket_timeout": 20,
+            "retries": 2,
+            "format": sel,
+            "http_headers": dict(_HEADERS),
+        }
+        if extractor_args:
+            options["extractor_args"] = extractor_args
+        try:
+            with YoutubeDL(options) as ydl:
+                info = ydl.extract_info(link, download=False)
+        except Exception as error:
+            last_error = error
+            continue
+
+        if is_audio:
+            url = info.get("url")
+            if not url:
+                audio = [
+                    f for f in (info.get("formats") or [])
+                    if f.get("url") and f.get("acodec") not in (None, "none")
+                ]
+                if audio:
+                    best = max(audio, key=lambda f: f.get("tbr") or 0)
+                    url = best["url"]
+            if url:
+                return {
+                    "ok": True,
+                    "title": info.get("title") or "DOWNI Video",
+                    "uploader": info.get("uploader") or "",
+                    "ext": info.get("ext") or "m4a",
+                    "filesize": 0,
+                    "url": url,
+                }
+            last_error = RuntimeError("no audio stream in response")
+            continue
+
+        url, ext, size = _pick_muxed(info)
+        if url:
+            return {
+                "ok": True,
+                "title": info.get("title") or "DOWNI Video",
+                "uploader": info.get("uploader") or "",
+                "ext": ext,
+                "filesize": size,
+                "url": url,
+            }
+        last_error = RuntimeError("no muxed video+audio stream in response")
+
+    raise RuntimeError(str(last_error) or "Could not resolve this link")
 
 
 class Handler(BaseHTTPRequestHandler):
