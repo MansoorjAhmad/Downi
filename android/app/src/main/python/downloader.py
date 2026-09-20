@@ -71,7 +71,7 @@ def _safe_name(value):
 def _clean_url(url):
     if not url:
         return ""
-    match = re.search(r'https?://[^\s<>"\']+', url)
+    match = re.search(r'https?://[^\s<>"\'\)]+', url)
     if match:
         clean = match.group(0).rstrip('.,;:!?)]}')
     else:
@@ -88,8 +88,19 @@ def _clean_url(url):
         except Exception:
             pass
 
-    clean = re.sub(r'([?&])(igsh|si|utm_[^&=]+|feature)=[^&]+', '', clean)
-    clean = re.sub(r'[?&]$', '', clean)
+    if any(short in clean for short in ['fb.watch', 'facebook.com/share']):
+        try:
+            req = urllib.request.Request(
+                clean,
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36'}
+            )
+            with urllib.request.urlopen(req, timeout=8, context=_get_ssl_context()) as response:
+                clean = response.geturl()
+        except Exception:
+            pass
+
+    clean = re.sub(r'([?&])(igsh|si|utm_[^&=]+|feature|fbclid|mibextid|s|fs)=[^&]+', '', clean)
+    clean = re.sub(r'[?&]+$', '', clean)
     return clean
 
 
@@ -101,7 +112,7 @@ def _detect_platform(url):
         return 'tiktok'
     if 'instagram' in u:
         return 'instagram'
-    if 'facebook' in u or 'fb.watch' in u:
+    if 'facebook' in u or 'fb.watch' in u or 'fb.gg' in u:
         return 'facebook'
     if 'twitter' in u or 'x.com' in u:
         return 'twitter'
@@ -122,6 +133,61 @@ def _check_cancel(progress_listener):
             raise
         except Exception:
             pass
+
+
+def _prepare_ig_cookiefile(ig_session, target_dir):
+    """Generate a Netscape cookie file so yt-dlp identifies as logged in to Instagram."""
+    if not ig_session or not ig_session.strip():
+        return None
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        cookie_path = os.path.join(target_dir, '.ig_cookies.txt')
+        lines = ['# Netscape HTTP Cookie File']
+        raw = ig_session.strip()
+        pairs = [p.strip() for p in raw.split(';') if '=' in p]
+        if not pairs and raw:
+            pairs = [f'sessionid={raw}']
+        for pair in pairs:
+            name, val = pair.split('=', 1)
+            name, val = name.strip(), val.strip()
+            if name and val:
+                lines.append(f'.instagram.com\tTRUE\t/\tTRUE\t2147483647\t{name}\t{val}')
+        with open(cookie_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines) + '\n')
+        return cookie_path
+    except Exception:
+        return None
+
+
+def _extract_facebook_stream(url):
+    """Extract direct HD/SD MP4 CDN streams from Facebook Reels and Watch links."""
+    clean_u = url
+    if any(k in url for k in ('facebook.com/reel/', 'fb.watch/', 'facebook.com/share/r/')):
+        clean_u = re.sub(r'https?://(www\.|web\.)?facebook\.com', 'https://m.facebook.com', url)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+    }
+    try:
+        req = urllib.request.Request(clean_u, headers=headers)
+        with urllib.request.urlopen(req, timeout=12, context=_get_ssl_context()) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
+
+            title_m = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
+            title = _safe_name(title_m.group(1).replace('Facebook', '').strip(' |-') if title_m else 'Facebook Reel')
+
+            # Look for HD stream first, then SD
+            hd = re.search(r'["\'](browser_native_hd_url|playable_url_quality_hd)["\']\s*:\s*["\']([^"\']+)["\']', html)
+            if hd:
+                return hd.group(2).encode('utf-8').decode('unicode-escape').replace(r'\/', '/'), title, 'HD'
+
+            sd = re.search(r'["\'](browser_native_sd_url|playable_url)["\']\s*:\s*["\']([^"\']+)["\']', html)
+            if sd:
+                return sd.group(2).encode('utf-8').decode('unicode-escape').replace(r'\/', '/'), title, 'SD'
+    except Exception:
+        pass
+    return None, 'Facebook Video', None
 
 
 
@@ -431,7 +497,7 @@ def _label_for_height(h):
     return (str(h), f'{h}p Quality', f'{h}p')
 
 
-def inspect(url):
+def inspect(url, ig_session=""):
     clean = _clean_url(url)
     platform = _detect_platform(clean)
 
@@ -459,14 +525,43 @@ def inspect(url):
         except Exception:
             pass
 
+    # Facebook fast direct inspection
+    if platform == 'facebook':
+        stream_url, fb_title, quality = _extract_facebook_stream(clean)
+        if stream_url:
+            return json.dumps({
+                'title': _safe_name(fb_title),
+                'uploader': 'Facebook Reel',
+                'duration': 0,
+                'thumbnail': '',
+                'webpage_url': clean,
+                'platform': 'facebook',
+                'formats': [
+                    {'id': 'best', 'label': f'Best Quality ({quality or "HD"})', 'ext': 'mp4', 'badge': quality or 'HD'},
+                    {'id': 'audio', 'label': 'Audio Only (MP3)', 'ext': 'mp3', 'badge': 'MP3'}
+                ]
+            })
+
     info = None
+    cookie_file = None
     try:
         options = _base_ydl_options()
         options['skip_download'] = True
+        if platform == 'instagram' and ig_session:
+            import tempfile
+            cookie_file = _prepare_ig_cookiefile(ig_session, tempfile.gettempdir())
+            if cookie_file:
+                options['cookiefile'] = cookie_file
         with _yt_dlp().YoutubeDL(options) as ydl:
             info = ydl.extract_info(clean, download=False)
     except Exception:
         info = None
+    finally:
+        if cookie_file and os.path.exists(cookie_file):
+            try:
+                os.remove(cookie_file)
+            except Exception:
+                pass
 
     if info:
         title = _safe_name(info.get('title'))
@@ -480,7 +575,7 @@ def inspect(url):
         uploader = platform.capitalize()
         duration = 0
         thumbnail = ''
-        heights = []
+        heights = [1080, 720, 480]
 
     # Real quality list from the source's own formats; static fallback if unknown
     formats = [{'id': 'best', 'label': 'Best Available Quality', 'ext': 'mp4', 'badge': 'Best'}]
@@ -493,12 +588,7 @@ def inspect(url):
         formats.append({'id': fid, 'label': label, 'ext': 'mp4', 'badge': badge})
         if len(formats) >= 5:
             break
-    has_audio = bool(heights) or info is None or any(
-        (f.get('acodec') not in (None, 'none')) and (f.get('vcodec') in (None, 'none'))
-        for f in (info.get('formats') or [])
-    )
-    if has_audio:
-        formats.append({'id': 'audio', 'label': 'Audio Only (MP3)', 'ext': 'mp3', 'badge': 'Audio'})
+    formats.append({'id': 'audio', 'label': 'Audio Only (MP3)', 'ext': 'mp3', 'badge': 'Audio'})
 
     return json.dumps({
         'title': title,
@@ -652,7 +742,7 @@ def _attempt_configs(format_id, is_audio, platform):
     return attempts
 
 
-def download(url, target_dir, format_id="best", progress_listener=None):
+def download(url, target_dir, format_id="best", progress_listener=None, ig_session=""):
     os.makedirs(target_dir, exist_ok=True)
     clean = _clean_url(url)
     platform = _detect_platform(clean)
@@ -660,7 +750,7 @@ def download(url, target_dir, format_id="best", progress_listener=None):
 
     _check_cancel(progress_listener)
 
-    # If TikTok, attempt direct fast extraction first
+    # 1) If TikTok, attempt direct fast extraction first
     if platform == 'tiktok':
         try:
             result = _download_tiktok_direct(clean, target_dir, is_audio, progress_listener)
@@ -669,6 +759,22 @@ def download(url, target_dir, format_id="best", progress_listener=None):
             raise
         except Exception:
             pass
+
+    # 2) If Facebook, attempt direct fast extraction
+    if platform == 'facebook':
+        try:
+            fb_stream, fb_title, _ = _extract_facebook_stream(clean)
+            if fb_stream:
+                res = download_direct(fb_stream, target_dir, fb_title, 'mp3' if is_audio else 'mp4', progress_listener, referer='https://www.facebook.com/')
+                return res
+        except CancelledError:
+            raise
+        except Exception:
+            pass
+
+    cookie_file = None
+    if platform == 'instagram' and ig_session:
+        cookie_file = _prepare_ig_cookiefile(ig_session, target_dir)
 
     last_callback_time = [0.0]
 
@@ -736,6 +842,8 @@ def download(url, target_dir, format_id="best", progress_listener=None):
                 'Accept-Language': 'en-US,en;q=0.9',
             },
         }
+        if cookie_file and os.path.exists(cookie_file):
+            options['cookiefile'] = cookie_file
         if extractor_args:
             options['extractor_args'] = extractor_args
         try:
@@ -755,6 +863,12 @@ def download(url, target_dir, format_id="best", progress_listener=None):
             path = None
             continue
 
+    if cookie_file and os.path.exists(cookie_file):
+        try:
+            os.remove(cookie_file)
+        except Exception:
+            pass
+
     if not path or not os.path.exists(path):
         candidates = [
             os.path.join(target_dir, name) for name in os.listdir(target_dir)
@@ -767,7 +881,7 @@ def download(url, target_dir, format_id="best", progress_listener=None):
         if last_error is not None:
             err_text = str(last_error)
             if platform == 'instagram' and ('empty media response' in err_text or 'login' in err_text.lower() or 'cookies' in err_text.lower()):
-                raise RuntimeError("Instagram did not return public media for this post. It may require login, be private, or be temporarily unavailable.")
+                raise RuntimeError("Instagram requires login to access this reel. Connect your Instagram in DOWNI (1-tap setup) to download all reels in 1080p HD.")
             raise RuntimeError(f"Could not download stream: {err_text}")
         raise RuntimeError('Media file was not created on storage. Check permissions or internet connection.')
 

@@ -19,6 +19,10 @@ import android.content.Intent;
 import android.provider.DocumentsContract;
 import android.util.Base64;
 import android.webkit.MimeTypeMap;
+import android.webkit.CookieManager;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -563,7 +567,8 @@ public class OmniEnginePlugin extends Plugin {
                 }
             };
 
-            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId, listener);
+            String igSession = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
+            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId, listener, igSession);
             if (job.cancelled.get()) return;
 
             JSONObject file = new JSONObject(response.toString());
@@ -723,7 +728,8 @@ public class OmniEnginePlugin extends Plugin {
         miscExecutor.execute(() -> {
             try {
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
-                PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url);
+                String igSession = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
+                PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url, igSession);
                 JSONObject info = new JSONObject(response.toString());
                 JSObject result = new JSObject();
                 result.put("title", info.optString("title", "Video"));
@@ -791,6 +797,128 @@ public class OmniEnginePlugin extends Plugin {
         }
         result.put("url", shared);
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void connectInstagram(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                android.app.Dialog dialog = new android.app.Dialog(getActivity(), android.R.style.Theme_DeviceDefault_NoActionBar);
+                android.widget.LinearLayout layout = new android.widget.LinearLayout(getActivity());
+                layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+                layout.setBackgroundColor(0xFF060A13);
+
+                // Header bar
+                android.widget.RelativeLayout header = new android.widget.RelativeLayout(getActivity());
+                header.setPadding(32, 24, 32, 24);
+                header.setBackgroundColor(0xFF0D1421);
+
+                android.widget.TextView title = new android.widget.TextView(getActivity());
+                title.setText("Connect Instagram (1-Tap HD Reels)");
+                title.setTextColor(0xFFFFFFFF);
+                title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15);
+                title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                android.widget.RelativeLayout.LayoutParams titleParams = new android.widget.RelativeLayout.LayoutParams(
+                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT
+                );
+                titleParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT);
+                titleParams.addRule(android.widget.RelativeLayout.CENTER_VERTICAL);
+                header.addView(title, titleParams);
+
+                android.widget.Button closeBtn = new android.widget.Button(getActivity());
+                closeBtn.setText("✕ Close");
+                closeBtn.setTextColor(0xFF8A94A7);
+                closeBtn.setBackgroundColor(0x00000000);
+                android.widget.RelativeLayout.LayoutParams btnParams = new android.widget.RelativeLayout.LayoutParams(
+                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT
+                );
+                btnParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_RIGHT);
+                btnParams.addRule(android.widget.RelativeLayout.CENTER_VERTICAL);
+                header.addView(closeBtn, btnParams);
+
+                layout.addView(header);
+
+                // WebView
+                WebView webView = new WebView(getActivity());
+                WebSettings settings = webView.getSettings();
+                settings.setJavaScriptEnabled(true);
+                settings.setDomStorageEnabled(true);
+                settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36");
+
+                CookieManager cookieManager = CookieManager.getInstance();
+                cookieManager.setAcceptCookie(true);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    cookieManager.setAcceptThirdPartyCookies(webView, true);
+                }
+
+                closeBtn.setOnClickListener(v -> {
+                    dialog.dismiss();
+                    JSObject res = new JSObject();
+                    res.put("connected", false);
+                    call.resolve(res);
+                });
+
+                webView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public void onPageFinished(WebView view, String url) {
+                        super.onPageFinished(view, url);
+                        String cookies = cookieManager.getCookie("https://www.instagram.com");
+                        if (cookies != null && cookies.contains("sessionid=")) {
+                            getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
+                                .edit().putString("ig_session", cookies).apply();
+                            dialog.dismiss();
+                            JSObject res = new JSObject();
+                            res.put("connected", true);
+                            call.resolve(res);
+                        }
+                    }
+                });
+
+                layout.addView(webView, new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT
+                ));
+
+                dialog.setContentView(layout);
+                dialog.show();
+                webView.loadUrl("https://www.instagram.com/accounts/login/");
+            } catch (Exception e) {
+                call.reject("Could not open Instagram login window: " + e.getMessage(), e);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void getInstagramStatus(PluginCall call) {
+        String session = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
+            .getString("ig_session", "");
+        JSObject res = new JSObject();
+        res.put("connected", session != null && session.contains("sessionid="));
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void setInstagramSession(PluginCall call) {
+        String val = call.getString("value", "").trim();
+        getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
+            .edit().putString("ig_session", val).apply();
+        JSObject res = new JSObject();
+        res.put("saved", true);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void disconnectInstagram(PluginCall call) {
+        getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
+            .edit().remove("ig_session").apply();
+        try {
+            CookieManager.getInstance().removeAllCookies(null);
+        } catch (Exception ignored) {}
+        JSObject res = new JSObject();
+        res.put("connected", false);
+        call.resolve(res);
     }
 
     private void cleanDir(File dir) {
@@ -931,6 +1059,9 @@ public class OmniEnginePlugin extends Plugin {
 
     private String friendlyError(String detail) {
         String lower = detail.toLowerCase(Locale.US);
+        if (lower.contains("instagram requires login") || (lower.contains("instagram") && (lower.contains("empty media response") || lower.contains("login")))) {
+            return "Instagram requires login for this reel. Connect your Instagram in DOWNI (1-tap setup) to download in 1080p HD.";
+        }
         if (lower.contains("certificate") || lower.contains("ssl")) return "Secure connection failed. Check your internet, then retry.";
         if (lower.contains("private") || lower.contains("login") || lower.contains("sign in")) return "This video needs an account or is private. Try a public link.";
         if (lower.contains("unsupported") || lower.contains("no video formats")) return "This public link is not supported yet. Try another public video link.";

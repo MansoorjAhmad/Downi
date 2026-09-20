@@ -325,18 +325,19 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             if (url.isEmpty()) throw new IllegalArgumentException("Empty or invalid link");
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
 
-            showStatus("Finding best quality…", 5);
+            String igSession = getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
             PyObject response;
             try {
-                // Pass 'this' as DownloadProgressListener to Python.
+                // Pass 'this' as DownloadProgressListener and igSession to Python.
                 response = Python.getInstance().getModule("downloader")
-                    .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this);
+                    .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this, igSession);
             } catch (Exception localError) {
-                // DowniDrop must follow the same Cloud Boost path as the in-app
-                // queue. Previously Share → DOWNI always stopped here, even when
-                // the user had enabled a working relay in Settings.
                 if (sharedCancelRequested) throw localError;
-                response = downloadSharedFromCloud(url, work, OmniEnginePlugin.DEFAULT_CLOUD_RELAY);
+                try {
+                    response = downloadSharedFromCloud(url, work, OmniEnginePlugin.DEFAULT_CLOUD_RELAY);
+                } catch (Exception cloudError) {
+                    throw localError;
+                }
             }
 
             org.json.JSONObject file = new org.json.JSONObject(response.toString());
