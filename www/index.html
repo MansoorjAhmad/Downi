@@ -406,46 +406,6 @@
           </div>
         </div>
 
-        <!-- Instagram access -->
-        <div class="card p-4 space-y-3">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-base flex-shrink-0" style="background:rgba(244,114,182,.1); border:1px solid rgba(244,114,182,.25)">📷</div>
-            <div class="min-w-0">
-              <p class="text-[12px] font-extrabold text-white">Instagram access</p>
-              <p id="igStatusText" class="text-[11px] mt-0.5" style="color:var(--muted)">Optional — fixes "empty media response" errors</p>
-            </div>
-          </div>
-          <input id="igSessionInput" type="password" placeholder="Paste your Instagram sessionid…"
-            class="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3.5 text-[12px] text-white placeholder-zinc-500 font-mono focus:border-cyan-300/50 transition" />
-          <div class="flex gap-2">
-            <button onclick="saveIgSession()" class="btn-hero flex-1 py-2.5 text-[11px] font-extrabold">Save session</button>
-            <button onclick="clearIgSession()" class="btn px-4 py-2.5 text-[11px] font-bold text-zinc-400">Clear</button>
-          </div>
-          <p class="text-[10px] leading-relaxed" style="color:var(--muted)">
-            How: open <b>instagram.com</b> in your phone browser and log in → browser menu → <b>Site settings / Cookies</b> → find the cookie named <b>sessionid</b> → copy its value (or <b>sessionid=value</b>) → paste above. Stored only on this device. For an Instagram Cloud Boost retry, it is sent over HTTPS only to the relay URL you saved, then discarded.
-          </p>
-        </div>
-
-        <!-- Cloud Boost -->
-        <div class="card p-4 space-y-3">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-2xl bg-violet-400/10 border border-violet-300/25 flex items-center justify-center text-base flex-shrink-0">☁️</div>
-            <div class="min-w-0">
-              <p class="text-[12px] font-extrabold text-white">Cloud Boost <span class="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-md align-middle" style="background:rgba(139,92,246,.15); color:#C4B5FD; border:1px solid rgba(139,92,246,.3)">PRO</span></p>
-              <p id="cloudStatusText" class="text-[11px] mt-0.5" style="color:var(--muted)">Off — local engine only</p>
-            </div>
-          </div>
-          <input id="cloudRelayInput" type="url" placeholder="https://your-downi-boost.vercel.app"
-            class="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3.5 text-[12px] text-white placeholder-zinc-500 font-mono focus:border-cyan-300/50 transition" />
-          <div class="flex gap-2">
-            <button onclick="saveCloudRelay()" class="btn-hero flex-1 py-2.5 text-[11px] font-extrabold">Save relay</button>
-            <button onclick="clearCloudRelay()" class="btn px-4 py-2.5 text-[11px] font-bold text-zinc-400">Off</button>
-          </div>
-          <p class="text-[10px] leading-relaxed" style="color:var(--muted)">
-            The top-app method: when your network blocks extraction, DOWNI retries through your own free server (clean IP). Deploy in 5 min — see <b>cloud/README.md</b> in the repo.
-          </p>
-        </div>
-
         <!-- Storage -->
         <div class="card p-4 space-y-1">
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">Storage</p>
@@ -607,7 +567,6 @@
         <p class="text-[10px] font-extrabold uppercase tracking-widest text-cyan-300">⚡ Quick fixes</p>
         <p class="text-[11px] leading-relaxed" style="color:var(--muted)">On mobile data? Switch to <b>Wi-Fi</b> (or the reverse) — networks get blocked per-IP.</p>
         <div class="flex flex-wrap gap-2 pt-1">
-          <button id="quickFixIg" onclick="quickFixInstagram()" class="hidden chip px-3 py-2 text-[10px] font-extrabold">📷 Add Instagram session</button>
           <button onclick="runDiagnosticsFromError()" class="chip px-3 py-2 text-[10px] font-extrabold">🔍 Run diagnostics</button>
           <button onclick="copyErrorDetails()" class="chip px-3 py-2 text-[10px] font-extrabold">📋 Copy details</button>
         </div>
@@ -1025,12 +984,10 @@
       currentRawError = errStr;
       let friendly = "The media stream could not be downloaded. The video may be private, require a login, or the connection dropped.";
       const lower = errStr.toLowerCase();
-      let igFix = false;
       if (lower.includes("instagram is blocking")) {
-        friendly = errStr; igFix = true;
+        friendly = "Instagram did not return public media for this post. It may require login, be private, or be temporarily unavailable.";
       } else if (lower.includes("instagram") || lower.includes("empty media response")) {
-        friendly = "Instagram blocked this anonymous download. Fix: Settings → Instagram access → save your sessionid. Or enable Cloud Boost.";
-        igFix = true;
+        friendly = "Instagram did not return public media for this post. It may require login, be private, or be temporarily unavailable.";
       } else if (lower.includes("private") || lower.includes("login") || lower.includes("sign in") || lower.includes("account")) {
         friendly = "This video requires login or is private. Try another public link.";
       } else if (lower.includes("timeout") || lower.includes("connect") || lower.includes("network")) {
@@ -1040,8 +997,6 @@
       } else if (lower.includes("cloud boost")) {
         friendly = errStr;
       }
-      const qf = document.getElementById('quickFixIg');
-      if (qf) qf.classList.toggle('hidden', !igFix);
       showErrorModal('Download stopped', friendly, errStr);
     }
 
@@ -1130,14 +1085,6 @@
       if (navigator.clipboard?.writeText) {
         navigator.clipboard.writeText(currentRawError).then(() => showToast('Copied', 'Error details copied.', 'success'));
       }
-    }
-    function quickFixInstagram() {
-      closeErrorModal();
-      switchTab('settings');
-      setTimeout(() => {
-        document.getElementById('igSessionInput')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 250);
-      showToast('Instagram fix', 'Paste your sessionid below, then Save.', 'info');
     }
     function runDiagnosticsFromError() {
       closeErrorModal();
@@ -1518,85 +1465,6 @@
       }
     }
 
-    // ---------- Instagram session ----------
-    function refreshIgStatus() {
-      const engine = getEngine();
-      if (!engine?.getInstagramSession) return;
-      engine.getInstagramSession().then(res => {
-        const el = document.getElementById('igStatusText');
-        if (res?.hasSession) {
-          el.innerText = 'Session saved ✓ — Instagram extraction active';
-          el.style.color = 'var(--ok)';
-        } else {
-          el.innerText = 'Optional — fixes "empty media response" errors';
-          el.style.color = 'var(--muted)';
-        }
-      }).catch(() => {});
-    }
-    function saveIgSession() {
-      const value = document.getElementById('igSessionInput').value.trim();
-      if (!value) { showToast('Empty session', 'Paste the sessionid value first.', 'info'); return; }
-      const engine = getEngine();
-      if (engine?.setInstagramSession) {
-        engine.setInstagramSession({ value: value }).then(() => {
-          document.getElementById('igSessionInput').value = '';
-          refreshIgStatus();
-          showToast('Session saved', 'Instagram extraction upgraded.', 'success');
-        }).catch(err => showToast('Save failed', err?.message || 'Error', 'error'));
-      }
-    }
-    function clearIgSession() {
-      const engine = getEngine();
-      if (engine?.setInstagramSession) {
-        engine.setInstagramSession({ value: '' }).then(() => {
-          refreshIgStatus();
-          showToast('Session cleared', 'Instagram back to anonymous mode.', 'info');
-        });
-      }
-    }
-
-    // ---------- Cloud Boost ----------
-    function refreshCloudStatus() {
-      const engine = getEngine();
-      if (!engine?.getCloudRelay) return;
-      engine.getCloudRelay().then(res => {
-        const el = document.getElementById('cloudStatusText');
-        if (res?.enabled) {
-          el.innerText = 'ON ✓ — fallback extraction active';
-          el.style.color = 'var(--ok)';
-        } else {
-          el.innerText = 'Off — local engine only';
-          el.style.color = 'var(--muted)';
-        }
-      }).catch(() => {});
-    }
-    function saveCloudRelay() {
-      const value = document.getElementById('cloudRelayInput').value.trim();
-      let relay;
-      try { relay = new URL(value); } catch (_) { relay = null; }
-      if (!relay || !['https:', 'http:'].includes(relay.protocol) || !relay.hostname) {
-        showToast('Invalid URL', 'Paste the full https://… Vercel URL.', 'info');
-        return;
-      }
-      const engine = getEngine();
-      if (engine?.setCloudRelay) {
-        engine.setCloudRelay({ value: relay.origin }).then(() => {
-          document.getElementById('cloudRelayInput').value = '';
-          refreshCloudStatus();
-          showToast('Cloud Boost ON', 'Blocked grabs now retry via your server.', 'success');
-        });
-      }
-    }
-    function clearCloudRelay() {
-      const engine = getEngine();
-      if (engine?.setCloudRelay) {
-        engine.setCloudRelay({ value: '' }).then(() => {
-          refreshCloudStatus();
-          showToast('Cloud Boost off', 'Back to local engine only.', 'info');
-        });
-      }
-    }
-
     function openGitHubRepo() { window.open(`https://github.com/${GITHUB_REPO}`, '_system'); }
     function handleChooseFolder() { getEngine()?.chooseFolder?.(); }
     function toggleClipboardDetect(enabled) { localStorage.setItem('omni_clipboard_detect', enabled ? '1' : '0'); }
@@ -1676,8 +1544,6 @@
       });
 
       syncEngineRules();
-      refreshIgStatus();
-      refreshCloudStatus();
       setTimeout(checkClipboard, 600);
       setTimeout(() => checkAppUpdates(true), 4000);
 

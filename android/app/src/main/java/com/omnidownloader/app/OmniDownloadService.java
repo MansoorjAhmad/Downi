@@ -326,20 +326,17 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
 
             showStatus("Finding best quality…", 5);
-            String igSession = getSharedPreferences("omni_settings", MODE_PRIVATE).getString("ig_session", "");
             PyObject response;
             try {
                 // Pass 'this' as DownloadProgressListener to Python.
                 response = Python.getInstance().getModule("downloader")
-                    .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this, igSession);
+                    .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this);
             } catch (Exception localError) {
                 // DowniDrop must follow the same Cloud Boost path as the in-app
                 // queue. Previously Share → DOWNI always stopped here, even when
                 // the user had enabled a working relay in Settings.
                 if (sharedCancelRequested) throw localError;
-                String relay = getSharedPreferences("omni_settings", MODE_PRIVATE).getString("relay_url", "");
-                if (relay == null || relay.trim().isEmpty()) throw localError;
-                response = downloadSharedFromCloud(url, work, relay.trim(), igSession);
+                response = downloadSharedFromCloud(url, work, OmniEnginePlugin.DEFAULT_CLOUD_RELAY);
             }
 
             org.json.JSONObject file = new org.json.JSONObject(response.toString());
@@ -372,11 +369,9 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         }
     }
 
-    /** Resolve a shared link through the user's Cloud Boost relay, then download
-     * the returned CDN URL directly to the device. This mirrors the in-app queue
-     * fallback and deliberately sends an Instagram session only to that user's
-     * configured relay and only for Instagram links. */
-    private PyObject downloadSharedFromCloud(String sourceUrl, File work, String relayUrl, String igSession) throws Exception {
+    /** Resolve a shared link through DOWNI Cloud Boost, then download the
+     * returned CDN URL directly to the device. */
+    private PyObject downloadSharedFromCloud(String sourceUrl, File work, String relayUrl) throws Exception {
         Uri relay = Uri.parse(relayUrl);
         if (!("https".equalsIgnoreCase(relay.getScheme()) || "http".equalsIgnoreCase(relay.getScheme()))
                 || relay.getHost() == null || relay.getHost().isEmpty()) {
@@ -386,9 +381,6 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         org.json.JSONObject request = new org.json.JSONObject()
             .put("url", sourceUrl)
             .put("format", "best");
-        if (sourceUrl.toLowerCase(Locale.US).contains("instagram.com") && igSession != null && !igSession.trim().isEmpty()) {
-            request.put("instagramSession", igSession.trim());
-        }
 
         showStatus("Cloud Boost — resolving…", 8);
         HttpURLConnection conn = (HttpURLConnection) new URL(baseUrl + "/api/extract").openConnection();

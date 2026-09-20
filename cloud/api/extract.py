@@ -50,7 +50,7 @@ def _pick_muxed(info):
     return None, None, 0
 
 
-def _resolve(link, fmt, instagram_session=""):
+def _resolve(link, fmt):
     selector = _FORMATS.get((fmt or "best").lower(), _FORMATS["best"])
     is_audio = (fmt or "").lower() in ("audio", "mp3", "m4a")
 
@@ -72,17 +72,6 @@ def _resolve(link, fmt, instagram_session=""):
             "format": sel,
             "http_headers": dict(_HEADERS),
         }
-        if "instagram.com" in link.lower() and instagram_session:
-            session = instagram_session.strip()
-            if session.lower().startswith("sessionid="):
-                session = session.split("=", 1)[1].strip()
-            if session:
-                options["http_headers"].update({
-                    "Cookie": f"sessionid={session}",
-                    "X-IG-App-ID": "936619743392459",
-                    "X-IG-WWW-Claim": "0",
-                    "Referer": "https://www.instagram.com/",
-                })
         if extractor_args:
             options["extractor_args"] = extractor_args
         try:
@@ -190,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
             if data.get("debug"):
                 self._send(200, {"ok": True, "probe": _probe(link)})
                 return
-            result = _resolve(link, fmt, data.get("instagramSession") or "")
+            result = _resolve(link, fmt)
             self._send(200, result)
         except Exception as error:
             self._send(502, {"ok": False, "error": str(error)[:400]})

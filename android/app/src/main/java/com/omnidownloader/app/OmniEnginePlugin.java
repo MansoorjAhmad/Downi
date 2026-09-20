@@ -60,6 +60,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
     @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS })
 })
 public class OmniEnginePlugin extends Plugin {
+    static final String DEFAULT_CLOUD_RELAY = "https://downi-booster.vercel.app";
     private static final int MAX_ACTIVE = 3;
     private static final int MAX_QUEUED = 6;
 
@@ -536,8 +537,6 @@ public class OmniEnginePlugin extends Plugin {
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
 
             OmniDownloadService.updateJob(getContext(), job.id, "Starting engine…", 1);
-            String igSession = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
-
             DownloadProgressListener listener = new DownloadProgressListener() {
                 @Override
                 public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
@@ -564,7 +563,7 @@ public class OmniEnginePlugin extends Plugin {
                 }
             };
 
-            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId, listener, igSession);
+            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId, listener);
             if (job.cancelled.get()) return;
 
             JSONObject file = new JSONObject(response.toString());
@@ -592,15 +591,12 @@ public class OmniEnginePlugin extends Plugin {
             try { job.call.resolve(progress); } catch (Exception ignored) {}
         } catch (Exception error) {
             if (!job.cancelled.get()) {
-                // ELITE: Cloud Boost — retry extraction through the user's relay server
+                // Cloud Boost — automatic retry through DOWNI's relay.
                 boolean cloudOk = false;
-                String relay = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("relay_url", "");
-                if (relay != null && !relay.trim().isEmpty()) {
-                    try {
-                        cloudOk = runCloudFallback(job, workDir, relay.trim(), igSession);
-                    } catch (Exception cloudError) {
-                        cloudOk = false;
-                    }
+                try {
+                    cloudOk = runCloudFallback(job, workDir, DEFAULT_CLOUD_RELAY);
+                } catch (Exception cloudError) {
+                    cloudOk = false;
                 }
                 if (!cloudOk) {
                     JSObject progress = new JSObject();
@@ -620,7 +616,7 @@ public class OmniEnginePlugin extends Plugin {
     }
 
     /** Cloud Boost: resolve via relay server, then download the CDN link directly. */
-    private boolean runCloudFallback(DownloadJob job, File workDir, String relayUrl, String igSession) throws Exception {
+    private boolean runCloudFallback(DownloadJob job, File workDir, String relayUrl) throws Exception {
         OmniDownloadService.updateJob(getContext(), job.id, "Cloud Boost — resolving…", 5);
         JSObject statusEv = new JSObject();
         statusEv.put("jobId", job.id);
@@ -631,12 +627,6 @@ public class OmniEnginePlugin extends Plugin {
         JSONObject request = new JSONObject()
             .put("url", job.url)
             .put("format", job.formatId == null ? "best" : job.formatId);
-        // Instagram sometimes requires authentication even when the relay has a
-        // clean IP. The session is sent only to the relay URL the user configured
-        // and only for an Instagram download; it is never persisted by DOWNI.
-        if (job.url.toLowerCase(Locale.US).contains("instagram.com") && igSession != null && !igSession.trim().isEmpty()) {
-            request.put("instagramSession", igSession.trim());
-        }
         String body = request.toString();
 
         HttpURLConnection conn = (HttpURLConnection) new URL(relayUrl + "/api/extract").openConnection();
@@ -733,8 +723,7 @@ public class OmniEnginePlugin extends Plugin {
         miscExecutor.execute(() -> {
             try {
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
-                String igSession = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
-                PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url, igSession);
+                PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url);
                 JSONObject info = new JSONObject(response.toString());
                 JSObject result = new JSObject();
                 result.put("title", info.optString("title", "Video"));
@@ -763,54 +752,6 @@ public class OmniEnginePlugin extends Plugin {
                 call.reject("This public link could not be inspected. It may be private, protected, or temporarily unsupported.", error);
             }
         });
-    }
-
-    @PluginMethod
-    public void setInstagramSession(PluginCall call) {
-        String value = call.getString("value", "");
-        getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
-            .edit().putString("ig_session", value == null ? "" : value.trim()).apply();
-        JSObject result = new JSObject();
-        result.put("saved", true);
-        call.resolve(result);
-    }
-
-    @PluginMethod
-    public void getInstagramSession(PluginCall call) {
-        String value = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
-        JSObject result = new JSObject();
-        result.put("value", value);
-        result.put("hasSession", value != null && !value.isEmpty());
-        call.resolve(result);
-    }
-
-    @PluginMethod
-    public void setCloudRelay(PluginCall call) {
-        String value = call.getString("value", "");
-        String clean = value == null ? "" : value.trim();
-        if (clean.endsWith("/")) clean = clean.substring(0, clean.length() - 1);
-        if (!clean.isEmpty()) {
-            Uri relay = Uri.parse(clean);
-            if (!("https".equalsIgnoreCase(relay.getScheme()) || "http".equalsIgnoreCase(relay.getScheme()))
-                    || relay.getHost() == null || relay.getHost().isEmpty()) {
-                call.reject("Cloud Boost needs a valid http:// or https:// server URL.");
-                return;
-            }
-        }
-        getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
-            .edit().putString("relay_url", clean).apply();
-        JSObject result = new JSObject();
-        result.put("saved", true);
-        call.resolve(result);
-    }
-
-    @PluginMethod
-    public void getCloudRelay(PluginCall call) {
-        String value = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("relay_url", "");
-        JSObject result = new JSObject();
-        result.put("value", value);
-        result.put("enabled", value != null && !value.isEmpty());
-        call.resolve(result);
     }
 
     @PluginMethod
