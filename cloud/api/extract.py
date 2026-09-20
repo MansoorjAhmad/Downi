@@ -31,7 +31,10 @@ def _pick_muxed(info):
     """Pick the best format that has BOTH video and audio (no ffmpeg on device)."""
     # 1) yt-dlp already selected a single format -> info['url'] is its direct link
     url = info.get("url")
-    if url and (info.get("acodec") != "none" or not info.get("formats")):
+    if url and (
+        (info.get("vcodec") not in (None, "none") and info.get("acodec") not in (None, "none"))
+        or not info.get("formats")
+    ):
         return url, info.get("ext") or "mp4", info.get("filesize") or 0
 
     # 2) scan for muxed formats only (vcodec AND acodec present)

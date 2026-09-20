@@ -19,6 +19,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -322,9 +326,21 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
 
             showStatus("Finding best quality…", 5);
-
-            // Pass 'this' as DownloadProgressListener to Python
-            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", url.trim(), work.getAbsolutePath(), "best", this);
+            String igSession = getSharedPreferences("omni_settings", MODE_PRIVATE).getString("ig_session", "");
+            PyObject response;
+            try {
+                // Pass 'this' as DownloadProgressListener to Python.
+                response = Python.getInstance().getModule("downloader")
+                    .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this, igSession);
+            } catch (Exception localError) {
+                // DowniDrop must follow the same Cloud Boost path as the in-app
+                // queue. Previously Share → DOWNI always stopped here, even when
+                // the user had enabled a working relay in Settings.
+                if (sharedCancelRequested) throw localError;
+                String relay = getSharedPreferences("omni_settings", MODE_PRIVATE).getString("relay_url", "");
+                if (relay == null || relay.trim().isEmpty()) throw localError;
+                response = downloadSharedFromCloud(url, work, relay.trim(), igSession);
+            }
 
             org.json.JSONObject file = new org.json.JSONObject(response.toString());
             String title = file.optString("title", "Downi video");
@@ -354,6 +370,58 @@ public class OmniDownloadService extends Service implements DownloadProgressList
                 if (files != null) for (File f : files) f.delete();
             } catch (Exception ignored) {}
         }
+    }
+
+    /** Resolve a shared link through the user's Cloud Boost relay, then download
+     * the returned CDN URL directly to the device. This mirrors the in-app queue
+     * fallback and deliberately sends an Instagram session only to that user's
+     * configured relay and only for Instagram links. */
+    private PyObject downloadSharedFromCloud(String sourceUrl, File work, String relayUrl, String igSession) throws Exception {
+        Uri relay = Uri.parse(relayUrl);
+        if (!("https".equalsIgnoreCase(relay.getScheme()) || "http".equalsIgnoreCase(relay.getScheme()))
+                || relay.getHost() == null || relay.getHost().isEmpty()) {
+            throw new IllegalArgumentException("Cloud Boost URL is invalid.");
+        }
+        String baseUrl = relayUrl.endsWith("/") ? relayUrl.substring(0, relayUrl.length() - 1) : relayUrl;
+        org.json.JSONObject request = new org.json.JSONObject()
+            .put("url", sourceUrl)
+            .put("format", "best");
+        if (sourceUrl.toLowerCase(Locale.US).contains("instagram.com") && igSession != null && !igSession.trim().isEmpty()) {
+            request.put("instagramSession", igSession.trim());
+        }
+
+        showStatus("Cloud Boost — resolving…", 8);
+        HttpURLConnection conn = (HttpURLConnection) new URL(baseUrl + "/api/extract").openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(60000);
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("User-Agent", "DOWNI/DowniDrop");
+        try (OutputStream output = conn.getOutputStream()) {
+            output.write(request.toString().getBytes("UTF-8"));
+        }
+        int code = conn.getResponseCode();
+        if (code < 200 || code >= 300) {
+            conn.disconnect();
+            throw new IllegalStateException("Cloud Boost could not resolve this link (HTTP " + code + ").");
+        }
+        StringBuilder raw = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+            for (String line; (line = reader.readLine()) != null;) raw.append(line);
+        } finally {
+            conn.disconnect();
+        }
+        org.json.JSONObject data = new org.json.JSONObject(raw.toString());
+        String streamUrl = data.optString("url", "");
+        if (!data.optBoolean("ok", false) || !(streamUrl.startsWith("https://") || streamUrl.startsWith("http://"))) {
+            throw new IllegalStateException("Cloud Boost did not return a playable media link.");
+        }
+        showStatus("Cloud Boost — downloading…", 12);
+        return Python.getInstance().getModule("downloader").callAttr(
+            "download_direct", streamUrl, work.getAbsolutePath(),
+            data.optString("title", "Downi video"), data.optString("ext", "mp4"), this
+        );
     }
 
     private void showCancelled() {
