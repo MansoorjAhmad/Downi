@@ -51,12 +51,11 @@ def _resolve(link, fmt):
     selector = _FORMATS.get((fmt or "best").lower(), _FORMATS["best"])
     is_audio = (fmt or "").lower() in ("audio", "mp3", "m4a")
 
-    # YouTube needs client rotation to expose muxed (video+audio) formats
+    # YouTube from datacenter IPs only exposes muxed streams via android_vr
     attempts = [
+        (selector, {"youtube": {"player_client": ["android_vr"]}}),
         (selector, None),
-        (selector, {"youtube": {"player_client": ["ios"]}}),
-        (selector, {"youtube": {"player_client": ["tv", "web_embedded"]}}),
-        ("b/best", None),
+        ("b/best", {"youtube": {"player_client": ["android_vr"]}}),
     ]
 
     last_error = None
