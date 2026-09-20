@@ -116,6 +116,36 @@ def _resolve(link, fmt):
     raise RuntimeError(str(last_error) or "Could not resolve this link")
 
 
+def _probe(link):
+    """Debug: show what each YouTube client exposes from this server's IP."""
+    clients = [None, ["ios"], ["tv", "web_embedded"], ["android_vr"], ["web_safari"]]
+    out = []
+    for client in clients:
+        options = {
+            "quiet": True, "no_warnings": True, "noplaylist": True,
+            "socket_timeout": 20, "retries": 1,
+            "skip_download": True,
+            "http_headers": dict(_HEADERS),
+        }
+        if client:
+            options["extractor_args"] = {"youtube": {"player_client": client}}
+        label = "+".join(client) if client else "default"
+        try:
+            with YoutubeDL(options) as ydl:
+                info = ydl.extract_info(link, download=False)
+            fmts = []
+            for f in (info.get("formats") or [])[:40]:
+                fmts.append({
+                    "id": f.get("id"), "ext": f.get("ext"),
+                    "v": f.get("vcodec"), "a": f.get("acodec"),
+                    "h": f.get("height"), "proto": f.get("protocol"),
+                })
+            out.append({"client": label, "ok": True, "count": len(info.get("formats") or []), "formats": fmts})
+        except Exception as e:
+            out.append({"client": label, "ok": False, "error": str(e)[:150]})
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, payload):
         body = json.dumps(payload).encode("utf-8")
@@ -143,6 +173,9 @@ class Handler(BaseHTTPRequestHandler):
             fmt = (data.get("format") or "best").strip()
             if not link.startswith("http"):
                 self._send(400, {"ok": False, "error": "Invalid link"})
+                return
+            if data.get("debug"):
+                self._send(200, {"ok": True, "probe": _probe(link)})
                 return
             result = _resolve(link, fmt)
             self._send(200, result)
