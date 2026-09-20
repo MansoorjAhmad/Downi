@@ -380,29 +380,6 @@
           </p>
         </div>
 
-        <!-- Instagram Connect -->
-        <div class="card p-4 space-y-3">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-lg" style="background:linear-gradient(135deg, rgba(244,63,94,.15), rgba(217,70,239,.15)); border:1px solid rgba(244,63,94,.3); color:#FB7185">📸</div>
-              <div>
-                <p class="text-[12px] font-extrabold text-white">Instagram Account</p>
-                <p id="igStatusText" class="text-[11px] mt-0.5" style="color:var(--muted)">Checking connection…</p>
-              </div>
-            </div>
-            <span id="igStatusBadge" class="chip px-3 py-1 text-[9px] font-mono font-bold">Checking…</span>
-          </div>
-          <p class="text-[11px] leading-relaxed" style="color:var(--muted)">
-            Connect Instagram once to unlock 100% of Instagram Reels, Stories, Audio, and HD 1080p downloads with zero errors.
-          </p>
-          <div class="flex gap-2 pt-1" id="igActionButtons">
-            <button id="btnConnectIg" onclick="handleConnectInstagram()" class="btn-hero flex-1 py-3 text-[11px] font-extrabold flex items-center justify-center gap-2">
-              <span>Connect Instagram</span>
-              <span class="text-xs">⚡</span>
-            </button>
-            <button id="btnDisconnectIg" onclick="handleDisconnectInstagram()" class="hidden btn px-4 py-3 text-[11px] font-bold text-zinc-400">Disconnect</button>
-          </div>
-        </div>
 
         <!-- Engine -->
         <div class="card p-4 space-y-3">
@@ -591,7 +568,6 @@
         <p class="text-[10px] font-extrabold uppercase tracking-widest text-cyan-300">⚡ Quick fixes</p>
         <p class="text-[11px] leading-relaxed" style="color:var(--muted)">On mobile data? Switch to <b>Wi-Fi</b> (or the reverse) — networks get blocked per-IP.</p>
         <div class="flex flex-wrap gap-2 pt-1">
-          <button id="quickFixIg" onclick="quickFixInstagram()" class="hidden chip px-3 py-2 text-[10px] font-extrabold text-pink-300" style="background:rgba(244,63,94,.12); border-color:rgba(244,63,94,.35)">📷 Connect Instagram (1-Tap)</button>
           <button onclick="runDiagnosticsFromError()" class="chip px-3 py-2 text-[10px] font-extrabold">🔍 Run diagnostics</button>
           <button onclick="copyErrorDetails()" class="chip px-3 py-2 text-[10px] font-extrabold">📋 Copy details</button>
         </div>
@@ -834,13 +810,7 @@
         }
       } catch (e) {
         closeInspector();
-        const msg = (e && e.message) ? e.message : 'This link could not be inspected.';
-        if (/instagram/i.test(url) || /instagram/i.test(msg) || /empty media/i.test(msg)) {
-          showErrorModal('Instagram Login Required', 'Instagram requires an active login to inspect reels and stories. Tap "Connect Instagram" below to unlock instant inspection and downloads.', msg);
-          document.getElementById('quickFixIg')?.classList.remove('hidden');
-        } else {
-          showToast('Inspect failed', msg, 'error');
-        }
+        showToast('Inspect failed', (e && e.message) ? e.message : 'This link could not be inspected.', 'error');
       } finally {
         if (btn) btn.innerText = 'GRAB THIS LINK';
       }
@@ -1018,26 +988,17 @@
 
     function onDownloadError(errStr, url, formatId) {
       currentRawError = errStr;
-      let friendly = "The media stream could not be downloaded. The video may be private, require a login, or the connection dropped.";
+      let friendly = "The media stream could not be downloaded. The video may be private, restricted, or the connection dropped.";
       const lower = (errStr || "").toLowerCase();
-      const isIg = (url && /instagram\.com/i.test(url)) || lower.includes("instagram") || lower.includes("empty media response");
-      
-      const qfIg = document.getElementById('quickFixIg');
-      if (qfIg) {
-        if (isIg) qfIg.classList.remove('hidden');
-        else qfIg.classList.add('hidden');
-      }
 
-      if (lower.includes("instagram is blocking") || lower.includes("empty media response") || lower.includes("instagram")) {
-        friendly = "Instagram is restricting public access to this reel. Tap 'Connect Instagram' below to download any reel instantly!";
+      if (lower.includes("instagram is blocking") || lower.includes("empty media response")) {
+        friendly = "Instagram did not return media for this post. It may be private or temporarily restricted.";
       } else if (lower.includes("private") || lower.includes("login") || lower.includes("sign in") || lower.includes("account")) {
-        friendly = "This video requires login or is private. Try connecting your account or using a public link.";
+        friendly = "This video requires account access or is private. Try another public link.";
       } else if (lower.includes("timeout") || lower.includes("connect") || lower.includes("network")) {
         friendly = "Connection timed out. Check your internet and try again.";
       } else if (lower.includes("unsupported") || lower.includes("format")) {
         friendly = "This format isn't available for the video. Try another quality.";
-      } else if (lower.includes("cloud boost")) {
-        friendly = errStr;
       }
       showErrorModal('Download stopped', friendly, errStr);
     }
@@ -1118,7 +1079,6 @@
     }
     function closeErrorModal() {
       document.getElementById('errorModal')?.classList.add('hidden');
-      document.getElementById('quickFixIg')?.classList.add('hidden');
     }
     function toggleErrorDetails() {
       const box = document.getElementById('errorTechnicalDetailsBox');
@@ -1514,81 +1474,6 @@
     function handleChooseFolder() { getEngine()?.chooseFolder?.(); }
     function toggleClipboardDetect(enabled) { localStorage.setItem('omni_clipboard_detect', enabled ? '1' : '0'); }
 
-    // ================= Instagram =================
-    async function refreshIgStatus() {
-      const engine = getEngine();
-      const badge = document.getElementById('igStatusBadge');
-      const text = document.getElementById('igStatusText');
-      const btnConnect = document.getElementById('btnConnectIg');
-      const btnDisconnect = document.getElementById('btnDisconnectIg');
-      if (!engine?.getInstagramStatus || !badge) return;
-
-      try {
-        const res = await engine.getInstagramStatus();
-        if (res && res.connected) {
-          badge.innerText = '✓ CONNECTED';
-          badge.style.cssText = 'background:rgba(52,211,153,.15);border-color:rgba(52,211,153,.4);color:var(--ok)';
-          if (text) text.innerText = 'Connected · Reels & Stories unlocked';
-          if (btnConnect) {
-            btnConnect.innerHTML = '<span>Reconnect</span>';
-            btnConnect.className = 'btn flex-1 py-3 text-[11px] font-bold text-zinc-300';
-          }
-          if (btnDisconnect) btnDisconnect.classList.remove('hidden');
-        } else {
-          badge.innerText = 'NOT CONNECTED';
-          badge.style.cssText = 'background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:var(--muted)';
-          if (text) text.innerText = 'Connect once to unlock 100% of Reels';
-          if (btnConnect) {
-            btnConnect.innerHTML = '<span>Connect Instagram</span><span class="text-xs">⚡</span>';
-            btnConnect.className = 'btn-hero flex-1 py-3 text-[11px] font-extrabold flex items-center justify-center gap-2';
-          }
-          if (btnDisconnect) btnDisconnect.classList.add('hidden');
-        }
-      } catch (e) {
-        if (badge) {
-          badge.innerText = 'READY';
-          badge.style.cssText = 'background:rgba(255,255,255,.05);color:var(--muted)';
-        }
-      }
-    }
-
-    async function handleConnectInstagram() {
-      const engine = getEngine();
-      if (!engine?.connectInstagram) {
-        showToast('Not available', 'Engine update required for Instagram login.', 'error');
-        return;
-      }
-      showToast('Opening Instagram…', 'Log in to allow DOWNI to download reels securely.', 'info');
-      try {
-        const res = await engine.connectInstagram();
-        if (res && res.connected) {
-          showToast('Connected! ⚡', 'Instagram Reels unlocked. Retrying download…', 'success');
-          refreshIgStatus();
-          if (lastFailedUrl && /instagram/i.test(lastFailedUrl)) {
-            retryCurrentDownload();
-          }
-        } else {
-          showToast('Not connected', res?.message || 'Login was cancelled or session not captured.', 'info');
-        }
-      } catch (err) {
-        showToast('Connection failed', err?.message || String(err), 'error');
-      }
-    }
-
-    async function handleDisconnectInstagram() {
-      const engine = getEngine();
-      if (!engine?.disconnectInstagram) return;
-      try {
-        await engine.disconnectInstagram();
-        showToast('Disconnected', 'Instagram session cleared.', 'info');
-        refreshIgStatus();
-      } catch (e) {}
-    }
-
-    function quickFixInstagram() {
-      closeErrorModal();
-      handleConnectInstagram();
-    }
 
     // ================= Utils =================
     function extractUrl(text) {
@@ -1674,7 +1559,6 @@
       });
 
       syncEngineRules();
-      refreshIgStatus();
       setTimeout(checkClipboard, 600);
       setTimeout(() => checkAppUpdates(true), 4000);
 
