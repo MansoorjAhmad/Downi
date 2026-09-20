@@ -160,7 +160,7 @@ def _download_tiktok_direct(url, target_dir, is_audio=False, progress_listener=N
 # Inspect (v1.3.6 core with TikTok fast-path)
 # ---------------------------------------------------------------------------
 
-def inspect(url, ig_session=""):
+def inspect(url):
     clean = _clean_url(url)
     platform = _detect_platform(clean)
 
@@ -239,7 +239,7 @@ def inspect(url, ig_session=""):
 # Download (Exact rock-solid v1.3.6 core + progress listener)
 # ---------------------------------------------------------------------------
 
-def download(url, target_dir, format_id='best', progress_listener=None, ig_session=""):
+def download(url, target_dir, format_id='best', progress_listener=None):
     os.makedirs(target_dir, exist_ok=True)
     clean = _clean_url(url)
     platform = _detect_platform(clean)

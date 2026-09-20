@@ -325,10 +325,9 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             if (url.isEmpty()) throw new IllegalArgumentException("Empty or invalid link");
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
 
-            String igSession = getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
             // 100% pure local on-device download via Chaquopy + yt-dlp (no cloud relay dependencies).
             PyObject response = Python.getInstance().getModule("downloader")
-                .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this, igSession);
+                .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this);
 
             org.json.JSONObject file = new org.json.JSONObject(response.toString());
             String title = file.optString("title", "Downi video");
