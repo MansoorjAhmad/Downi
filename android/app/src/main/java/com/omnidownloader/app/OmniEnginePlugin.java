@@ -457,6 +457,55 @@ public class OmniEnginePlugin extends Plugin {
         }
     }
 
+    // ---------- Vault file listing ----------
+    @PluginMethod
+    public void listVaultFiles(PluginCall call) {
+        miscExecutor.execute(() -> {
+            File vaultDir = getContext().getExternalFilesDir(null);
+            JSObject result = new JSObject();
+            JSONArray items = new JSONArray();
+            if (vaultDir != null && vaultDir.isDirectory()) {
+                File[] files = vaultDir.listFiles();
+                if (files != null) {
+                    for (File f : files) {
+                        try {
+                            JSONObject obj = new JSONObject();
+                            obj.put("path", f.getAbsolutePath());
+                            obj.put("name", f.getName());
+                            obj.put("size", f.length());
+                            String lower = f.getName().toLowerCase();
+                            obj.put("isVideo", lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".mkv"));
+                            items.put(obj);
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
+            result.put("files", items);
+            call.resolve(result);
+        });
+    }
+
+    // ---------- Vault file deletion ----------
+    @PluginMethod
+    public void removeVaultFile(PluginCall call) {
+        String path = call.getString("path");
+        if (path == null) {
+            call.reject("Path is required");
+            return;
+        }
+        miscExecutor.execute(() -> {
+            File f = new File(path);
+            JSObject result = new JSObject();
+            if (f.exists() && f.delete()) {
+                result.put("deleted", true);
+                call.resolve(result);
+            } else {
+                result.put("deleted", false);
+                call.reject("Failed to delete file");
+            }
+        });
+    }
+
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || getPermissionState("notifications") == PermissionState.GRANTED) {

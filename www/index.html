@@ -6,6 +6,8 @@
   <title>DOWNI 2.5 — Grab Any Video</title>
   <script src="assets/vendor/tailwind.js"></script>
   <link rel="icon" type="image/png" href="assets/icon.png">
+  <!-- Apply saved theme before first paint to avoid flash -->
+  <script>try{var t=localStorage.getItem('omni_theme');if(t==='light')document.documentElement.dataset.theme='light';}catch(e){}</script>
   <style>
     @font-face {
       font-family: 'Plus Jakarta Sans';
@@ -33,6 +35,37 @@
       --bad: #FB7185;
       --muted: #8A94A7;
     }
+
+    :root[data-theme="light"] {
+      --bg: #F0F4F8;
+      --surface: #FFFFFF;
+      --surface-2: #E8EFF5;
+      --line: rgba(0, 0, 0, 0.08);
+      --accent: #0891B2;
+      --accent-2: #2563EB;
+      --ok: #059669;
+      --bad: #DC2626;
+      --muted: #64748B;
+    }
+
+    :root[data-theme="light"] body {
+      color: #1E293B;
+    }
+
+    :root[data-theme="light"] .text-white { color: #0F172A !important; }
+    :root[data-theme="light"] .text-zinc-200 { color: #1E293B !important; }
+    :root[data-theme="light"] .text-zinc-300 { color: #334155 !important; }
+    :root[data-theme="light"] .text-zinc-400 { color: #64748B !important; }
+    :root[data-theme="light"] .text-zinc-500 { color: #94A3B8 !important; }
+    :root[data-theme="light"] .card { background: var(--surface); border-color: var(--line); }
+    :root[data-theme="light"] .btn { background: var(--surface-2); color: #334155; }
+    :root[data-theme="light"] .dock { background: rgba(255,255,255,0.9); border: 1px solid var(--line); }
+    :root[data-theme="light"] .nav-item.on { background: var(--surface-2); color: var(--accent); }
+    :root[data-theme="light"] .chip { background: var(--surface-2); color: #334155; border-color: var(--line); }
+    :root[data-theme="light"] .chip.on { background: var(--accent); color: #fff; }
+    :root[data-theme="light"] input[type="text"],
+    :root[data-theme="light"] textarea,
+    :root[data-theme="light"] select { background: var(--surface-2); color: #1E293B; border-color: var(--line); }
 
     * {
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -407,6 +440,18 @@
           </div>
         </div>
 
+        <!-- Appearance -->
+        <div class="card p-4 space-y-1">
+          <p class="text-[12px] font-extrabold text-white px-1 pb-2">Appearance</p>
+          <div class="flex items-center justify-between py-3 border-t border-white/5">
+            <div>
+              <p class="text-[12px] font-bold text-zinc-200">Light theme</p>
+              <p class="text-[10px] mt-0.5" style="color:var(--muted)">Switch to a bright interface</p>
+            </div>
+            <input type="checkbox" id="chkLightTheme" onchange="applyTheme(this.checked ? 'light' : 'dark')" class="w-5 h-5 accent-cyan-400">
+          </div>
+        </div>
+
         <!-- Storage -->
         <div class="card p-4 space-y-1">
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">Storage</p>
@@ -431,7 +476,7 @@
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">About</p>
           <div class="flex items-center justify-between py-2.5 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">App</span>
-            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400">v2.5.4</span></span>
+            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400">v2.6.3</span></span>
           </div>
           <div class="flex items-center justify-between py-2.5 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">Engine</span>
@@ -1546,8 +1591,30 @@
       });
     }
 
+    // ================= Theme =================
+    function applyTheme(theme) {
+      const root = document.documentElement;
+      if (theme === 'light') {
+        root.dataset.theme = 'light';
+        root.style.background = 'var(--bg)';
+      } else {
+        delete root.dataset.theme;
+        root.style.background = '';
+      }
+      const chk = document.getElementById('chkLightTheme');
+      if (chk) chk.checked = (theme === 'light');
+      try { localStorage.setItem('omni_theme', theme); } catch(e) {}
+    }
+
+    function initTheme() {
+      let saved = 'dark';
+      try { saved = localStorage.getItem('omni_theme') || 'dark'; } catch(e) {}
+      applyTheme(saved);
+    }
+
     // ================= Boot =================
     window.addEventListener('DOMContentLoaded', () => {
+      initTheme();
       loadHistory();
       setupSheetDrag();
 

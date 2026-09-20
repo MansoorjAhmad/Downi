@@ -1,4 +1,4 @@
-# DOWNI V2.5.4 ⚡
+# DOWNI V2.6.3 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
@@ -6,57 +6,71 @@ DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application eng
 
 ---
 
-## 🆕 What's New in V2.5 — The DOWNI Rebrand
+## 🆕 What's New in V2.6.3
 
-### V2.5.4 release fixes
-
-- Cloud Boost is automatic and built in: DOWNI retries through the official relay whenever a local extraction is blocked.
-- No cookie or relay-URL setup is exposed to users. Public links work in one flow; private or login-only posts remain unavailable by platform design.
-- Release APKs and GitHub release titles now use the DOWNI name consistently.
-
-1. **💫 Full Rebrand: DOWNI**
-   - New name, new identity, same beloved engine.
-   - All notifications now come from **DowniDrop**, the background share downloader.
-   - Install directly over OmniDownloader V2.0/V2.1 — same app identity, same signing key, so **Check Updates carries every user to DOWNI automatically**.
-
-2. Everything from V2.1:
-   - True in-app updater with live progress bar and 1-tap install
-   - Real Media Vault with thumbnails, playback, sharing, and deletion
-   - yt-dlp `2026.8.19` pinned with a YouTube client fallback cascade
-   - Real available qualities in Inspect, honest error messages, real cancel
-   - Offline-first UI (Tailwind + fonts bundled in the APK)
+### Light Theme + Vault UI
+- **Light / Dark theme toggle** — Settings → Appearance. Switches instantly, persists across restarts with zero flash on launch.
+- **Vault tab fully functional** — Browse, play, share, and delete all files downloaded by DOWNI. Filter by All / Video / Audio.
 
 ---
 
-## 🌟 3 Core Downloading Features
+## 🆕 What's New in V2.6.2
 
-1. **⚡ FAST DL (One-Tap Circle Action)**
-   - Copy any video link and tap the **Crystal Vortex Button** — DOWNI grabs the best quality instantly.
-
-2. **🔍 Manual Download (Inspect & Choose Quality)**
-   - Paste a link, tap Inspect, and pick from the qualities that actually exist for that video (or Audio Only MP3).
-
-3. **↗ THE DOWNI GRAB (System Share Receiver)**
-   - In any app, tap **Share → DOWNI** — the video downloads in best quality in the background, with progress notifications and 1-tap Play/Share when done.
+### Restored Core Engine
+- Restored the proven v1.3.6 downloader core to fix Instagram and YouTube downloads.
+- Removed experimental client-spoofing and forced user-agent overrides that broke extraction.
+- Clean, stable extraction baseline for all supported platforms.
 
 ---
 
-## 🚫 100% Platform Watermark-Free
+## 🌟 Core Downloading Features
 
-- **TikTok**: Direct HD CDN extraction (`hdplay`) — no bouncing watermark.
-- **Instagram**: Clean MP4 streams for Reels, Stories, and Video Posts.
-- **YouTube & Shorts**: Full source quality extraction.
-- **Facebook, X (Twitter), Reddit, Pinterest**: Clean CDN streams saved to your Gallery / Movies.
+1. **⚡ One-Tap Grab**
+   - Copy any video link — a banner appears instantly. Tap it to grab at best quality.
+
+2. **🔍 Inspect & Choose Quality**
+   - Paste a link, preview thumbnail + title, then pick from real available qualities (or Audio Only MP3) before downloading.
+
+3. **↗ System Share Receiver**
+   - In any app, tap **Share → DOWNI** — downloads in the background with progress notifications and 1-tap Play/Share when done.
 
 ---
 
-## 💎 Features & Architecture
+## 🚫 100% Watermark-Free
 
-- **Glassic Luxury Design**: Frosted glass surfaces, neon cyan accents, obsidian depth.
-- **Media Vault**: Real on-device library with thumbnails, playback, sharing, deletion.
-- **Dual-Engine Core**: Capacitor 6 + native Java bridges + Chaquopy on-device Python (yt-dlp).
-- **Resilient Fallback Cascade**: Platform-aware multi-tier stream selection.
-- **Offline-First UI**: All web assets bundled locally — perfect rendering with zero internet.
+| Platform | Method |
+|----------|--------|
+| **YouTube & Shorts** | Full source quality via yt-dlp |
+| **Instagram** | Clean MP4 — Reels, Stories, Posts |
+| **TikTok** | Direct HD CDN (`hdplay`) — no bouncing watermark |
+| **Facebook** | Clean CDN stream |
+| **X (Twitter)** | Native video extraction |
+| **Reddit / Pinterest** | Clean CDN streams |
+
+---
+
+## 💎 Features
+
+| Feature | Details |
+|---------|---------|
+| **Platforms** | YouTube, Instagram, TikTok, Twitter/X, Facebook + any direct link |
+| **Formats** | 1080p / 720p / 480p / Best / MP3 audio-only |
+| **Downloads** | 3 simultaneous, up to 9 queued — fully parallel |
+| **Vault** | Browse, play, share & delete your downloaded files |
+| **Theme** | Light & Dark mode — Settings → Appearance |
+| **Clipboard detect** | Auto-detects copied video links — tap to grab instantly |
+| **Inspector** | Preview title, thumbnail & quality before downloading |
+| **Save location** | Gallery (Movies/Music) or custom folder |
+| **In-app updater** | Auto-checks GitHub and installs new versions |
+
+---
+
+## 🏗 Architecture
+
+- **Dual-Engine Core**: Capacitor 6 + native Java bridges + Chaquopy on-device Python (yt-dlp `2026.8.19`)
+- **Parallel Queue**: `MAX_ACTIVE = 3` thread pool, `MAX_QUEUED = 6` overflow queue
+- **Offline-First UI**: All web assets (Tailwind, fonts) bundled inside the APK — works with zero internet
+- **Resilient Fallback**: Platform-aware multi-tier stream selection with Cloud Boost relay
 
 ---
 
