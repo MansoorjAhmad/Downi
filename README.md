@@ -1,4 +1,4 @@
-# DOWNI V2.5 ⚡
+# DOWNI V2.5.4 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
@@ -7,6 +7,12 @@ DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application eng
 ---
 
 ## 🆕 What's New in V2.5 — The DOWNI Rebrand
+
+### V2.5.4 release fixes
+
+- Cloud Boost is now discoverable whether Vercel deploys the repository root or the `cloud/` folder.
+- Instagram session values accept both browser-copy formats and are available to your own Cloud Boost relay when Instagram demands login access.
+- Release APKs and GitHub release titles now use the DOWNI name consistently.
 
 1. **💫 Full Rebrand: DOWNI**
    - New name, new identity, same beloved engine.

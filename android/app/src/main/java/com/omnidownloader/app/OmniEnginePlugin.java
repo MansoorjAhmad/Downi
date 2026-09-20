@@ -597,7 +597,7 @@ public class OmniEnginePlugin extends Plugin {
                 String relay = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("relay_url", "");
                 if (relay != null && !relay.trim().isEmpty()) {
                     try {
-                        cloudOk = runCloudFallback(job, workDir, relay.trim());
+                        cloudOk = runCloudFallback(job, workDir, relay.trim(), igSession);
                     } catch (Exception cloudError) {
                         cloudOk = false;
                     }
@@ -620,7 +620,7 @@ public class OmniEnginePlugin extends Plugin {
     }
 
     /** Cloud Boost: resolve via relay server, then download the CDN link directly. */
-    private boolean runCloudFallback(DownloadJob job, File workDir, String relayUrl) throws Exception {
+    private boolean runCloudFallback(DownloadJob job, File workDir, String relayUrl, String igSession) throws Exception {
         OmniDownloadService.updateJob(getContext(), job.id, "Cloud Boost — resolving…", 5);
         JSObject statusEv = new JSObject();
         statusEv.put("jobId", job.id);
@@ -628,10 +628,16 @@ public class OmniEnginePlugin extends Plugin {
         statusEv.put("status", "Cloud Boost — resolving via your server…");
         notifyListeners("onProgress", statusEv);
 
-        String body = new JSONObject()
+        JSONObject request = new JSONObject()
             .put("url", job.url)
-            .put("format", job.formatId == null ? "best" : job.formatId)
-            .toString();
+            .put("format", job.formatId == null ? "best" : job.formatId);
+        // Instagram sometimes requires authentication even when the relay has a
+        // clean IP. The session is sent only to the relay URL the user configured
+        // and only for an Instagram download; it is never persisted by DOWNI.
+        if (job.url.toLowerCase(Locale.US).contains("instagram.com") && igSession != null && !igSession.trim().isEmpty()) {
+            request.put("instagramSession", igSession.trim());
+        }
+        String body = request.toString();
 
         HttpURLConnection conn = (HttpURLConnection) new URL(relayUrl + "/api/extract").openConnection();
         conn.setRequestMethod("POST");
@@ -783,6 +789,14 @@ public class OmniEnginePlugin extends Plugin {
         String value = call.getString("value", "");
         String clean = value == null ? "" : value.trim();
         if (clean.endsWith("/")) clean = clean.substring(0, clean.length() - 1);
+        if (!clean.isEmpty()) {
+            Uri relay = Uri.parse(clean);
+            if (!("https".equalsIgnoreCase(relay.getScheme()) || "http".equalsIgnoreCase(relay.getScheme()))
+                    || relay.getHost() == null || relay.getHost().isEmpty()) {
+                call.reject("Cloud Boost needs a valid http:// or https:// server URL.");
+                return;
+            }
+        }
         getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
             .edit().putString("relay_url", clean).apply();
         JSObject result = new JSObject();

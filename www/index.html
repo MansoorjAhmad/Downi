@@ -370,7 +370,7 @@
               <div class="w-10 h-10 rounded-2xl bg-cyan-400/12 border border-cyan-300/20 flex items-center justify-center text-base">🚀</div>
               <div>
                 <p class="text-[12px] font-extrabold text-white">DOWNI updates</p>
-                <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300 mt-0.5">v2.5.3 (28)</p>
+              <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300 mt-0.5">v2.5.4 (29)</p>
               </div>
             </div>
             <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn-hero px-4 py-2.5 text-[11px] font-extrabold">Check</button>
@@ -422,7 +422,7 @@
             <button onclick="clearIgSession()" class="btn px-4 py-2.5 text-[11px] font-bold text-zinc-400">Clear</button>
           </div>
           <p class="text-[10px] leading-relaxed" style="color:var(--muted)">
-            How: open <b>instagram.com</b> in your phone browser and log in → browser menu → <b>Site settings / Cookies</b> → find the cookie named <b>sessionid</b> → copy its value → paste above. Stored only on this device.
+            How: open <b>instagram.com</b> in your phone browser and log in → browser menu → <b>Site settings / Cookies</b> → find the cookie named <b>sessionid</b> → copy its value (or <b>sessionid=value</b>) → paste above. Stored only on this device. For an Instagram Cloud Boost retry, it is sent over HTTPS only to the relay URL you saved, then discarded.
           </p>
         </div>
 
@@ -470,7 +470,7 @@
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">About</p>
           <div class="flex items-center justify-between py-2.5 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">App</span>
-            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400">v2.5.3</span></span>
+            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400">v2.5.4</span></span>
           </div>
           <div class="flex items-center justify-between py-2.5 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">Engine</span>
@@ -631,8 +631,8 @@
     let detectedClipboardUrl = '';
     let currentInspectedUrl = '';
     let selectedInspectorQuality = 'best';
-    let installedVersion = '2.5.3';
-    let installedVersionCode = 28;
+    let installedVersion = '2.5.4';
+    let installedVersionCode = 29;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -1572,10 +1572,15 @@
     }
     function saveCloudRelay() {
       const value = document.getElementById('cloudRelayInput').value.trim();
-      if (!value.startsWith('http')) { showToast('Invalid URL', 'Paste the https://… vercel URL.', 'info'); return; }
+      let relay;
+      try { relay = new URL(value); } catch (_) { relay = null; }
+      if (!relay || !['https:', 'http:'].includes(relay.protocol) || !relay.hostname) {
+        showToast('Invalid URL', 'Paste the full https://… Vercel URL.', 'info');
+        return;
+      }
       const engine = getEngine();
       if (engine?.setCloudRelay) {
-        engine.setCloudRelay({ value: value }).then(() => {
+        engine.setCloudRelay({ value: relay.origin }).then(() => {
           document.getElementById('cloudRelayInput').value = '';
           refreshCloudStatus();
           showToast('Cloud Boost ON', 'Blocked grabs now retry via your server.', 'success');

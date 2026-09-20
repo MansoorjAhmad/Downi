@@ -126,9 +126,20 @@ def _check_cancel(progress_listener):
 
 def _ig_extra_headers(ig_session):
     """Optional Instagram session cookie headers (user-provided sessionid)."""
-    if not ig_session:
+    session = (ig_session or '').strip()
+    # Accept the two forms people commonly copy from browsers: just the value,
+    # or "sessionid=<value>". A malformed Cookie header is silently ignored by
+    # Instagram and produces its misleading "empty media response" error.
+    if session.lower().startswith('sessionid='):
+        session = session.split('=', 1)[1].strip()
+    if not session:
         return None
-    return {'Cookie': f'sessionid={ig_session}', 'X-IG-App-ID': '936619743392459'}
+    return {
+        'Cookie': f'sessionid={session}',
+        'X-IG-App-ID': '936619743392459',
+        'X-IG-WWW-Claim': '0',
+        'Referer': 'https://www.instagram.com/',
+    }
 
 
 def _merge_ig_headers(options, platform, ig_session):

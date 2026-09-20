@@ -1,7 +1,7 @@
 {
-  "name": "omni-downloader-mobile",
+  "name": "downi-mobile",
   "version": "1.0.0",
-  "description": "OmniDownloader Mobile - Ultra-Luxury 1-Tap Video Downloader for Android",
+  "description": "DOWNI - Ultra-Luxury 1-Tap Video Downloader for Android",
   "scripts": {
     "build": "echo Built www folder",
     "cap:sync": "cap sync",

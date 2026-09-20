@@ -1,4 +1,4 @@
-name: Release OmniDownloader APK
+name: Release DOWNI APK
 
 on:
   push:
@@ -59,8 +59,8 @@ jobs:
 
       - name: Rename APK
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk "OmniDownloader-${GITHUB_REF_NAME}.apk"
-          ls -la OmniDownloader-*.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "DOWNI-${GITHUB_REF_NAME}.apk"
+          ls -la DOWNI-*.apk
 
       - name: Create or Update GitHub Release
         env:
@@ -68,10 +68,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$TAG" "OmniDownloader-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" "DOWNI-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" "OmniDownloader-${TAG}.apk" \
+            gh release create "$TAG" "DOWNI-${TAG}.apk" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "OmniDownloader ${TAG}" \
-              --notes "New release of OmniDownloader. Install directly over the previous version — same signing key, so your settings and downloads are preserved."
+              --title "DOWNI ${TAG}" \
+              --notes "DOWNI 2.5.4: Cloud Boost deployment and validation fixes. Install directly over the previous version — the signing key is unchanged, so your settings and downloads are preserved."
           fi
