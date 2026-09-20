@@ -1,11 +1,5 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "outputDirectory": "www",
-  "cleanUrls": true,
-  "functions": {
-    "api/extract.py": {
-      "maxDuration": 60
-    }
-  }
+  "cleanUrls": true
 }
