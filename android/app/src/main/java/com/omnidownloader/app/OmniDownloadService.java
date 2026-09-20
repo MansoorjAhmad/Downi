@@ -326,19 +326,9 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
 
             String igSession = getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("ig_session", "");
-            PyObject response;
-            try {
-                // Pass 'this' as DownloadProgressListener and igSession to Python.
-                response = Python.getInstance().getModule("downloader")
-                    .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this, igSession);
-            } catch (Exception localError) {
-                if (sharedCancelRequested) throw localError;
-                try {
-                    response = downloadSharedFromCloud(url, work, OmniEnginePlugin.DEFAULT_CLOUD_RELAY);
-                } catch (Exception cloudError) {
-                    throw localError;
-                }
-            }
+            // 100% pure local on-device download via Chaquopy + yt-dlp (no cloud relay dependencies).
+            PyObject response = Python.getInstance().getModule("downloader")
+                .callAttr("download", url.trim(), work.getAbsolutePath(), "best", this, igSession);
 
             org.json.JSONObject file = new org.json.JSONObject(response.toString());
             String title = file.optString("title", "Downi video");
@@ -368,53 +358,6 @@ public class OmniDownloadService extends Service implements DownloadProgressList
                 if (files != null) for (File f : files) f.delete();
             } catch (Exception ignored) {}
         }
-    }
-
-    /** Resolve a shared link through DOWNI Cloud Boost, then download the
-     * returned CDN URL directly to the device. */
-    private PyObject downloadSharedFromCloud(String sourceUrl, File work, String relayUrl) throws Exception {
-        Uri relay = Uri.parse(relayUrl);
-        if (!("https".equalsIgnoreCase(relay.getScheme()) || "http".equalsIgnoreCase(relay.getScheme()))
-                || relay.getHost() == null || relay.getHost().isEmpty()) {
-            throw new IllegalArgumentException("Cloud Boost URL is invalid.");
-        }
-        String baseUrl = relayUrl.endsWith("/") ? relayUrl.substring(0, relayUrl.length() - 1) : relayUrl;
-        org.json.JSONObject request = new org.json.JSONObject()
-            .put("url", sourceUrl)
-            .put("format", "best");
-
-        showStatus("Cloud Boost — resolving…", 8);
-        HttpURLConnection conn = (HttpURLConnection) new URL(baseUrl + "/api/extract").openConnection();
-        conn.setRequestMethod("POST");
-        conn.setConnectTimeout(15000);
-        conn.setReadTimeout(60000);
-        conn.setDoOutput(true);
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setRequestProperty("User-Agent", "DOWNI/DowniDrop");
-        try (OutputStream output = conn.getOutputStream()) {
-            output.write(request.toString().getBytes("UTF-8"));
-        }
-        int code = conn.getResponseCode();
-        if (code < 200 || code >= 300) {
-            conn.disconnect();
-            throw new IllegalStateException("Cloud Boost could not resolve this link (HTTP " + code + ").");
-        }
-        StringBuilder raw = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
-            for (String line; (line = reader.readLine()) != null;) raw.append(line);
-        } finally {
-            conn.disconnect();
-        }
-        org.json.JSONObject data = new org.json.JSONObject(raw.toString());
-        String streamUrl = data.optString("url", "");
-        if (!data.optBoolean("ok", false) || !(streamUrl.startsWith("https://") || streamUrl.startsWith("http://"))) {
-            throw new IllegalStateException("Cloud Boost did not return a playable media link.");
-        }
-        showStatus("Cloud Boost — downloading…", 12);
-        return Python.getInstance().getModule("downloader").callAttr(
-            "download_direct", streamUrl, work.getAbsolutePath(),
-            data.optString("title", "Downi video"), data.optString("ext", "mp4"), this
-        );
     }
 
     private void showCancelled() {

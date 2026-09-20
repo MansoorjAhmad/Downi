@@ -64,7 +64,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
     @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS })
 })
 public class OmniEnginePlugin extends Plugin {
-    static final String DEFAULT_CLOUD_RELAY = "https://downi-booster.vercel.app";
     private static final int MAX_ACTIVE = 3;
     private static final int MAX_QUEUED = 6;
 
@@ -596,23 +595,14 @@ public class OmniEnginePlugin extends Plugin {
             try { job.call.resolve(progress); } catch (Exception ignored) {}
         } catch (Exception error) {
             if (!job.cancelled.get()) {
-                // Cloud Boost — automatic retry through DOWNI's relay.
-                boolean cloudOk = false;
-                try {
-                    cloudOk = runCloudFallback(job, workDir, DEFAULT_CLOUD_RELAY);
-                } catch (Exception cloudError) {
-                    cloudOk = false;
-                }
-                if (!cloudOk) {
-                    JSObject progress = new JSObject();
-                    progress.put("jobId", job.id);
-                    progress.put("failed", true);
-                    String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
-                    progress.put("error", friendlyError(detail));
-                    notifyListeners("onProgress", progress);
-                    OmniDownloadService.finishJob(getContext(), job.id);
-                    try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
-                }
+                JSObject progress = new JSObject();
+                progress.put("jobId", job.id);
+                progress.put("failed", true);
+                String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
+                progress.put("error", friendlyError(detail));
+                notifyListeners("onProgress", progress);
+                OmniDownloadService.finishJob(getContext(), job.id);
+                try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
             }
         } finally {
             jobs.remove(job.id);
@@ -620,101 +610,7 @@ public class OmniEnginePlugin extends Plugin {
         }
     }
 
-    /** Cloud Boost: resolve via relay server, then download the CDN link directly. */
-    private boolean runCloudFallback(DownloadJob job, File workDir, String relayUrl) throws Exception {
-        OmniDownloadService.updateJob(getContext(), job.id, "Cloud Boost — resolving…", 5);
-        JSObject statusEv = new JSObject();
-        statusEv.put("jobId", job.id);
-        statusEv.put("percent", 5);
-        statusEv.put("status", "Cloud Boost — resolving via your server…");
-        notifyListeners("onProgress", statusEv);
 
-        JSONObject request = new JSONObject()
-            .put("url", job.url)
-            .put("format", job.formatId == null ? "best" : job.formatId);
-        String body = request.toString();
-
-        HttpURLConnection conn = (HttpURLConnection) new URL(relayUrl + "/api/extract").openConnection();
-        conn.setRequestMethod("POST");
-        conn.setConnectTimeout(15000);
-        conn.setReadTimeout(60000);
-        conn.setDoOutput(true);
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setRequestProperty("User-Agent", "DOWNI/" + getAppVersionName());
-        try (OutputStream os = conn.getOutputStream()) {
-            os.write(body.getBytes("UTF-8"));
-        }
-        int code = conn.getResponseCode();
-        if (code < 200 || code >= 300) {
-            conn.disconnect();
-            return false;
-        }
-        StringBuilder sb = new StringBuilder();
-        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"))) {
-            for (String line; (line = reader.readLine()) != null;) sb.append(line);
-        }
-        conn.disconnect();
-
-        JSONObject data = new JSONObject(sb.toString());
-        if (!data.optBoolean("ok", false) || !data.optString("url", "").startsWith("http")) {
-            return false;
-        }
-        String title = data.optString("title", "DOWNI Video");
-        String ext = data.optString("ext", "mp4");
-        String streamUrl = data.optString("url");
-
-        if (job.cancelled.get()) return false;
-
-        OmniDownloadService.updateJob(getContext(), job.id, "Cloud Boost — downloading…", 10);
-        DownloadProgressListener listener = new DownloadProgressListener() {
-            @Override
-            public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
-                if (job.cancelled.get()) return;
-                JSObject progress = new JSObject();
-                progress.put("jobId", job.id);
-                progress.put("percent", (int) percent);
-                progress.put("downloadedBytes", downloadedBytes);
-                progress.put("totalBytes", totalBytes);
-                progress.put("speed", speedBytesPerSec);
-                progress.put("speedFormatted", formatSpeed(speedBytesPerSec));
-                progress.put("sizeFormatted", formatBytes(downloadedBytes) + (totalBytes > 0 ? " / " + formatBytes(totalBytes) : ""));
-                progress.put("eta", etaSeconds);
-                progress.put("etaFormatted", etaSeconds > 0 ? (etaSeconds + "s left") : "");
-                progress.put("status", "Cloud Boost ⚡");
-                notifyListeners("onProgress", progress);
-                OmniDownloadService.updateJob(getContext(), job.id,
-                    "Cloud Boost ⚡ " + progress.getString("sizeFormatted") + String.format(Locale.US, " (%.0f%%)", percent), (int) percent);
-            }
-
-            @Override
-            public boolean isCancelled() {
-                return job.cancelled.get();
-            }
-        };
-
-        PyObject response = Python.getInstance().getModule("downloader")
-            .callAttr("download_direct", streamUrl, workDir.getAbsolutePath(), title, ext, listener);
-        if (job.cancelled.get()) return false;
-
-        JSONObject file = new JSONObject(response.toString());
-        OmniDownloadService.updateJob(getContext(), job.id, "Saving to gallery…", 98);
-
-        String destination = copyToGallery(new File(file.getString("path")), file.getString("title"), file.getString("ext"));
-        if (job.cancelled.get()) return false;
-
-        JSObject progress = new JSObject();
-        progress.put("jobId", job.id);
-        progress.put("percent", 100);
-        progress.put("status", "Saved to your gallery");
-        progress.put("complete", true);
-        progress.put("title", file.optString("title", "Video"));
-        progress.put("destination", destination);
-        notifyListeners("onProgress", progress);
-
-        OmniDownloadService.finishJob(getContext(), job.id);
-        try { job.call.resolve(progress); } catch (Exception ignored) {}
-        return true;
-    }
 
     @PluginMethod
     public void extract(PluginCall call) {
