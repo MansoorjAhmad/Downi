@@ -538,6 +538,109 @@ def engine_info():
     })
 
 
+def diagnose():
+    """Per-platform network diagnostics from THIS device's network.
+    Pinpoints whether the user's IP is being blocked per platform."""
+    ytdlp = _yt_dlp()
+    results = []
+
+    def check(name, fn):
+        t0 = time.time()
+        try:
+            fn()
+            results.append({'check': name, 'ok': True, 'ms': int((time.time() - t0) * 1000), 'error': ''})
+        except Exception as e:
+            results.append({'check': name, 'ok': False, 'ms': int((time.time() - t0) * 1000), 'error': str(e)[:220]})
+
+    def _head(url):
+        req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Mozilla/5.0 (Linux; Android 14) Chrome/124.0'})
+        urllib.request.urlopen(req, timeout=10, context=_get_ssl_context()).read(0)
+
+    def _extract(url):
+        opts = _base_ydl_options()
+        opts['skip_download'] = True
+        with ytdlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info(url, download=False)
+
+    check('Internet reachability', lambda: _head('https://www.google.com/generate_204'))
+    check('YouTube extraction', lambda: _extract('https://www.youtube.com/watch?v=dQw4w9WgXcQ'))
+    check('Instagram extraction', lambda: _extract('https://www.instagram.com/reel/DcZTAe4jKBp'))
+
+    def _tikwm():
+        req = urllib.request.Request('https://www.tikwm.com/api/', headers={'User-Agent': 'Mozilla/5.0'})
+        urllib.request.urlopen(req, timeout=10, context=_get_ssl_context()).read(64)
+    check('TikTok API reachability', _tikwm)
+
+    return json.dumps({
+        'results': results,
+        'yt_dlp': ytdlp.version.__version__,
+        'python': __import__('platform').python_version(),
+    })
+
+
+def download_direct(stream_url, target_dir, title, ext, progress_listener=None, referer=''):
+    """Download an already-resolved CDN link (used by Cloud Boost results).
+    Uses the 6-connection segmented downloader with single-stream fallback."""
+    os.makedirs(target_dir, exist_ok=True)
+    ext = (ext or 'mp4').lower().lstrip('.')
+    is_audio = ext in ('m4a', 'mp3')
+    filename = f"{_safe_name(title)[:60]}.{ext}"
+    path = os.path.join(target_dir, filename)
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+    }
+    if referer:
+        headers['Referer'] = referer
+
+    used_segmented = False
+    try:
+        used_segmented = _download_stream_segmented(stream_url, path, headers, progress_listener, connections=6)
+    except CancelledError:
+        raise
+    except Exception:
+        used_segmented = False
+
+    if not used_segmented:
+        req = urllib.request.Request(stream_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=35, context=_get_ssl_context()) as resp:
+            total_size = int(resp.headers.get('Content-Length') or 0)
+            downloaded = 0
+            last_cb = 0.0
+            start_time = time.time()
+            with open(path, 'wb') as f:
+                while True:
+                    _check_cancel(progress_listener)
+                    chunk = resp.read(128 * 1024)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    now = time.time()
+                    if progress_listener and (now - last_cb > 0.25):
+                        last_cb = now
+                        elapsed = max(0.001, now - start_time)
+                        speed = downloaded / elapsed
+                        eta = int((total_size - downloaded) / speed) if (total_size > downloaded and speed > 0) else 0
+                        pct = (downloaded / total_size * 100.0) if total_size > 0 else 50.0
+                        try:
+                            progress_listener.onProgress(float(min(99.0, pct)), int(downloaded), int(total_size), float(speed), int(eta))
+                        except Exception:
+                            pass
+
+    filesize = os.path.getsize(path) if os.path.exists(path) else 0
+    if filesize <= 0:
+        raise RuntimeError('Downloaded file is empty.')
+    return json.dumps({
+        'path': path,
+        'title': _safe_name(title),
+        'ext': ext,
+        'filesize': filesize,
+        'platform': 'cloud',
+    })
+
+
 def _selected_format(format_id, is_audio):
     if is_audio:
         return "ba[ext=m4a]/ba/b/best"

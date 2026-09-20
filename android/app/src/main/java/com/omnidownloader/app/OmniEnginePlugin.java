@@ -592,19 +592,127 @@ public class OmniEnginePlugin extends Plugin {
             try { job.call.resolve(progress); } catch (Exception ignored) {}
         } catch (Exception error) {
             if (!job.cancelled.get()) {
-                JSObject progress = new JSObject();
-                progress.put("jobId", job.id);
-                progress.put("failed", true);
-                String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
-                progress.put("error", friendlyError(detail));
-                notifyListeners("onProgress", progress);
-                OmniDownloadService.finishJob(getContext(), job.id);
-                try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
+                // ELITE: Cloud Boost — retry extraction through the user's relay server
+                boolean cloudOk = false;
+                String relay = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("relay_url", "");
+                if (relay != null && !relay.trim().isEmpty()) {
+                    try {
+                        cloudOk = runCloudFallback(job, workDir, relay.trim());
+                    } catch (Exception cloudError) {
+                        cloudOk = false;
+                    }
+                }
+                if (!cloudOk) {
+                    JSObject progress = new JSObject();
+                    progress.put("jobId", job.id);
+                    progress.put("failed", true);
+                    String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
+                    progress.put("error", friendlyError(detail));
+                    notifyListeners("onProgress", progress);
+                    OmniDownloadService.finishJob(getContext(), job.id);
+                    try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
+                }
             }
         } finally {
             jobs.remove(job.id);
             cleanDir(workDir);
         }
+    }
+
+    /** Cloud Boost: resolve via relay server, then download the CDN link directly. */
+    private boolean runCloudFallback(DownloadJob job, File workDir, String relayUrl) throws Exception {
+        OmniDownloadService.updateJob(getContext(), job.id, "Cloud Boost — resolving…", 5);
+        JSObject statusEv = new JSObject();
+        statusEv.put("jobId", job.id);
+        statusEv.put("percent", 5);
+        statusEv.put("status", "Cloud Boost — resolving via your server…");
+        notifyListeners("onProgress", statusEv);
+
+        String body = new JSONObject()
+            .put("url", job.url)
+            .put("format", job.formatId == null ? "best" : job.formatId)
+            .toString();
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(relayUrl + "/api/extract").openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(60000);
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("User-Agent", "DOWNI/" + getAppVersionName());
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(body.getBytes("UTF-8"));
+        }
+        int code = conn.getResponseCode();
+        if (code < 200 || code >= 300) {
+            conn.disconnect();
+            return false;
+        }
+        StringBuilder sb = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+            for (String line; (line = reader.readLine()) != null;) sb.append(line);
+        }
+        conn.disconnect();
+
+        JSONObject data = new JSONObject(sb.toString());
+        if (!data.optBoolean("ok", false) || !data.optString("url", "").startsWith("http")) {
+            return false;
+        }
+        String title = data.optString("title", "DOWNI Video");
+        String ext = data.optString("ext", "mp4");
+        String streamUrl = data.optString("url");
+
+        if (job.cancelled.get()) return false;
+
+        OmniDownloadService.updateJob(getContext(), job.id, "Cloud Boost — downloading…", 10);
+        DownloadProgressListener listener = new DownloadProgressListener() {
+            @Override
+            public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
+                if (job.cancelled.get()) return;
+                JSObject progress = new JSObject();
+                progress.put("jobId", job.id);
+                progress.put("percent", (int) percent);
+                progress.put("downloadedBytes", downloadedBytes);
+                progress.put("totalBytes", totalBytes);
+                progress.put("speed", speedBytesPerSec);
+                progress.put("speedFormatted", formatSpeed(speedBytesPerSec));
+                progress.put("sizeFormatted", formatBytes(downloadedBytes) + (totalBytes > 0 ? " / " + formatBytes(totalBytes) : ""));
+                progress.put("eta", etaSeconds);
+                progress.put("etaFormatted", etaSeconds > 0 ? (etaSeconds + "s left") : "");
+                progress.put("status", "Cloud Boost ⚡");
+                notifyListeners("onProgress", progress);
+                OmniDownloadService.updateJob(getContext(), job.id,
+                    "Cloud Boost ⚡ " + progress.getString("sizeFormatted") + String.format(Locale.US, " (%.0f%%)", percent), (int) percent);
+            }
+
+            @Override
+            public boolean isCancelled() {
+                return job.cancelled.get();
+            }
+        };
+
+        PyObject response = Python.getInstance().getModule("downloader")
+            .callAttr("download_direct", streamUrl, workDir.getAbsolutePath(), title, ext, listener);
+        if (job.cancelled.get()) return false;
+
+        JSONObject file = new JSONObject(response.toString());
+        OmniDownloadService.updateJob(getContext(), job.id, "Saving to gallery…", 98);
+
+        String destination = copyToGallery(new File(file.getString("path")), file.getString("title"), file.getString("ext"));
+        if (job.cancelled.get()) return false;
+
+        JSObject progress = new JSObject();
+        progress.put("jobId", job.id);
+        progress.put("percent", 100);
+        progress.put("status", "Saved to your gallery");
+        progress.put("complete", true);
+        progress.put("title", file.optString("title", "Video"));
+        progress.put("destination", destination);
+        notifyListeners("onProgress", progress);
+
+        OmniDownloadService.finishJob(getContext(), job.id);
+        try { job.call.resolve(progress); } catch (Exception ignored) {}
+        return true;
     }
 
     @PluginMethod
@@ -668,6 +776,45 @@ public class OmniEnginePlugin extends Plugin {
         result.put("value", value);
         result.put("hasSession", value != null && !value.isEmpty());
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void setCloudRelay(PluginCall call) {
+        String value = call.getString("value", "");
+        String clean = value == null ? "" : value.trim();
+        if (clean.endsWith("/")) clean = clean.substring(0, clean.length() - 1);
+        getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
+            .edit().putString("relay_url", clean).apply();
+        JSObject result = new JSObject();
+        result.put("saved", true);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getCloudRelay(PluginCall call) {
+        String value = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("relay_url", "");
+        JSObject result = new JSObject();
+        result.put("value", value);
+        result.put("enabled", value != null && !value.isEmpty());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void diagnose(PluginCall call) {
+        call.setKeepAlive(true);
+        miscExecutor.execute(() -> {
+            try {
+                if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
+                PyObject response = Python.getInstance().getModule("downloader").callAttr("diagnose");
+                JSONObject info = new JSONObject(response.toString());
+                JSObject result = new JSObject();
+                result.put("results", com.getcapacitor.JSArray.from(info.optJSONArray("results") != null ? info.optJSONArray("results") : new JSONArray()));
+                result.put("ytDlp", info.optString("yt_dlp", ""));
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject("Diagnostics failed: " + error.getMessage(), error);
+            }
+        });
     }
 
     @PluginMethod

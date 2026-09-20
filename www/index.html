@@ -72,7 +72,7 @@
       border: none;
       border-radius: 18px;
       box-shadow: 0 12px 30px rgba(34, 211, 238, 0.30);
-      transition: transform .15s ease, box-shadow .2s ease;
+      transition: transform .15s ease, box-shadow .2s ease, opacity .2s ease;
     }
     .btn-hero:active { transform: scale(0.98); box-shadow: 0 8px 20px rgba(34, 211, 238, 0.4); }
     .btn-hero:disabled { opacity: .55; }
@@ -89,21 +89,60 @@
       color: #7DE7F7;
     }
 
-    .bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
+    /* ---- HERO VORTEX BUTTON ---- */
+    .vortex {
+      width: 132px; height: 132px; border-radius: 999px;
+      display: flex; align-items: center; justify-content: center;
+      position: relative; cursor: pointer; user-select: none;
+      background: radial-gradient(circle at 32% 30%, rgba(34,211,238,.16), rgba(9,14,26,.95) 65%);
+      border: 1px solid rgba(34,211,238,.35);
+      box-shadow: 0 0 44px rgba(34,211,238,.22), inset 0 0 26px rgba(34,211,238,.12);
+      transition: transform .18s cubic-bezier(.4,0,.2,1);
+    }
+    .vortex:active { transform: scale(.93); }
+    .vortex::before {
+      content: ''; position: absolute; inset: -7px; border-radius: 999px;
+      background: conic-gradient(from 0deg, transparent 12%, var(--accent) 37%, var(--accent-2) 50%, transparent 62%, transparent 100%);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+      mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+      animation: spin 3.2s linear infinite;
+      opacity: .9;
+    }
+    .vortex::after {
+      content: ''; position: absolute; inset: -16px; border-radius: 999px;
+      background: radial-gradient(circle, rgba(34,211,238,.16) 0%, transparent 68%);
+      animation: breathe 2.8s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes breathe { 0%,100% { opacity:.55; transform: scale(.96);} 50% { opacity:1; transform: scale(1.05);} }
+
+    .bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; position: relative; }
     .bar > div {
       height: 100%;
       border-radius: 999px;
       background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--ok));
       transition: width .3s ease;
+      position: relative;
+      overflow: hidden;
     }
+    /* Shine sweep while active */
+    .bar.live > div::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%, transparent 70%);
+      background-size: 200% 100%;
+      animation: sweep 1.4s linear infinite;
+    }
+    @keyframes sweep { to { background-position: -200% 0; } }
 
     .sheet {
       background: var(--surface-2);
       border: 1px solid var(--line);
       border-radius: 26px 26px 22px 22px;
       box-shadow: 0 -12px 60px rgba(0,0,0,.6);
+      transition: transform .25s cubic-bezier(.4,0,.2,1);
     }
-    .grabber { width: 44px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.16); margin: 10px auto 4px; }
+    .grabber { width: 44px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.16); margin: 10px auto 4px; cursor: grab; touch-action: none; }
 
     .dock {
       background: rgba(9, 13, 22, 0.94);
@@ -124,8 +163,11 @@
     }
     @keyframes shimmer { to { background-position: -200% 0; } }
 
-    .fade-in { animation: fadeIn .25s ease both; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .fade-in { animation: fadeIn .28s ease both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
+
+    .pop { animation: pop .35s cubic-bezier(.34,1.56,.64,1) both; }
+    @keyframes pop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: scale(1); } }
 
     .safe-top { padding-top: max(env(safe-area-inset-top, 14px), 14px); }
     .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom, 14px), 14px); }
@@ -163,7 +205,10 @@
             <span class="text-[19px] font-extrabold tracking-tight text-white leading-none">DOWNI</span>
             <span id="headerVersionBadge" class="chip text-[9px] font-mono font-bold px-2 py-0.5">v2.5</span>
           </div>
-          <p class="text-[10px] font-semibold mt-0.5" style="color:var(--muted)">Grab any video. One tap.</p>
+          <div class="flex items-center gap-1.5 mt-0.5">
+            <span id="engineDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <p class="text-[10px] font-semibold" style="color:var(--muted)">Grab any video. One tap.</p>
+          </div>
         </div>
       </div>
       <button onclick="switchTab('settings')" class="btn w-10 h-10 flex items-center justify-center" title="Settings">
@@ -193,18 +238,25 @@
           </div>
         </div>
 
-        <!-- HERO: URL + GRAB -->
-        <div class="card p-5 space-y-4 fade-in">
-          <div class="flex items-center justify-between">
-            <h2 class="text-[15px] font-extrabold text-white tracking-tight">Grab a video</h2>
-            <button onclick="handleFastDlClick()" class="chip px-3 py-1.5 text-[10px] font-extrabold flex items-center gap-1.5">
-              ⚡ FAST DL <span class="text-[9px] font-semibold" style="color:var(--muted)">clipboard</span>
-            </button>
+        <!-- HERO -->
+        <div class="card p-5 space-y-5 fade-in">
+          <div class="flex flex-col items-center pt-2">
+            <div class="vortex" onclick="handleFastDlClick()">
+              <img src="assets/logo.png" alt="Fast DL" class="w-[72px] h-[72px] rounded-full object-cover">
+            </div>
+            <p class="mt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-white">Tap the vortex</p>
+            <p class="text-[10px] mt-0.5" style="color:var(--muted)">Grabs whatever link is on your clipboard — instantly</p>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <div class="h-px flex-1" style="background:var(--line)"></div>
+            <span class="text-[9px] font-extrabold uppercase tracking-widest" style="color:var(--muted)">or paste a link</span>
+            <div class="h-px flex-1" style="background:var(--line)"></div>
           </div>
 
           <div class="relative flex items-center">
             <div class="absolute left-4 pointer-events-none text-zinc-500">
-              <svg viewBox="0 0 24 24" class="w-4.5 h-4.5" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
                 <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
               </svg>
@@ -235,16 +287,6 @@
           </div>
         </div>
 
-        <!-- Omni grab hint -->
-        <button onclick="switchTab('settings')" class="w-full card p-4 flex items-center gap-3 text-left fade-in">
-          <div class="w-10 h-10 rounded-2xl bg-cyan-400/12 border border-cyan-300/20 flex items-center justify-center text-cyan-300 text-base flex-shrink-0">↗</div>
-          <div class="min-w-0 flex-1">
-            <p class="text-[12px] font-extrabold text-white">THE DOWNI GRAB</p>
-            <p class="text-[10px] mt-0.5" style="color:var(--muted)">In any app: Share → DOWNI — grabs in background</p>
-          </div>
-          <span class="text-zinc-600 text-sm">›</span>
-        </button>
-
         <!-- Active downloads -->
         <div id="activeDownloadsWrap" class="hidden space-y-3">
           <div class="flex items-center justify-between px-1">
@@ -252,6 +294,15 @@
             <button onclick="cancelAllDownloads()" class="text-[11px] font-bold" style="color:var(--bad)">Cancel all</button>
           </div>
           <div id="activeDownloads" class="space-y-3"></div>
+        </div>
+
+        <!-- Omni grab hint -->
+        <div class="card p-4 flex items-center gap-3 fade-in">
+          <div class="w-10 h-10 rounded-2xl bg-cyan-400/12 border border-cyan-300/20 flex items-center justify-center text-cyan-300 text-base flex-shrink-0">↗</div>
+          <div class="min-w-0 flex-1">
+            <p class="text-[12px] font-extrabold text-white">THE DOWNI GRAB</p>
+            <p class="text-[10px] mt-0.5" style="color:var(--muted)">In any app: Share → DOWNI — grabs in background</p>
+          </div>
         </div>
 
       </div>
@@ -319,7 +370,7 @@
               <div class="w-10 h-10 rounded-2xl bg-cyan-400/12 border border-cyan-300/20 flex items-center justify-center text-base">🚀</div>
               <div>
                 <p class="text-[12px] font-extrabold text-white">DOWNI updates</p>
-                <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300 mt-0.5">v2.5.0 (25)</p>
+                <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300 mt-0.5">v2.5.2 (27)</p>
               </div>
             </div>
             <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn-hero px-4 py-2.5 text-[11px] font-extrabold">Check</button>
@@ -342,6 +393,17 @@
             <span id="engineHealthBadge" class="chip px-3 py-1 text-[9px] font-mono font-bold">…</span>
           </div>
           <button onclick="syncEngineRules()" class="btn w-full py-2.5 text-[11px] font-bold text-zinc-300">Verify engine health</button>
+
+          <div class="border-t border-white/5 pt-3 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-[12px] font-bold text-zinc-200">Network diagnostics</p>
+                <p class="text-[10px] mt-0.5" style="color:var(--muted)">Finds exactly what your network blocks</p>
+              </div>
+              <button id="btnDiagnose" onclick="runDiagnostics()" class="btn-hero px-4 py-2.5 text-[11px] font-extrabold">Run</button>
+            </div>
+            <div id="diagnosticsResults" class="hidden space-y-1.5"></div>
+          </div>
         </div>
 
         <!-- Instagram access -->
@@ -360,7 +422,27 @@
             <button onclick="clearIgSession()" class="btn px-4 py-2.5 text-[11px] font-bold text-zinc-400">Clear</button>
           </div>
           <p class="text-[10px] leading-relaxed" style="color:var(--muted)">
-            How: open <b>instagram.com</b> in your phone browser and log in → browser menu → <b>Site settings / Cookies</b> → find the cookie named <b>sessionid</b> → copy its value → paste above. Stored only on this device, used only for Instagram.
+            How: open <b>instagram.com</b> in your phone browser and log in → browser menu → <b>Site settings / Cookies</b> → find the cookie named <b>sessionid</b> → copy its value → paste above. Stored only on this device.
+          </p>
+        </div>
+
+        <!-- Cloud Boost -->
+        <div class="card p-4 space-y-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-violet-400/10 border border-violet-300/25 flex items-center justify-center text-base flex-shrink-0">☁️</div>
+            <div class="min-w-0">
+              <p class="text-[12px] font-extrabold text-white">Cloud Boost <span class="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-md align-middle" style="background:rgba(139,92,246,.15); color:#C4B5FD; border:1px solid rgba(139,92,246,.3)">PRO</span></p>
+              <p id="cloudStatusText" class="text-[11px] mt-0.5" style="color:var(--muted)">Off — local engine only</p>
+            </div>
+          </div>
+          <input id="cloudRelayInput" type="url" placeholder="https://your-downi-boost.vercel.app"
+            class="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3.5 text-[12px] text-white placeholder-zinc-500 font-mono focus:border-cyan-300/50 transition" />
+          <div class="flex gap-2">
+            <button onclick="saveCloudRelay()" class="btn-hero flex-1 py-2.5 text-[11px] font-extrabold">Save relay</button>
+            <button onclick="clearCloudRelay()" class="btn px-4 py-2.5 text-[11px] font-bold text-zinc-400">Off</button>
+          </div>
+          <p class="text-[10px] leading-relaxed" style="color:var(--muted)">
+            The top-app method: when your network blocks extraction, DOWNI retries through your own free server (clean IP). Deploy in 5 min — see <b>cloud/README.md</b> in the repo.
           </p>
         </div>
 
@@ -388,7 +470,7 @@
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">About</p>
           <div class="flex items-center justify-between py-2.5 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">App</span>
-            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400">v2.5.0</span></span>
+            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400">v2.5.2</span></span>
           </div>
           <div class="flex items-center justify-between py-2.5 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">Engine</span>
@@ -407,26 +489,26 @@
     <!-- DOCK -->
     <nav class="fixed bottom-3 inset-x-4 max-w-md mx-auto z-40 dock p-1.5 flex items-center justify-around safe-bottom">
       <button id="navGrab" onclick="switchTab('grab')" class="nav-item on flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-bold">
-        <svg viewBox="0 0 24 24" class="w-4.5 h-4.5" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
         </svg>
         <span>Grab</span>
       </button>
       <button id="navQueue" onclick="switchTab('queue')" class="nav-item flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-semibold relative">
-        <svg viewBox="0 0 24 24" class="w-4.5 h-4.5" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
           <path d="M4 6h16M4 12h16M4 18h7"/>
         </svg>
         <span>Queue</span>
         <span id="queueBadge" class="hidden absolute top-1.5 right-5 w-2 h-2 rounded-full" style="background:var(--accent)"></span>
       </button>
       <button id="navVault" onclick="switchTab('vault')" class="nav-item flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-semibold">
-        <svg viewBox="0 0 24 24" class="w-4.5 h-4.5" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
           <rect x="2" y="2" width="20" height="20" rx="3"/><path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5"/>
         </svg>
         <span>Vault</span>
       </button>
       <button id="navSettings" onclick="switchTab('settings')" class="nav-item flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-semibold">
-        <svg viewBox="0 0 24 24" class="w-4.5 h-4.5" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
         </svg>
         <span>Settings</span>
@@ -437,14 +519,14 @@
   <!-- INSPECTOR SHEET -->
   <div id="inspectorModal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/75 backdrop-blur-md" onclick="closeInspector()"></div>
-    <div class="absolute inset-x-0 bottom-0 sheet p-5 pb-7 max-h-[88vh] overflow-y-auto fade-in max-w-xl mx-auto">
-      <div class="grabber"></div>
+    <div id="inspectorSheet" class="absolute inset-x-0 bottom-0 sheet p-5 pb-7 max-h-[88vh] overflow-y-auto max-w-xl mx-auto">
+      <div class="grabber" data-drag-dismiss="inspectorSheet"></div>
       <div class="flex items-center justify-between mt-2 mb-4">
         <span id="inspectorPlatformBadge" class="chip on px-3 py-1 text-[9px] font-extrabold uppercase tracking-widest">Video</span>
         <button onclick="closeInspector()" class="btn w-9 h-9 flex items-center justify-center text-zinc-400 text-sm">✕</button>
       </div>
 
-      <div class="aspect-video w-full rounded-2xl bg-black/60 overflow-hidden relative border border-white/8 mb-4" style="border-color:rgba(255,255,255,.08)">
+      <div class="aspect-video w-full rounded-2xl bg-black/60 overflow-hidden relative mb-4" style="border:1px solid rgba(255,255,255,.08)">
         <div id="inspectorThumbSkel" class="absolute inset-0 skel"></div>
         <img id="inspectorThumbnail" src="assets/logo.png" class="w-full h-full object-cover" onload="document.getElementById('inspectorThumbSkel').style.display='none'">
         <span id="inspectorDuration" class="absolute bottom-2 right-2 bg-black/80 px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold text-white">0:00</span>
@@ -468,8 +550,8 @@
   <!-- UPDATE SHEET -->
   <div id="updateModal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/75 backdrop-blur-md" onclick="closeUpdateModal()" id="updateBackdrop"></div>
-    <div class="absolute inset-x-0 bottom-0 sheet p-5 pb-7 max-w-xl mx-auto fade-in">
-      <div class="grabber"></div>
+    <div id="updateSheet" class="absolute inset-x-0 bottom-0 sheet p-5 pb-7 max-w-xl mx-auto">
+      <div class="grabber" data-drag-dismiss="updateSheet"></div>
       <div id="updateInfoSection" class="mt-3">
         <div class="flex items-center justify-between mb-3">
           <span class="chip px-3 py-1 text-[9px] font-extrabold uppercase tracking-widest" style="color:var(--ok); border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.1)">Update available</span>
@@ -485,7 +567,7 @@
           <p class="text-[12px] font-extrabold text-white">Downloading update…</p>
           <span id="updateProgressPercent" class="text-[12px] font-mono font-bold text-cyan-300">0%</span>
         </div>
-        <div class="bar"><div id="updateProgressBar" style="width:0%"></div></div>
+        <div class="bar live"><div id="updateProgressBar" style="width:0%"></div></div>
         <div class="flex items-center justify-between text-[11px] font-mono" style="color:var(--muted)">
           <span id="updateProgressRatio">0 MB / 0 MB</span>
           <span id="updateProgressSpeed" class="text-emerald-300">⚡ --</span>
@@ -503,8 +585,8 @@
   <!-- ERROR SHEET -->
   <div id="errorModal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/75 backdrop-blur-md" onclick="closeErrorModal()"></div>
-    <div class="absolute inset-x-0 bottom-0 sheet p-5 pb-7 max-w-xl mx-auto fade-in">
-      <div class="grabber"></div>
+    <div id="errorSheet" class="absolute inset-x-0 bottom-0 sheet p-5 pb-7 max-w-xl mx-auto">
+      <div class="grabber" data-drag-dismiss="errorSheet"></div>
       <div class="flex items-center gap-3 mt-3 mb-4">
         <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-lg font-bold" style="background:rgba(251,113,133,.12); border:1px solid rgba(251,113,133,.3); color:var(--bad)">!</div>
         <div class="min-w-0">
@@ -517,9 +599,20 @@
         <div id="errorTechnicalDetailsBox" class="hidden pt-2 border-t border-white/5 space-y-1.5">
           <p class="text-[9px] uppercase font-extrabold tracking-widest" style="color:var(--muted)">Technical details</p>
           <pre id="errorModalDetails" class="text-[10px] font-mono whitespace-pre-wrap max-h-28 overflow-x-auto rounded-xl p-2.5" style="color:rgba(251,113,133,.8); background:rgba(0,0,0,.4)"></pre>
-          <button onclick="copyErrorDetails()" class="btn px-3 py-1.5 text-[10px] font-mono text-cyan-300">📋 Copy</button>
         </div>
       </div>
+
+      <!-- Quick fixes -->
+      <div class="mt-3 rounded-2xl p-4 space-y-2" style="background:rgba(34,211,238,.05); border:1px solid rgba(34,211,238,.15)">
+        <p class="text-[10px] font-extrabold uppercase tracking-widest text-cyan-300">⚡ Quick fixes</p>
+        <p class="text-[11px] leading-relaxed" style="color:var(--muted)">On mobile data? Switch to <b>Wi-Fi</b> (or the reverse) — networks get blocked per-IP.</p>
+        <div class="flex flex-wrap gap-2 pt-1">
+          <button id="quickFixIg" onclick="quickFixInstagram()" class="hidden chip px-3 py-2 text-[10px] font-extrabold">📷 Add Instagram session</button>
+          <button onclick="runDiagnosticsFromError()" class="chip px-3 py-2 text-[10px] font-extrabold">🔍 Run diagnostics</button>
+          <button onclick="copyErrorDetails()" class="chip px-3 py-2 text-[10px] font-extrabold">📋 Copy details</button>
+        </div>
+      </div>
+
       <div class="flex items-center justify-between mt-4">
         <button onclick="toggleErrorDetails()" class="text-[11px] font-bold text-cyan-300 underline underline-offset-4" id="btnToggleErrorDetails">View details</button>
         <div class="flex items-center gap-2">
@@ -538,20 +631,18 @@
     let detectedClipboardUrl = '';
     let currentInspectedUrl = '';
     let selectedInspectorQuality = 'best';
-    let installedVersion = '2.5.1';
-    let installedVersionCode = 26;
+    let installedVersion = '2.5.2';
+    let installedVersionCode = 27;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
     let lastFailedFormat = 'best';
     let currentRawError = '';
 
-    // Parallel queue state
-    const activeJobs = new Map();   // jobId -> {label, status, percent, size, speed, eta, done}
+    const activeJobs = new Map();
     let completedCount = 0;
     let grabbedBytes = 0;
 
-    // Vault state
     let vaultItems = [];
     let vaultFilter = 'all';
     const vaultThumbCache = {};
@@ -570,7 +661,13 @@
       });
       const view = { grab: 'viewGrab', queue: 'viewQueue', vault: 'viewVault', settings: 'viewSettings' }[tab];
       const nav = { grab: 'navGrab', queue: 'navQueue', vault: 'navVault', settings: 'navSettings' }[tab];
-      document.getElementById(view)?.classList.remove('hidden');
+      const el = document.getElementById(view);
+      if (el) {
+        el.classList.remove('hidden');
+        el.classList.remove('fade-in');
+        void el.offsetWidth; // restart animation
+        el.classList.add('fade-in');
+      }
       document.getElementById(nav)?.classList.add('on');
 
       if (tab === 'queue') renderQueueTab();
@@ -686,7 +783,7 @@
         } catch (e) {}
       }
       if (!clean) {
-        showToast('Fast DL needs a link', 'Copy any video link, then tap FAST DL.', 'info');
+        showToast('Fast DL needs a link', 'Copy any video link, then tap the vortex.', 'info');
         return;
       }
       currentInspectedUrl = clean;
@@ -726,7 +823,6 @@
       const btn = document.getElementById('btnInspectText');
       if (btn) btn.innerText = 'SCANNING…';
 
-      // Reset sheet to skeleton state
       document.getElementById('inspectorThumbSkel').style.display = '';
       document.getElementById('inspectorThumbnail').src = 'assets/logo.png';
       document.getElementById('inspectorTitle').innerText = 'Scanning qualities…';
@@ -772,7 +868,7 @@
         <div id="quality_card_${fmt.id}" onclick="selectInspectorQuality('${fmt.id}', '${fmt.label}')"
           class="quality-card flex items-center justify-between gap-3 p-3.5 rounded-2xl cursor-pointer transition ${fmt.id === selectedInspectorQuality ? 'chip on' : 'chip'}">
           <div class="flex items-center gap-3 min-w-0">
-            <span class="px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 ${fmt.id === selectedInspectorQuality ? 'bg-cyan-400 text-black' : 'bg-white/8 text-cyan-300'}">${fmt.badge || 'HD'}</span>
+            <span class="qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 ${fmt.id === selectedInspectorQuality ? 'bg-cyan-400 text-black' : 'bg-white/5 text-cyan-300'}">${fmt.badge || 'HD'}</span>
             <div class="min-w-0">
               <p class="text-[12px] font-bold text-white truncate">${fmt.label}</p>
               <p class="text-[9px] font-mono uppercase mt-0.5" style="color:var(--muted)">${fmt.ext || 'mp4'}</p>
@@ -787,15 +883,17 @@
 
     function selectInspectorQuality(fmtId, fmtLabel) {
       selectedInspectorQuality = fmtId;
-      document.querySelectorAll('.quality-card').forEach(el => el.classList.remove('on'));
-      document.getElementById('quality_card_' + fmtId)?.classList.add('on');
       document.querySelectorAll('.quality-card').forEach(el => {
-        const badge = el.querySelector('span');
-        if (badge) {
-          const isOn = el.classList.contains('on');
-          badge.className = `px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 ${isOn ? 'bg-cyan-400 text-black' : 'bg-white/8 text-cyan-300'}`;
-        }
+        el.classList.remove('on');
+        const badge = el.querySelector('.qx');
+        if (badge) badge.className = 'qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 bg-white/5 text-cyan-300';
       });
+      const active = document.getElementById('quality_card_' + fmtId);
+      if (active) {
+        active.classList.add('on');
+        const badge = active.querySelector('.qx');
+        if (badge) badge.className = 'qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 bg-cyan-400 text-black';
+      }
       updateConfirmButtonText(fmtLabel);
     }
 
@@ -819,13 +917,12 @@
       const engine = getEngine();
       let label = 'Media';
       try {
-        const host = new URL(url).hostname.replace('www.', '');
-        label = host;
+        label = new URL(url).hostname.replace('www.', '');
       } catch (e) {}
       if (formatId === 'audio') label += ' · MP3';
 
       const tempId = 'pending_' + Date.now();
-      activeJobs.set(tempId, { label, status: 'Connecting…', percent: 0, size: '', speed: '', eta: '' });
+      activeJobs.set(tempId, { label, status: 'Connecting…', percent: 0, size: '', speed: '', eta: '', done: false });
       renderJobCards();
       updateQueueBadge();
 
@@ -838,13 +935,11 @@
         engine.download({ url: url, formatId: formatId })
           .then(res => {
             const jobId = (res && res.jobId) || tempId;
-            const job = activeJobs.get(tempId) || activeJobs.get(jobId);
-            if (job) activeJobs.delete(activeJobs.has(tempId) ? tempId : jobId);
-            onJobComplete(jobId, res.title || 'Video', res.destination || 'Gallery');
+            activeJobs.delete(activeJobs.has(tempId) ? tempId : jobId);
+            onJobComplete(jobId, (res && res.title) || 'Video', (res && res.destination) || 'Gallery');
           })
           .catch(err => {
-            const job = activeJobs.get(tempId);
-            if (job) activeJobs.delete(tempId);
+            if (activeJobs.has(tempId)) activeJobs.delete(tempId);
             renderJobCards();
             const msg = (err && err.message) ? err.message : 'Download failed';
             if (msg.toLowerCase().includes('cancel')) {
@@ -875,7 +970,6 @@
       }
       let job = activeJobs.get(p.jobId);
       if (!job) {
-        // Re-associate pending placeholder with its real jobId
         const pendingKey = [...activeJobs.keys()].find(k => k.startsWith('pending_'));
         if (pendingKey) {
           job = activeJobs.get(pendingKey);
@@ -890,6 +984,7 @@
       } else if (p.complete) {
         job.status = 'Saved ✓';
         job.percent = 100;
+        job.done = true;
         if (p.totalBytes) grabbedBytes += p.totalBytes;
       } else {
         job.status = p.status || 'Downloading…';
@@ -900,6 +995,12 @@
       }
       renderJobCards();
       updateQueueBadge();
+      if (p.complete) {
+        setTimeout(() => {
+          const still = [...activeJobs.entries()].find(([k, v]) => v === job);
+          if (still) { activeJobs.delete(still[0]); renderJobCards(); }
+        }, 1400);
+      }
     }
 
     function onJobComplete(jobId, title, destination) {
@@ -909,14 +1010,13 @@
       renderQueueTab();
       updateQueueBadge();
       showToast('Saved to Gallery ✓', title, 'success');
-      const item = {
+      downloadsHistory.unshift({
         id: Date.now().toString(),
         title: title,
         destination: destination,
         date: new Date().toLocaleDateString(),
         url: currentInspectedUrl || document.getElementById('inputManualUrl').value.trim()
-      };
-      downloadsHistory.unshift(item);
+      });
       saveHistory();
       setTimeout(() => { if (activeJobs.size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden'); }, 1200);
     }
@@ -925,17 +1025,23 @@
       currentRawError = errStr;
       let friendly = "The media stream could not be downloaded. The video may be private, require a login, or the connection dropped.";
       const lower = errStr.toLowerCase();
+      let igFix = false;
       if (lower.includes("instagram is blocking")) {
-        friendly = errStr; // Already user-friendly from the engine
-      } else if (lower.includes("instagram") || (lower.includes("empty media response"))) {
-        friendly = "Instagram blocked this anonymous download. Fix: Settings → Instagram access → save your sessionid.";
+        friendly = errStr; igFix = true;
+      } else if (lower.includes("instagram") || lower.includes("empty media response")) {
+        friendly = "Instagram blocked this anonymous download. Fix: Settings → Instagram access → save your sessionid. Or enable Cloud Boost.";
+        igFix = true;
       } else if (lower.includes("private") || lower.includes("login") || lower.includes("sign in") || lower.includes("account")) {
         friendly = "This video requires login or is private. Try another public link.";
       } else if (lower.includes("timeout") || lower.includes("connect") || lower.includes("network")) {
         friendly = "Connection timed out. Check your internet and try again.";
       } else if (lower.includes("unsupported") || lower.includes("format")) {
         friendly = "This format isn't available for the video. Try another quality.";
+      } else if (lower.includes("cloud boost")) {
+        friendly = errStr;
       }
+      const qf = document.getElementById('quickFixIg');
+      if (qf) qf.classList.toggle('hidden', !igFix);
       showErrorModal('Download stopped', friendly, errStr);
     }
 
@@ -950,21 +1056,23 @@
       }
       wrap.classList.remove('hidden');
       container.innerHTML = [...activeJobs.entries()].map(([id, job]) => `
-        <div class="card card-accent p-4 space-y-2.5 fade-in">
+        <div class="card ${job.done ? '' : 'card-accent'} p-4 space-y-2.5 fade-in" ${job.done ? 'style="border-color:rgba(52,211,153,.4)"' : ''}>
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 min-w-0">
-              <span class="w-2 h-2 rounded-full animate-pulse flex-shrink-0" style="background:var(--accent)"></span>
-              <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)}</p>
+              ${job.done
+                ? '<span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 pop" style="background:rgba(52,211,153,.2);color:var(--ok)">✓</span>'
+                : '<span class="w-2 h-2 rounded-full animate-pulse flex-shrink-0" style="background:var(--accent)"></span>'}
+              <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} ${job.done ? '<span style="color:var(--ok)">Saved ✓</span>' : ''}</p>
             </div>
-            <span class="text-[12px] font-mono font-bold text-cyan-300 flex-shrink-0">${Math.round(job.percent)}%</span>
+            <span class="text-[12px] font-mono font-bold ${job.done ? '' : 'text-cyan-300'} flex-shrink-0" ${job.done ? 'style="color:var(--ok)"' : ''}>${Math.round(job.percent)}%</span>
           </div>
-          <div class="bar"><div style="width:${Math.max(2, job.percent)}%"></div></div>
+          <div class="bar ${job.done ? '' : 'live'}"><div style="width:${Math.max(2, job.percent)}%"></div></div>
           <div class="flex items-center justify-between text-[10px] font-mono" style="color:var(--muted)">
             <span>${escapeHtml(job.size || job.status)}</span>
             <div class="flex items-center gap-3">
               ${job.speed ? `<span class="text-emerald-300 font-bold">${escapeHtml(job.speed)}</span>` : ''}
               ${job.eta ? `<span class="text-cyan-300">${escapeHtml(job.eta)}</span>` : ''}
-              <button onclick="cancelOneDownload('${id}')" class="font-sans font-bold" style="color:var(--bad)">✕</button>
+              ${job.done ? '' : `<button onclick="cancelOneDownload('${id}')" class="font-sans font-bold" style="color:var(--bad)">✕</button>`}
             </div>
           </div>
         </div>
@@ -992,9 +1100,10 @@
 
     function updateQueueBadge() {
       const badge = document.getElementById('queueBadge');
-      if (!badge) return;
-      if (activeJobs.size > 0) badge.classList.remove('hidden');
-      else badge.classList.add('hidden');
+      if (badge) {
+        if (activeJobs.size > 0) badge.classList.remove('hidden');
+        else badge.classList.add('hidden');
+      }
       const statActive = document.getElementById('statActive');
       if (statActive) statActive.innerText = String(activeJobs.size);
       const statDone = document.getElementById('statDone');
@@ -1022,10 +1131,59 @@
         navigator.clipboard.writeText(currentRawError).then(() => showToast('Copied', 'Error details copied.', 'success'));
       }
     }
+    function quickFixInstagram() {
+      closeErrorModal();
+      switchTab('settings');
+      setTimeout(() => {
+        document.getElementById('igSessionInput')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 250);
+      showToast('Instagram fix', 'Paste your sessionid below, then Save.', 'info');
+    }
+    function runDiagnosticsFromError() {
+      closeErrorModal();
+      switchTab('settings');
+      setTimeout(() => runDiagnostics(), 300);
+    }
     function retryCurrentDownload() {
       closeErrorModal();
       if (lastFailedUrl) initiateDownload(lastFailedUrl, lastFailedFormat);
       else handleFastDlClick();
+    }
+
+    // ================= Diagnostics =================
+    function runDiagnostics() {
+      const engine = getEngine();
+      const btn = document.getElementById('btnDiagnose');
+      const box = document.getElementById('diagnosticsResults');
+      if (!engine?.diagnose) {
+        showToast('Not available', 'Update the app first.', 'info');
+        return;
+      }
+      btn.disabled = true; btn.innerText = '…';
+      box.classList.remove('hidden');
+      box.innerHTML = '<div class="skel h-8"></div><div class="skel h-8"></div><div class="skel h-8"></div>';
+      engine.diagnose().then(res => {
+        const rows = (res.results || []).map(r => `
+          <div class="flex items-center justify-between rounded-xl px-3 py-2" style="background:rgba(255,255,255,.03)">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0" style="${r.ok ? 'background:rgba(52,211,153,.15);color:var(--ok)' : 'background:rgba(251,113,133,.15);color:var(--bad)'}">${r.ok ? '✓' : '✕'}</span>
+              <span class="text-[11px] font-bold text-zinc-200 truncate">${escapeHtml(r.check)}</span>
+            </div>
+            <span class="text-[10px] font-mono flex-shrink-0" style="color:${r.ok ? 'var(--ok)' : 'var(--bad)'}">${r.ok ? r.ms + 'ms' : 'blocked'}</span>
+          </div>
+        `).join('');
+        box.innerHTML = rows;
+        const fails = (res.results || []).filter(r => !r.ok);
+        if (fails.length === 0) {
+          showToast('All clear ✓', 'Every check passed on this network.', 'success');
+        } else {
+          showToast(fails.length + ' blocked', 'This network is limiting those platforms.', 'error');
+        }
+      }).catch(err => {
+        box.innerHTML = `<p class="text-[11px]" style="color:var(--bad)">${escapeHtml(err?.message || 'Diagnostics failed')}</p>`;
+      }).finally(() => {
+        btn.disabled = false; btn.innerText = 'Run';
+      });
     }
 
     // ================= Queue tab =================
@@ -1046,7 +1204,7 @@
               <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} <span class="font-normal" style="color:var(--muted)">— ${escapeHtml(job.status)}</span></p>
               <span class="text-[12px] font-mono font-bold text-cyan-300">${Math.round(job.percent)}%</span>
             </div>
-            <div class="bar"><div style="width:${Math.max(2, job.percent)}%"></div></div>
+            <div class="bar live"><div style="width:${Math.max(2, job.percent)}%"></div></div>
             <div class="flex items-center justify-between text-[10px] font-mono" style="color:var(--muted)">
               <span>${escapeHtml(job.size || '')}</span>
               <button onclick="cancelOneDownload('${id}')" class="font-sans font-bold" style="color:var(--bad)">Cancel</button>
@@ -1056,7 +1214,11 @@
       }
 
       if (downloadsHistory.length === 0) {
-        histC.innerHTML = `<div class="card p-8 text-center text-[12px]" style="color:var(--muted)">No downloads yet — grab your first video!</div>`;
+        histC.innerHTML = `<div class="card p-10 text-center">
+          <div class="text-3xl mb-2">⚡</div>
+          <p class="text-[12px] font-bold text-white">No downloads yet</p>
+          <p class="text-[11px] mt-1" style="color:var(--muted)">Grab your first video — it lands here.</p>
+        </div>`;
         return;
       }
       histC.innerHTML = downloadsHistory.map(item => `
@@ -1065,7 +1227,7 @@
             <p class="text-[12px] font-bold text-white truncate">${escapeHtml(item.title)}</p>
             <p class="text-[10px] font-mono mt-0.5" style="color:var(--muted)">${escapeHtml(item.destination)} · ${escapeHtml(item.date)}</p>
           </div>
-          <span class="text-[9px] font-extrabold font-mono px-2 py-1 rounded-lg" style="color:var(--ok); background:rgba(52,211,153,.1)">SAVED</span>
+          <span class="text-[9px] font-extrabold font-mono px-2 py-1 rounded-lg flex-shrink-0" style="color:var(--ok); background:rgba(52,211,153,.1)">SAVED</span>
         </div>
       `).join('');
     }
@@ -1124,7 +1286,11 @@
           `).join('');
           return;
         }
-        grid.innerHTML = `<div class="col-span-2 card p-10 text-center text-[12px]" style="color:var(--muted)">Nothing here yet — grabbed videos land in the Vault automatically 🎬</div>`;
+        grid.innerHTML = `<div class="col-span-2 card p-10 text-center fade-in">
+          <div class="text-3xl mb-2">🎬</div>
+          <p class="text-[12px] font-bold text-white">Nothing here yet</p>
+          <p class="text-[11px] mt-1" style="color:var(--muted)">Grabbed videos land in the Vault automatically.</p>
+        </div>`;
         return;
       }
 
@@ -1138,6 +1304,7 @@
             ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover">` : `
               <div class="text-center"><div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
               <p class="text-[8px] font-mono" style="color:var(--muted)">${item.isVideo ? 'VIDEO' : 'AUDIO'}</p></div>`}
+            <div class="absolute inset-x-0 bottom-0 h-10" style="background:linear-gradient(to top, rgba(0,0,0,.65), transparent)"></div>
             <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 active:opacity-100 transition">
               <span class="w-12 h-12 rounded-full btn-hero flex items-center justify-center text-base font-extrabold">▶</span>
             </button>
@@ -1332,29 +1499,24 @@
     }
     function cancelUpdateDownload() { getEngine()?.cancelUpdateDownload?.(); }
 
-    // ================= Engine / misc settings =================
+    // ================= Engine / settings =================
     function syncEngineRules() {
       const engine = getEngine();
       const badge = document.getElementById('engineHealthBadge');
+      const dot = document.getElementById('engineDot');
       const versionText = document.getElementById('engineVersionText');
       if (engine?.engineInfo) {
-        badge.innerText = '…';
         engine.engineInfo().then(info => {
           badge.innerText = '✓ HEALTHY';
+          if (dot) dot.style.background = 'var(--ok)';
           versionText.innerText = `yt-dlp ${info.ytDlpVersion} · Python ${info.pythonVersion}`;
           document.getElementById('aboutEngine').innerText = `yt-dlp ${info.ytDlpVersion}`;
-          showToast('Engine healthy', `yt-dlp ${info.ytDlpVersion} ready.`, 'success');
-        }).catch(err => {
+        }).catch(() => {
           badge.innerText = '✕ ERROR';
-          badge.style.cssText = 'color:var(--bad); border-color:rgba(251,113,133,.4); background:rgba(251,113,133,.1)';
-          showToast('Engine error', err?.message || 'Check failed', 'error');
+          if (dot) dot.style.background = 'var(--bad)';
         });
-      } else {
-        showToast('Engine ready', 'DOWNI engine verified.', 'success');
       }
     }
-
-    function openGitHubRepo() { window.open(`https://github.com/${GITHUB_REPO}`, '_system'); }
 
     // ---------- Instagram session ----------
     function refreshIgStatus() {
@@ -1381,8 +1543,6 @@
           refreshIgStatus();
           showToast('Session saved', 'Instagram extraction upgraded.', 'success');
         }).catch(err => showToast('Save failed', err?.message || 'Error', 'error'));
-      } else {
-        showToast('Not available', 'Update the app to use this feature.', 'info');
       }
     }
     function clearIgSession() {
@@ -1394,6 +1554,45 @@
         });
       }
     }
+
+    // ---------- Cloud Boost ----------
+    function refreshCloudStatus() {
+      const engine = getEngine();
+      if (!engine?.getCloudRelay) return;
+      engine.getCloudRelay().then(res => {
+        const el = document.getElementById('cloudStatusText');
+        if (res?.enabled) {
+          el.innerText = 'ON ✓ — fallback extraction active';
+          el.style.color = 'var(--ok)';
+        } else {
+          el.innerText = 'Off — local engine only';
+          el.style.color = 'var(--muted)';
+        }
+      }).catch(() => {});
+    }
+    function saveCloudRelay() {
+      const value = document.getElementById('cloudRelayInput').value.trim();
+      if (!value.startsWith('http')) { showToast('Invalid URL', 'Paste the https://… vercel URL.', 'info'); return; }
+      const engine = getEngine();
+      if (engine?.setCloudRelay) {
+        engine.setCloudRelay({ value: value }).then(() => {
+          document.getElementById('cloudRelayInput').value = '';
+          refreshCloudStatus();
+          showToast('Cloud Boost ON', 'Blocked grabs now retry via your server.', 'success');
+        });
+      }
+    }
+    function clearCloudRelay() {
+      const engine = getEngine();
+      if (engine?.setCloudRelay) {
+        engine.setCloudRelay({ value: '' }).then(() => {
+          refreshCloudStatus();
+          showToast('Cloud Boost off', 'Back to local engine only.', 'info');
+        });
+      }
+    }
+
+    function openGitHubRepo() { window.open(`https://github.com/${GITHUB_REPO}`, '_system'); }
     function handleChooseFolder() { getEngine()?.chooseFolder?.(); }
     function toggleClipboardDetect(enabled) { localStorage.setItem('omni_clipboard_detect', enabled ? '1' : '0'); }
 
@@ -1428,9 +1627,41 @@
       completedCount = downloadsHistory.length;
     }
 
+    // ================= Sheet drag-to-dismiss =================
+    function setupSheetDrag() {
+      document.querySelectorAll('[data-drag-dismiss]').forEach(grabber => {
+        const sheet = document.getElementById(grabber.getAttribute('data-drag-dismiss'));
+        if (!sheet) return;
+        let startY = 0, curY = 0, dragging = false;
+        const start = (y) => { startY = y; dragging = true; sheet.style.transition = 'none'; };
+        const move = (y) => {
+          if (!dragging) return;
+          curY = Math.max(0, y - startY);
+          sheet.style.transform = `translateY(${curY}px)`;
+        };
+        const end = () => {
+          if (!dragging) return;
+          dragging = false;
+          sheet.style.transition = '';
+          if (curY > 110) {
+            sheet.style.transform = '';
+            sheet.closest('.fixed')?.classList.add('hidden');
+          } else {
+            sheet.style.transform = '';
+          }
+          curY = 0;
+        };
+        grabber.addEventListener('touchstart', e => start(e.touches[0].clientY), { passive: true });
+        grabber.addEventListener('touchmove', e => move(e.touches[0].clientY), { passive: true });
+        grabber.addEventListener('touchend', end);
+        grabber.addEventListener('mousedown', e => { start(e.clientY); const mm = ev => move(ev.clientY); const mu = () => { end(); document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); }; document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu); });
+      });
+    }
+
     // ================= Boot =================
     window.addEventListener('DOMContentLoaded', () => {
       loadHistory();
+      setupSheetDrag();
 
       getInstalledVersionInfo().then(local => {
         const shortVer = 'v' + String(local.versionName).replace(/^v/i, '').split('.').slice(0, 2).join('.');
@@ -1441,6 +1672,7 @@
 
       syncEngineRules();
       refreshIgStatus();
+      refreshCloudStatus();
       setTimeout(checkClipboard, 600);
       setTimeout(() => checkAppUpdates(true), 4000);
 
