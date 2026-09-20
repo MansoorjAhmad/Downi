@@ -132,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, {"ok": True})
 
     def do_GET(self):
-        self._send(200, {"ok": True, "service": "downi-cloud-boost"})
+        self._send(200, {"ok": True, "service": "downi-cloud-boost", "build": 2})
 
     def do_POST(self):
         try:
