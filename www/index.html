@@ -225,19 +225,64 @@
     ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 4px; }
 
     input, input:focus { outline: none; }
+
+    /* ================= v3.0 design system ================= */
+    /* Motion tokens — one language for every animation */
+    :root {
+      --ease-spring: cubic-bezier(.34, 1.4, .4, 1);
+      --ease-out: cubic-bezier(.22, .9, .3, 1);
+      --dur-fast: 150ms;
+      --dur-base: 250ms;
+      --dur-sheet: 350ms;
+    }
+
+    /* Component timings follow the tokens */
+    .btn, .chip, .nav-item { transition: all var(--dur-fast) var(--ease-out); }
+    .sheet { transition: transform var(--dur-sheet) var(--ease-spring); }
+    .quality-card { transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease, border-color var(--dur-fast) ease; }
+    .quality-card:active { transform: scale(.97); }
+
+    /* Staggered entrances for lists and grids */
+    .stagger > .fade-in:nth-child(1) { animation-delay: 0ms; }
+    .stagger > .fade-in:nth-child(2) { animation-delay: 40ms; }
+    .stagger > .fade-in:nth-child(3) { animation-delay: 80ms; }
+    .stagger > .fade-in:nth-child(4) { animation-delay: 120ms; }
+    .stagger > .fade-in:nth-child(5) { animation-delay: 160ms; }
+    .stagger > .fade-in:nth-child(6) { animation-delay: 200ms; }
+    .stagger > .fade-in:nth-child(n+7) { animation-delay: 240ms; }
+
+    /* Focus visibility for keyboard / accessibility */
+    button:focus-visible, .chip:focus-visible, .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* Toast: auto-dismiss progress line + success pulse on the icon */
+    .toast-line { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 2px; border-radius: 2px; background: var(--accent); opacity: .55; transform-origin: left; transform: scaleX(0); }
+    .toast-line.run { animation: toastLine 3.5s linear both; }
+    @keyframes toastLine { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    .pulse-ok { animation: pulseOk .6s var(--ease-out); }
+    @keyframes pulseOk { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.5); } 100% { box-shadow: 0 0 0 14px rgba(52,211,153,0); } }
+
+    /* Vortex: springier press, deeper glow while pressed */
+    .vortex { transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-base) ease; }
+    .vortex:active { transform: scale(.93); box-shadow: 0 0 60px rgba(34,211,238,.35), inset 0 0 26px rgba(34,211,238,.18); }
+
+    /* Respect users who prefer reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
   </style>
 </head>
 <body class="min-h-full flex flex-col overflow-x-hidden select-none">
 
   <!-- TOAST -->
   <div id="appToast" class="fixed top-3 inset-x-4 z-50 transition-all duration-300 ease-out -translate-y-28 opacity-0 pointer-events-none flex justify-center">
-    <div class="max-w-md w-full py-3 px-4 rounded-2xl dock flex items-center gap-3 pointer-events-auto">
+    <div class="max-w-md w-full py-3 px-4 pb-4 rounded-2xl dock relative overflow-hidden flex items-center gap-3 pointer-events-auto">
       <div id="toastIcon" class="w-9 h-9 rounded-xl bg-cyan-400/15 border border-cyan-300/25 flex items-center justify-center text-sm font-bold text-cyan-300">⚡</div>
       <div class="min-w-0 flex-1">
         <p id="toastTitle" class="text-[13px] font-extrabold text-white truncate">DOWNI</p>
         <p id="toastMsg" class="text-[11px] text-zinc-400 truncate">Notification</p>
       </div>
       <button onclick="hideToast()" class="text-zinc-500 hover:text-white text-xs px-2 py-1">✕</button>
+      <div id="toastLine" class="toast-line"></div>
     </div>
   </div>
 
@@ -252,7 +297,7 @@
         <div>
           <div class="flex items-center gap-2">
             <span class="text-[19px] font-extrabold tracking-tight text-white leading-none">DOWNI</span>
-            <span id="headerVersionBadge" class="chip text-[9px] font-mono font-bold px-2 py-0.5">v2.5</span>
+            <span id="headerVersionBadge" class="chip text-[9px] font-mono font-bold px-2 py-0.5"></span>
           </div>
           <div class="flex items-center gap-1.5 mt-0.5">
             <span id="engineDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
@@ -342,7 +387,7 @@
             <h3 class="text-[13px] font-extrabold text-white">Active downloads</h3>
             <button onclick="cancelAllDownloads()" class="text-[11px] font-bold" style="color:var(--bad)">Cancel all</button>
           </div>
-          <div id="activeDownloads" class="space-y-3"></div>
+          <div id="activeDownloads" class="space-y-3 stagger"></div>
         </div>
 
         <!-- Omni grab hint -->
@@ -382,7 +427,7 @@
         </div>
 
         <div id="queueActiveContainer" class="space-y-3"></div>
-        <div id="queueListContainer" class="space-y-2.5"></div>
+        <div id="queueListContainer" class="space-y-2.5 stagger"></div>
       </div>
 
       <!-- ================= TAB 3: VAULT ================= -->
@@ -405,7 +450,7 @@
           <button id="vaultChipAudio" onclick="setVaultFilter('audio')" class="chip px-4 py-1.5 text-[10px] font-extrabold">AUDIO</button>
         </div>
 
-        <div id="vaultMediaGrid" class="grid grid-cols-2 gap-3"></div>
+        <div id="vaultMediaGrid" class="grid grid-cols-2 gap-3 stagger"></div>
       </div>
 
       <!-- ================= TAB 4: SETTINGS ================= -->
@@ -559,7 +604,7 @@
       <p id="inspectorUploader" class="text-[11px] mt-1" style="color:var(--muted)">Creator</p>
 
       <p class="text-[10px] font-extrabold uppercase tracking-widest mt-5 mb-2" style="color:var(--muted)">Quality</p>
-      <div id="inspectorQualitiesList" class="space-y-2">
+      <div id="inspectorQualitiesList" class="space-y-2 stagger">
         <div class="skel h-14"></div><div class="skel h-14"></div><div class="skel h-14"></div>
       </div>
       <p id="inspectorQualityNote" class="hidden text-[10px] mt-3 leading-relaxed" style="color:var(--muted)"></p>
@@ -701,6 +746,7 @@
 
     // ================= Navigation =================
     function switchTab(tab) {
+      triggerHaptic('light');
       currentTab = tab;
       ['viewGrab', 'viewQueue', 'viewVault', 'viewSettings'].forEach(id => {
         document.getElementById(id)?.classList.add('hidden');
@@ -742,6 +788,10 @@
       const toast = document.getElementById('appToast');
       toast.classList.remove('-translate-y-28', 'opacity-0');
       toast.classList.add('translate-y-0', 'opacity-100');
+      // Restart the auto-dismiss progress line + success pulse on the icon
+      const line = document.getElementById('toastLine');
+      if (line) { line.classList.remove('run'); void line.offsetWidth; line.classList.add('run'); }
+      if (type === 'success') { icon.classList.remove('pulse-ok'); void icon.offsetWidth; icon.classList.add('pulse-ok'); }
       setTimeout(hideToast, 3500);
     }
     function hideToast() {
