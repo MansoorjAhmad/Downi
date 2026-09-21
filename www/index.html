@@ -275,6 +275,13 @@
     #inspectorThumbnail.loaded { filter: none; }
     .note-banner { background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.22); border-radius: 14px; padding: 10px 12px; }
 
+    /* AMOLED true-black + player control hiding */
+    :root.amoled { --bg: #000000; --surface: #07090F; --surface-2: #0C0F16; }
+    #playerModal.controls-hidden #playerBar,
+    #playerModal.controls-hidden #playerTitle,
+    #playerModal.controls-hidden #playerRipple { opacity: 0; pointer-events: none; }
+    #playerBar { transition: opacity var(--dur-base) ease; }
+
     /* Respect users who prefer reduced motion */
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
@@ -452,7 +459,7 @@
         <div class="flex items-center justify-between px-1">
           <div>
             <h2 class="text-[17px] font-extrabold text-white tracking-tight">Vault</h2>
-            <p class="text-[11px]" style="color:var(--muted)">Your real media library</p>
+            <p id="vaultStorageText" class="text-[11px]" style="color:var(--muted)">Your real media library</p>
           </div>
           <div class="flex items-center gap-2">
             <button onclick="rescanVaultStorage()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Rescan</button>
@@ -465,6 +472,28 @@
           <button id="vaultChipAll" onclick="setVaultFilter('all')" class="chip on px-4 py-1.5 text-[10px] font-extrabold">ALL</button>
           <button id="vaultChipVideo" onclick="setVaultFilter('video')" class="chip px-4 py-1.5 text-[10px] font-extrabold">VIDEO</button>
           <button id="vaultChipAudio" onclick="setVaultFilter('audio')" class="chip px-4 py-1.5 text-[10px] font-extrabold">AUDIO</button>
+          <button id="btnVaultLayout" onclick="toggleVaultLayout()" class="btn ml-auto px-3 py-1.5 text-[10px] font-bold text-zinc-300">List</button>
+        </div>
+
+        <input id="vaultSearch" type="text" placeholder="Search your media…" oninput="onVaultSearch(this.value)"
+          class="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-[12px] text-white placeholder-zinc-500 font-mono focus:border-cyan-300/50 transition">
+
+        <div class="flex items-center gap-2">
+          <select id="vaultSort" onchange="onVaultSort(this.value)" class="flex-1 bg-black/40 border border-white/10 rounded-2xl px-3 py-2.5 text-[11px] font-bold text-zinc-300">
+            <option value="new">Newest first</option>
+            <option value="size">Largest first</option>
+            <option value="name">Name (A–Z)</option>
+          </select>
+          <span id="vaultCountText" class="text-[10px] font-mono" style="color:var(--muted)"></span>
+        </div>
+
+        <div id="vaultSelectionBar" class="hidden card p-3 flex items-center justify-between gap-2">
+          <span id="vaultSelCount" class="text-[11px] font-bold text-white">0 selected</span>
+          <div class="flex items-center gap-2">
+            <button onclick="bulkShareVault()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Share</button>
+            <button onclick="bulkDeleteVault()" class="btn px-3 py-2 text-[10px] font-bold" style="color:var(--bad)">Delete</button>
+            <button onclick="clearVaultSelection()" class="btn px-3 py-2 text-[10px] font-bold text-zinc-300">Cancel</button>
+          </div>
         </div>
 
         <div id="vaultMediaGrid" class="grid grid-cols-2 gap-3 stagger"></div>
@@ -529,6 +558,25 @@
             </div>
             <input type="checkbox" id="chkLightTheme" onchange="applyTheme(this.checked ? 'light' : 'dark')" class="w-5 h-5 accent-cyan-400">
           </div>
+          <div class="flex items-center justify-between py-3 border-t border-white/5">
+            <div>
+              <p class="text-[12px] font-bold text-zinc-200">Accent color</p>
+              <p class="text-[10px] mt-0.5" style="color:var(--muted)">Pick your DOWNI glow</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="setAccent('cyan')" class="w-7 h-7 rounded-full border border-white/20" style="background:#22D3EE"></button>
+              <button onclick="setAccent('violet')" class="w-7 h-7 rounded-full border border-white/20" style="background:#8B5CF6"></button>
+              <button onclick="setAccent('emerald')" class="w-7 h-7 rounded-full border border-white/20" style="background:#10B981"></button>
+              <button onclick="setAccent('rose')" class="w-7 h-7 rounded-full border border-white/20" style="background:#FB7185"></button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between py-3 border-t border-white/5">
+            <div>
+              <p class="text-[12px] font-bold text-zinc-200">AMOLED black</p>
+              <p class="text-[10px] mt-0.5" style="color:var(--muted)">True black in dark mode</p>
+            </div>
+            <input type="checkbox" id="chkAmoled" onchange="setAmoled(this.checked)" class="w-5 h-5 accent-cyan-400">
+          </div>
         </div>
 
         <!-- Storage -->
@@ -550,10 +598,22 @@
           </div>
         </div>
 
+        <!-- Storage -->
+        <div class="card p-4 space-y-1">
+          <p class="text-[12px] font-extrabold text-white px-1 pb-2">Storage</p>
+          <div class="flex items-center justify-between py-3 border-t border-white/5">
+            <div>
+              <p class="text-[12px] font-bold text-zinc-200">Clear engine cache</p>
+              <p class="text-[10px] mt-0.5" style="color:var(--muted)">Temp files from cancelled or failed downloads</p>
+            </div>
+            <button onclick="clearDowniCache()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Clear</button>
+          </div>
+        </div>
+
         <!-- About -->
         <div class="card p-4 space-y-1">
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">About</p>
-          <div class="flex items-center justify-between py-2.5 border-t border-white/5">
+          <div class="flex items-center justify-between py-2.5 border-t border-white/5 cursor-pointer" onclick="copyAppVersion()" title="Tap to copy">
             <span class="text-[11px]" style="color:var(--muted)">App</span>
             <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400"></span></span>
           </div>
@@ -712,8 +772,11 @@
   <div id="playerModal" class="fixed inset-0 z-[60] hidden bg-black">
     <video id="playerVideo" class="absolute inset-0 w-full h-full object-contain" playsinline></video>
     <p id="playerTitle" class="absolute top-4 left-4 right-16 text-[12px] font-bold text-white truncate z-10">Media</p>
+    <div id="playerRipple" class="absolute inset-0 z-10 pointer-events-none flex items-center justify-center opacity-0 transition-opacity duration-200">
+      <span id="playerRippleText" class="px-4 py-2 rounded-2xl bg-black/70 text-white text-[13px] font-extrabold font-mono">+10s</span>
+    </div>
     <button onclick="closePlayer()" class="absolute top-3 right-3 w-10 h-10 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center text-sm z-10">✕</button>
-    <div class="absolute bottom-0 inset-x-0 p-4 pb-7 z-10 space-y-2" style="background:linear-gradient(to top, rgba(0,0,0,.88), transparent)">
+    <div id="playerBar" class="absolute bottom-0 inset-x-0 p-4 pb-7 z-10 space-y-2" style="background:linear-gradient(to top, rgba(0,0,0,.88), transparent)">
       <div id="playerSeek" class="bar cursor-pointer" onclick="seekPlayer(event)"><div style="width:0%"></div></div>
       <div class="flex items-center justify-between text-[10px] font-mono text-white/80">
         <span id="playerTime">0:00</span>
@@ -723,6 +786,7 @@
         <button onclick="skipPlayer(-10)" class="btn w-11 h-11 text-white text-[10px] font-bold">−10s</button>
         <button id="playerPlayBtn" onclick="togglePlay()" class="w-14 h-14 rounded-full btn-hero text-base font-black flex items-center justify-center">▶</button>
         <button onclick="skipPlayer(10)" class="btn w-11 h-11 text-white text-[10px] font-bold">+10s</button>
+        <button id="btnPlayerSpeed" onclick="cyclePlayerSpeed()" class="btn px-3 h-11 text-white text-[11px] font-bold">1×</button>
       </div>
       <div class="flex items-center justify-center gap-2.5 pt-1">
         <button onclick="playerPrev()" class="btn px-3 py-2 text-[10px] font-bold text-white">← Prev</button>
@@ -758,6 +822,10 @@
 
     let vaultItems = [];
     let vaultFilter = 'all';
+    let vaultSearch = '';
+    let vaultSort = 'new';
+    let vaultLayout = 'grid';
+    const vaultSelection = new Set();
     const vaultThumbCache = {};
 
     function getEngine() { return window.Capacitor?.Plugins?.OmniEngine || null; }
@@ -1508,7 +1576,8 @@
           // MediaStore items above — hide those duplicates.
           const seen = new Set(media.map(m => (m.name || '').toLowerCase() + ':' + m.size));
           const customOnly = custom.filter(f => !seen.has((f.name || '').toLowerCase() + ':' + f.size));
-          vaultItems = [...media, ...customOnly.map(f => ({ ...f, kind: 'custom' }))];
+          vaultItems = [...media, ...customOnly.map(f => ({ ...f, kind: 'custom', dateModified: Math.floor((f.modified || 0) / 1000) }))];
+          updateVaultStats();
           renderVaultGrid();
         });
       } else {
@@ -1518,9 +1587,136 @@
     }
 
     function filteredVaultItems() {
-      if (vaultFilter === 'video') return vaultItems.filter(i => i.isVideo);
-      if (vaultFilter === 'audio') return vaultItems.filter(i => !i.isVideo);
-      return vaultItems;
+      let items = vaultItems;
+      if (vaultFilter === 'video') items = items.filter(i => i.isVideo);
+      if (vaultFilter === 'audio') items = items.filter(i => !i.isVideo);
+      const q = (vaultSearch || '').trim().toLowerCase();
+      if (q) items = items.filter(i => (i.name || '').toLowerCase().includes(q));
+      const sorted = [...items];
+      if (vaultSort === 'size') sorted.sort((a, b) => (b.size || 0) - (a.size || 0));
+      else if (vaultSort === 'name') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      else sorted.sort((a, b) => (b.dateModified || 0) - (a.dateModified || 0));
+      return sorted;
+    }
+
+    function onVaultSearch(value) {
+      vaultSearch = value || '';
+      renderVaultGrid();
+    }
+    function onVaultSort(value) {
+      vaultSort = value || 'new';
+      renderVaultGrid();
+    }
+    function toggleVaultLayout() {
+      vaultLayout = vaultLayout === 'grid' ? 'list' : 'grid';
+      const btn = document.getElementById('btnVaultLayout');
+      if (btn) btn.innerText = vaultLayout === 'grid' ? 'List' : 'Grid';
+      renderVaultGrid();
+    }
+
+    function updateVaultStats() {
+      const total = vaultItems.reduce((sum, i) => sum + (i.size || 0), 0);
+      const videoBytes = vaultItems.filter(i => i.isVideo).reduce((sum, i) => sum + (i.size || 0), 0);
+      const countEl = document.getElementById('vaultCountText');
+      if (countEl) countEl.innerText = `${vaultItems.length} item${vaultItems.length === 1 ? '' : 's'} · ${formatBytesJs(total)}`;
+      const textEl = document.getElementById('vaultStorageText');
+      if (textEl) {
+        if (total > 0) {
+          const pct = Math.round((videoBytes / total) * 100);
+          textEl.innerText = `🎬 ${formatBytesJs(videoBytes)} (${pct}%) · 🎵 ${formatBytesJs(total - videoBytes)} (${100 - pct}%)`;
+        } else {
+          textEl.innerText = 'Your real media library';
+        }
+      }
+    }
+
+    function vaultKeyOf(item) {
+      return item.kind === 'custom' ? 'c:' + item.uri : ((item.isVideo ? 'v' : 'a') + item.id);
+    }
+    function toggleVaultSelection(key) {
+      if (vaultSelection.has(key)) vaultSelection.delete(key); else vaultSelection.add(key);
+      updateVaultSelectionBar();
+      renderVaultGrid();
+    }
+    function clearVaultSelection() {
+      vaultSelection.clear();
+      updateVaultSelectionBar();
+      renderVaultGrid();
+    }
+    function updateVaultSelectionBar() {
+      const bar = document.getElementById('vaultSelectionBar');
+      const count = document.getElementById('vaultSelCount');
+      if (!bar) return;
+      if (vaultSelection.size > 0) {
+        bar.classList.remove('hidden');
+        if (count) count.innerText = vaultSelection.size + ' selected';
+      } else {
+        bar.classList.add('hidden');
+      }
+    }
+    function selectedVaultItems() {
+      return vaultItems.filter(i => vaultSelection.has(vaultKeyOf(i)));
+    }
+    function bulkShareVault() {
+      const engine = getEngine();
+      const picked = selectedVaultItems();
+      if (!picked.length) { clearVaultSelection(); return; }
+      const custom = picked.filter(i => i.kind === 'custom');
+      if (custom.length === picked.length) {
+        custom.forEach(i => engine?.shareCustomFile?.({ uri: i.uri, mime: i.mime || 'video/mp4' }));
+      } else {
+        const videoIds = picked.filter(i => i.kind !== 'custom' && i.isVideo).map(i => i.id);
+        const audioIds = picked.filter(i => i.kind !== 'custom' && !i.isVideo).map(i => i.id);
+        if (engine?.shareMediaBatch && (videoIds.length + audioIds.length) > 0) {
+          engine.shareMediaBatch({ videoIds: videoIds, audioIds: audioIds })
+            .catch(() => showToast('Cannot share', 'Sharing failed.', 'error'));
+        } else if (picked[0].kind !== 'custom') {
+          shareVaultMedia(picked[0].id, picked[0].isVideo);
+        }
+      }
+      clearVaultSelection();
+    }
+    function bulkDeleteVault() {
+      const engine = getEngine();
+      const picked = selectedVaultItems();
+      if (!picked.length) { clearVaultSelection(); return; }
+      const custom = picked.filter(i => i.kind === 'custom');
+      const videoIds = picked.filter(i => i.kind !== 'custom' && i.isVideo).map(i => i.id);
+      const audioIds = picked.filter(i => i.kind !== 'custom' && !i.isVideo).map(i => i.id);
+      custom.forEach(i => engine?.deleteCustomFile?.({ uri: i.uri }).catch(() => {}));
+      if (engine?.deleteMediaBatch && (videoIds.length + audioIds.length) > 0) {
+        engine.deleteMediaBatch({ videoIds: videoIds, audioIds: audioIds })
+          .then(() => showToast('Confirm in the dialog', 'Approve the delete request Android shows.', 'info'))
+          .catch(() => showToast('Cannot delete', 'Storage refused.', 'error'));
+      } else if (videoIds.length || audioIds.length) {
+        const first = picked.find(i => i.kind !== 'custom');
+        if (first) deleteVaultMedia(first.id, first.isVideo);
+      }
+      clearVaultSelection();
+      setTimeout(refreshVault, 1600);
+    }
+
+    function setupVaultLongPress() {
+      const grid = document.getElementById('vaultMediaGrid');
+      if (!grid || grid.dataset.lpReady) return;
+      grid.dataset.lpReady = '1';
+      let timer = null, startX = 0, startY = 0;
+      grid.addEventListener('touchstart', (e) => {
+        const card = e.target.closest('[data-vault-key]');
+        if (!card) return;
+        startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+        timer = setTimeout(() => {
+          timer = null;
+          triggerHaptic('medium');
+          toggleVaultSelection(card.getAttribute('data-vault-key'));
+        }, 550);
+      }, { passive: true });
+      const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+      grid.addEventListener('touchmove', (e) => {
+        if (timer && (Math.abs(e.touches[0].clientX - startX) > 10 || Math.abs(e.touches[0].clientY - startY) > 10)) cancel();
+      }, { passive: true });
+      grid.addEventListener('touchend', cancel);
+      grid.addEventListener('touchcancel', cancel);
     }
 
     function renderVaultGrid() {
@@ -1559,37 +1755,19 @@
         return;
       }
 
+      grid.className = vaultLayout === 'list' ? 'space-y-2.5 stagger' : 'grid grid-cols-2 gap-3 stagger';
+      const selecting = vaultSelection.size > 0;
       grid.innerHTML = items.map(item => {
-        if (item.kind === 'custom') return customCardHtml(item);
-        const key = (item.isVideo ? 'v' : 'a') + item.id;
-        const thumb = vaultThumbCache[key];
-        const dateStr = item.dateModified ? new Date(item.dateModified * 1000).toLocaleDateString() : '';
-        return `
-        <div class="card overflow-hidden fade-in">
-          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
-            ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover">` : `
-              <div class="text-center"><div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
-              <p class="text-[8px] font-mono" style="color:var(--muted)">${item.isVideo ? 'VIDEO' : 'AUDIO'}</p></div>`}
-            <div class="absolute inset-x-0 bottom-0 h-10" style="background:linear-gradient(to top, rgba(0,0,0,.65), transparent)"></div>
-            <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 active:opacity-100 transition">
-              <span class="w-12 h-12 rounded-full btn-hero flex items-center justify-center text-base font-extrabold">▶</span>
-            </button>
-          </div>
-          <div class="p-3 space-y-1">
-            <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
-            <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${dateStr ? ' · ' + dateStr : ''}</p>
-            <div class="flex gap-1.5 pt-1.5">
-              <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Play</button>
-              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
-              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
-            </div>
-          </div>
-        </div>
-        `;
+        const key = vaultKeyOf(item);
+        const selected = vaultSelection.has(key);
+        if (vaultLayout === 'list') return vaultRowHtml(item, key, selected, selecting);
+        if (item.kind === 'custom') return customCardHtml(item, key, selected, selecting);
+        return vaultCardHtml(item, key, selected, selecting);
       }).join('');
 
       items.forEach(item => {
-        const key = (item.isVideo ? 'v' : 'a') + item.id;
+        if (item.kind === 'custom') return;
+        const key = vaultKeyOf(item);
         if (vaultThumbCache[key] !== undefined) return;
         vaultThumbCache[key] = '';
         const engine = getEngine();
@@ -1604,9 +1782,97 @@
       });
     }
 
-    function customCardHtml(item) {
+    function vaultTap(encodedKey) {
+      toggleVaultSelection(decodeURIComponent(encodedKey));
+    }
+
+    function selectionDot(selected) {
+      return `<span class="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black" style="${selected ? 'background:var(--accent);color:#04121C' : 'background:rgba(0,0,0,.55);border:1.5px solid rgba(255,255,255,.5);color:transparent'}">✓</span>`;
+    }
+
+    function vaultCardHtml(item, key, selected, selecting) {
+      const thumb = vaultThumbCache[key];
+      const dateStr = item.dateModified ? new Date(item.dateModified * 1000).toLocaleDateString() : '';
+      const encodedKey = encodeURIComponent(key);
+      if (selecting) {
+        return `
+        <div class="card overflow-hidden fade-in ${selected ? 'card-accent' : ''}" data-vault-key="${key}" onclick="vaultTap('${encodedKey}')">
+          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
+            ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover ${selected ? 'opacity-60' : ''}">` : `
+              <div class="text-center"><div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
+              <p class="text-[8px] font-mono" style="color:var(--muted)">${item.isVideo ? 'VIDEO' : 'AUDIO'}</p></div>`}
+            ${selectionDot(selected)}
+          </div>
+          <div class="p-3"><h4 class="text-[11px] font-bold text-white truncate">${escapeHtml(item.name)}</h4></div>
+        </div>`;
+      }
       return `
-        <div class="card overflow-hidden fade-in">
+        <div class="card overflow-hidden fade-in" data-vault-key="${key}">
+          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
+            ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover">` : `
+              <div class="text-center"><div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
+              <p class="text-[8px] font-mono" style="color:var(--muted)">${item.isVideo ? 'VIDEO' : 'AUDIO'}</p></div>`}
+            <div class="absolute inset-x-0 bottom-0 h-10" style="background:linear-gradient(to top, rgba(0,0,0,.65), transparent)"></div>
+            <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 active:opacity-100 transition">
+              <span class="w-12 h-12 rounded-full btn-hero flex items-center justify-center text-base font-extrabold">▶</span>
+            </button>
+          </div>
+          <div class="p-3 space-y-1">
+            <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
+            <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${dateStr ? ' · ' + dateStr : ''}${item.folder ? ' · ' + escapeHtml(item.folder) : ''}</p>
+            <div class="flex gap-1.5 pt-1.5">
+              <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Play</button>
+              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
+              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function vaultRowHtml(item, key, selected, selecting) {
+      const thumb = vaultThumbCache[key];
+      const encodedKey = encodeURIComponent(key);
+      const isCustom = item.kind === 'custom';
+      const tapAttr = selecting ? `onclick="vaultTap('${encodedKey}')"` : '';
+      return `
+        <div class="card p-2.5 flex items-center gap-3 fade-in ${selected ? 'card-accent' : ''}" data-vault-key="${key}" ${tapAttr}>
+          <div class="w-14 h-14 rounded-xl bg-black/50 overflow-hidden flex items-center justify-center flex-shrink-0 relative">
+            ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover">` : `<span class="text-lg">${item.isVideo ? '🎬' : '🎵'}</span>`}
+            ${selecting ? selectionDot(selected) : ''}
+          </div>
+          <div class="min-w-0 flex-1">
+            <h4 class="text-[12px] font-bold text-white truncate">${escapeHtml(item.name)}</h4>
+            <p class="text-[10px] font-mono mt-0.5" style="color:var(--muted)">${formatBytesJs(item.size)}${isCustom ? ' · custom folder' : (item.folder ? ' · ' + escapeHtml(item.folder) : '')}</p>
+          </div>
+          ${selecting ? '' : (isCustom ? `
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+              <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn px-2.5 py-1.5 text-[10px] font-bold text-white">Open</button>
+              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+            </div>` : `
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+              <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold text-white">Play</button>
+              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
+              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+            </div>`)}
+        </div>`;
+    }
+    function customCardHtml(item, key, selected, selecting) {
+      const encodedKey = encodeURIComponent(key);
+      if (selecting) {
+        return `
+        <div class="card overflow-hidden fade-in ${selected ? 'card-accent' : ''}" data-vault-key="${key}" onclick="vaultTap('${encodedKey}')">
+          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
+            <div class="text-center">
+              <div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
+              <p class="text-[8px] font-mono" style="color:var(--muted)">CUSTOM FOLDER</p>
+            </div>
+            ${selectionDot(selected)}
+          </div>
+          <div class="p-3"><h4 class="text-[11px] font-bold text-white truncate">${escapeHtml(item.name)}</h4></div>
+        </div>`;
+      }
+      return `
+        <div class="card overflow-hidden fade-in" data-vault-key="${key}">
           <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
             <div class="text-center">
               <div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
@@ -1618,29 +1884,25 @@
             <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
             <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${item.modified ? ' · ' + new Date(item.modified).toLocaleDateString() : ''}</p>
             <div class="flex gap-1.5 pt-1.5">
-              <button onclick="customVaultAction('${encodeURIComponent(item.uri)}', 'open')" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Open</button>
-              <button onclick="customVaultAction('${encodeURIComponent(item.uri)}', 'share')" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
-              <button onclick="customVaultAction('${encodeURIComponent(item.uri)}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+              <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Open</button>
+              <button onclick="customVaultAction('${encodedKey}', 'share')" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
+              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
             </div>
           </div>
-        </div>
-      `;
+        </div>`;
     }
 
-    function customVaultAction(encodedUri, action) {
-      const uri = decodeURIComponent(encodedUri);
-      const item = vaultItems.find(i => i.uri === uri);
-      if (!item) return;
+    function customVaultAction(encodedKey, action) {
+      const key = decodeURIComponent(encodedKey);
+      const item = vaultItems.find(i => vaultKeyOf(i) === key);
+      if (!item || !item.uri) return;
+      const uri = item.uri;
       const engine = getEngine();
       if (!engine) return;
       const mime = item.mime || (item.isVideo ? 'video/mp4' : 'audio/mp4');
       if (action === 'open') {
-        if (engine.openCustomFile) {
-          engine.openCustomFile({ uri: uri, mime: mime })
-            .catch(e => showToast('Cannot open', (e && e.message) || 'No player found.', 'error'));
-        } else if (engine.openMedia) {
-          engine.openMedia({});
-        }
+        engine.openCustomFile?.({ uri: uri, mime: mime })
+          .catch(e => showToast('Cannot open', (e && e.message) || 'No player found.', 'error'));
       } else if (action === 'share') {
         engine.shareCustomFile?.({ uri: uri, mime: mime })
           .catch(() => showToast('Cannot share', 'Sharing failed.', 'error'));
@@ -1696,9 +1958,112 @@
       const item = playerQueue[playerIndex] || {};
       document.getElementById('playerTitle').innerText = item.name || 'Media';
       const v = document.getElementById('playerVideo');
+      setupPlayerGestures(v);
+      setupPlayerSwipe();
       v.src = url;
       document.getElementById('playerModal').classList.remove('hidden');
+      document.getElementById('playerModal').classList.remove('controls-hidden');
+      v.playbackRate = 1;
+      const sp = document.getElementById('btnPlayerSpeed');
+      if (sp) sp.innerText = '1×';
       v.play().catch(() => {});
+    }
+
+    // ---- Player 2.0: double-tap seek, speed, remember position, swipe-down ----
+    const PLAYER_SPEEDS = [1, 1.25, 1.5, 2, 0.5];
+
+    function cyclePlayerSpeed() {
+      const v = document.getElementById('playerVideo');
+      const btn = document.getElementById('btnPlayerSpeed');
+      const current = parseFloat(v.playbackRate) || 1;
+      const idx = PLAYER_SPEEDS.indexOf(current);
+      const next = PLAYER_SPEEDS[(idx + 1) % PLAYER_SPEEDS.length];
+      v.playbackRate = next;
+      if (btn) btn.innerText = next + '×';
+      triggerHaptic('light');
+    }
+
+    function showPlayerRipple(text) {
+      const box = document.getElementById('playerRipple');
+      const t = document.getElementById('playerRippleText');
+      if (!box || !t) return;
+      t.innerText = text;
+      box.style.opacity = '1';
+      clearTimeout(box._rippleTimer);
+      box._rippleTimer = setTimeout(() => { box.style.opacity = '0'; }, 450);
+    }
+
+    function playerPositionKey() {
+      return playerMeta ? ('omni_pos_' + (playerMeta.isVideo ? 'v' : 'a') + playerMeta.id) : null;
+    }
+    function savePlayerPosition() {
+      const v = document.getElementById('playerVideo');
+      const key = playerPositionKey();
+      if (!key || !v || !v.duration || v.currentTime < 5) return;
+      try {
+        if (v.duration - v.currentTime < 10) localStorage.removeItem(key);
+        else localStorage.setItem(key, String(Math.floor(v.currentTime)));
+      } catch (e) {}
+    }
+    function restorePlayerPosition(v) {
+      const key = playerPositionKey();
+      if (!key || !v.duration) return;
+      try {
+        const saved = parseInt(localStorage.getItem(key) || '0', 10);
+        if (saved > 5 && saved < v.duration - 10) {
+          v.currentTime = saved;
+          showToast('Resumed', 'Continuing from ' + fmtClock(saved), 'info');
+        }
+      } catch (e) {}
+    }
+
+    function setupPlayerGestures(v) {
+      if (v.dataset.gestures) return;
+      v.dataset.gestures = '1';
+      v.addEventListener('loadedmetadata', () => { restorePlayerPosition(v); updatePlayerUi(); });
+      v.addEventListener('pause', savePlayerPosition);
+      v.addEventListener('ended', () => {
+        const key = playerPositionKey();
+        if (key) { try { localStorage.removeItem(key); } catch (e) {} }
+      });
+      let lastTap = 0, singleTimer = null;
+      v.addEventListener('click', (e) => {
+        const now = Date.now();
+        const rect = v.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        if (now - lastTap < 300) {
+          clearTimeout(singleTimer);
+          const dir = x < rect.width / 2 ? -10 : 10;
+          skipPlayer(dir);
+          showPlayerRipple(dir > 0 ? '+10s' : '−10s');
+          triggerHaptic('light');
+        } else {
+          singleTimer = setTimeout(togglePlayerControls, 260);
+        }
+        lastTap = now;
+      });
+    }
+
+    function togglePlayerControls() {
+      document.getElementById('playerModal')?.classList.toggle('controls-hidden');
+    }
+
+    function setupPlayerSwipe() {
+      const modal = document.getElementById('playerModal');
+      if (!modal || modal.dataset.swipeReady) return;
+      modal.dataset.swipeReady = '1';
+      let y0 = 0, dy = 0, active = false;
+      modal.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; dy = 0; active = true; }, { passive: true });
+      modal.addEventListener('touchmove', (e) => {
+        if (!active) return;
+        dy = e.touches[0].clientY - y0;
+        if (dy > 0) modal.style.transform = `translateY(${dy}px)`;
+      }, { passive: true });
+      modal.addEventListener('touchend', () => {
+        active = false;
+        modal.style.transform = '';
+        if (dy > 120) closePlayer();
+      });
     }
 
     function updatePlayerUi() {
@@ -1745,6 +2110,7 @@
     }
     function closePlayer() {
       const v = document.getElementById('playerVideo');
+      savePlayerPosition();
       v.pause();
       v.removeAttribute('src');
       v.load();
@@ -2040,6 +2406,7 @@
       }
       const chk = document.getElementById('chkLightTheme');
       if (chk) chk.checked = (theme === 'light');
+      applyAccent();
       try { localStorage.setItem('omni_theme', theme); } catch(e) {}
       // Keep the Android status/navigation bars in the same shade.
       try { getEngine()?.setNativeTheme?.({ dark: theme !== 'light' }); } catch(e) {}
@@ -2056,12 +2423,64 @@
       applyTheme(saved);
     }
 
+    // ---- Accent colors + AMOLED + storage/cache utilities ----
+    const ACCENTS = {
+      cyan:    { a: '#22D3EE', b: '#3B82F6', la: '#0891B2', lb: '#2563EB' },
+      violet:  { a: '#8B5CF6', b: '#6366F1', la: '#7C3AED', lb: '#4F46E5' },
+      emerald: { a: '#10B981', b: '#0EA5E9', la: '#059669', lb: '#0284C7' },
+      rose:    { a: '#FB7185', b: '#F59E0B', la: '#E11D48', lb: '#D97706' }
+    };
+
+    function applyAccent() {
+      let name = 'cyan';
+      try { name = localStorage.getItem('omni_accent') || 'cyan'; } catch (e) {}
+      const c = ACCENTS[name] || ACCENTS.cyan;
+      const light = document.documentElement.dataset.theme === 'light';
+      document.documentElement.style.setProperty('--accent', light ? c.la : c.a);
+      document.documentElement.style.setProperty('--accent-2', light ? c.lb : c.b);
+    }
+    function setAccent(name) {
+      try { localStorage.setItem('omni_accent', name); } catch (e) {}
+      applyAccent();
+      triggerHaptic('light');
+      showToast('Accent updated', 'Your DOWNI glow is now ' + name + '.', 'success');
+    }
+    function applyAmoled() {
+      let on = false;
+      try { on = localStorage.getItem('omni_amoled') === '1'; } catch (e) {}
+      document.documentElement.classList.toggle('amoled', on);
+      const chk = document.getElementById('chkAmoled');
+      if (chk) chk.checked = on;
+    }
+    function setAmoled(on) {
+      try { localStorage.setItem('omni_amoled', on ? '1' : '0'); } catch (e) {}
+      applyAmoled();
+      triggerHaptic('light');
+    }
+    function clearDowniCache() {
+      const engine = getEngine();
+      if (!engine?.clearCache) return;
+      engine.clearCache()
+        .then(res => showToast('Cache cleared', formatBytesJs((res && res.freed) || 0) + ' freed.', 'success'))
+        .catch(() => showToast('Cannot clear', 'Cache is busy right now.', 'error'));
+    }
+    function copyAppVersion() {
+      const text = 'DOWNI v' + installedVersion + ' (' + installedVersionCode + ')';
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => showToast('Copied', text, 'success')).catch(() => {});
+      }
+    }
+
     // ================= Boot =================
     window.addEventListener('DOMContentLoaded', () => {
       initTheme();
       loadHistory();
       setupSheetDrag();
       refreshSaveLocationLabel();
+      applyAccent();
+      applyAmoled();
+      setupVaultLongPress();
+      updateVaultSelectionBar();
 
       const pv = document.getElementById('playerVideo');
       if (pv) {

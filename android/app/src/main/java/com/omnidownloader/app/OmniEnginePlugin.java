@@ -85,6 +85,104 @@ public class OmniEnginePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void deleteMediaBatch(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            call.reject("Bulk delete needs Android 11 or newer.");
+            return;
+        }
+        try {
+            com.getcapacitor.JSArray videoIds = call.getArray("videoIds");
+            com.getcapacitor.JSArray audioIds = call.getArray("audioIds");
+            java.util.List<Uri> uris = new java.util.ArrayList<>();
+            if (videoIds != null) for (int i = 0; i < videoIds.length(); i++) {
+                uris.add(Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, String.valueOf(videoIds.getLong(i))));
+            }
+            if (audioIds != null) for (int i = 0; i < audioIds.length(); i++) {
+                uris.add(Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(audioIds.getLong(i))));
+            }
+            if (uris.isEmpty()) {
+                call.reject("Nothing selected.");
+                return;
+            }
+            android.app.PendingIntent pi = MediaStore.createDeleteRequest(getContext().getContentResolver(), uris);
+            getActivity().startIntentSenderForResult(pi.getIntentSender(), 10292, null, 0, 0, 0);
+            JSObject result = new JSObject();
+            result.put("requested", true);
+            result.put("count", uris.size());
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Storage refused the delete request.", e);
+        }
+    }
+
+    @PluginMethod
+    public void shareMediaBatch(PluginCall call) {
+        try {
+            com.getcapacitor.JSArray videoIds = call.getArray("videoIds");
+            com.getcapacitor.JSArray audioIds = call.getArray("audioIds");
+            java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+            boolean anyVideo = false;
+            if (videoIds != null) for (int i = 0; i < videoIds.length(); i++) {
+                uris.add(Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, String.valueOf(videoIds.getLong(i))));
+                anyVideo = true;
+            }
+            if (audioIds != null) for (int i = 0; i < audioIds.length(); i++) {
+                uris.add(Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(audioIds.getLong(i))));
+            }
+            if (uris.isEmpty()) {
+                call.reject("Nothing selected.");
+                return;
+            }
+            Intent intent;
+            if (uris.size() == 1) {
+                intent = new Intent(Intent.ACTION_SEND);
+                intent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+            } else {
+                intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+            }
+            intent.setType(anyVideo ? "video/*" : "audio/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(intent, "Share media");
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not share these files.", e);
+        }
+    }
+
+    @PluginMethod
+    public void clearCache(PluginCall call) {
+        miscExecutor.execute(() -> {
+            long freed = 0;
+            try {
+                File dir = new File(getContext().getCacheDir(), "OmniEngine");
+                freed = deleteTree(dir);
+            } catch (Exception ignored) {}
+            JSObject result = new JSObject();
+            result.put("freed", freed);
+            call.resolve(result);
+        });
+    }
+
+    private long deleteTree(File file) {
+        long freed = 0;
+        try {
+            if (file == null || !file.exists()) return 0;
+            if (file.isDirectory()) {
+                File[] children = file.listFiles();
+                if (children != null) for (File child : children) freed += deleteTree(child);
+            } else {
+                freed += file.length();
+                file.delete();
+            }
+            if (file.isDirectory()) file.delete();
+        } catch (Exception ignored) {}
+        return freed;
+    }
+
+    @PluginMethod
     public void chooseFolder(PluginCall call) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
