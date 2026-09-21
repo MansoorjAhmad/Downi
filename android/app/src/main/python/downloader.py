@@ -65,6 +65,110 @@ def _detect_platform(url):
 
 
 # ---------------------------------------------------------------------------
+# Split download (DASH video + audio) for on-device muxing — no ffmpeg needed
+# ---------------------------------------------------------------------------
+
+def _scaled_hook(progress_listener, lo, hi):
+    """Progress hook that maps one stream's download into a [lo, hi] % window."""
+    last = [0.0]
+
+    def hook(d):
+        if progress_listener is None:
+            return
+        status = d.get('status')
+        if status == 'downloading':
+            if hasattr(progress_listener, 'isCancelled') and progress_listener.isCancelled():
+                raise RuntimeError("Download cancelled.")
+            now = time.time()
+            if now - last[0] < 0.25:
+                return
+            last[0] = now
+            downloaded = d.get('downloaded_bytes') or 0
+            total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+            speed = d.get('speed') or 0.0
+            eta = d.get('eta') or 0
+            frac = (float(downloaded) / float(total)) if total > 0 else 0.0
+            pct = lo + (hi - lo) * min(1.0, frac)
+            try:
+                progress_listener.onProgress(float(pct), int(downloaded), int(total), float(speed or 0.0), int(eta or 0))
+            except Exception:
+                pass
+        elif status == 'finished':
+            try:
+                progress_listener.onProgress(float(hi), 0, 0, 0.0, 0)
+            except Exception:
+                pass
+
+    return hook
+
+
+def _download_split(url, target_dir, max_height=1080, progress_listener=None):
+    """Download best H.264 video-only + M4A audio-only streams for muxing.
+
+    Returns a dict the Java layer muxes with MediaMuxer, or None when this video
+    has no separate streams (the caller then falls back / reports honestly).
+    """
+    os.makedirs(target_dir, exist_ok=True)
+    base = {
+        'quiet': True,
+        'no_warnings': True,
+        'noplaylist': True,
+        'ca_certs': certifi.where(),
+        'outtmpl': os.path.join(target_dir, '%(title).120B-%(id)s.%(ext)s'),
+        'windowsfilenames': True,
+        'overwrites': True,
+        'nopart': True,
+        'socket_timeout': 30,
+        'retries': 3,
+    }
+    video_path = None
+    audio_path = None
+    try:
+        video_opts = dict(base)
+        video_opts['format'] = (
+            'bestvideo[ext=mp4][vcodec^=avc1][height<=%d]/'
+            'bestvideo[ext=mp4][vcodec^=avc1]/'
+            'bestvideo[height<=%d]' % (max_height, max_height)
+        )
+        video_opts['progress_hooks'] = [_scaled_hook(progress_listener, 0.0, 0.7)] if progress_listener else []
+        with YoutubeDL(video_opts) as ydl:
+            v_info = ydl.extract_info(url, download=True)
+            video_path = ydl.prepare_filename(v_info)
+        if not video_path or not os.path.exists(video_path):
+            return None
+
+        audio_opts = dict(base)
+        audio_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
+        audio_opts['progress_hooks'] = [_scaled_hook(progress_listener, 0.7, 0.95)] if progress_listener else []
+        with YoutubeDL(audio_opts) as ydl:
+            a_info = ydl.extract_info(url, download=True)
+            audio_path = ydl.prepare_filename(a_info)
+        if not audio_path or not os.path.exists(audio_path):
+            try:
+                os.remove(video_path)
+            except OSError:
+                pass
+            return None
+    except Exception:
+        for leftover in (video_path, audio_path):
+            if leftover:
+                try:
+                    os.remove(leftover)
+                except OSError:
+                    pass
+        return None
+
+    return {
+        'merge': True,
+        'video_path': video_path,
+        'audio_path': audio_path,
+        'title': _safe_name((v_info.get('title') if v_info else '') or 'video'),
+        'ext': 'mp4',
+        'platform': 'youtube',
+    }
+
+
+# ---------------------------------------------------------------------------
 # TikTok Direct Handler (Proven fast & watermark-free)
 # ---------------------------------------------------------------------------
 
@@ -222,14 +326,14 @@ def inspect(url):
     if platform == 'youtube':
         formats = [
             {'id': 'best', 'label': 'Best Available Quality (HD)', 'ext': 'mp4', 'badge': 'HD'},
+            {'id': '1080', 'label': '1080p Full HD (merged on device)', 'ext': 'mp4', 'badge': '1080p'},
             {'id': '720', 'label': '720p HD Quality', 'ext': 'mp4', 'badge': '720p'},
             {'id': '480', 'label': '480p Standard Quality', 'ext': 'mp4', 'badge': '480p'},
             {'id': '360', 'label': '360p Data Saver', 'ext': 'mp4', 'badge': '360p'},
             {'id': 'audio', 'label': 'Audio Track (MP3 / M4A)', 'ext': 'mp3', 'badge': 'MP3'},
         ]
-        note = ('YouTube serves video and audio separately above 720p and this app '
-                'does not bundle a merger yet, so downloads max out at 720p with sound. '
-                'True 1080p merging is planned for a future update.')
+        note = ('YouTube serves 1080p as separate video and audio — DOWNI merges them on your '
+                'device. Pick "Best" for the fastest grab, or 1080p Full HD for maximum quality.')
     else:
         formats = [
             {'id': 'best', 'label': 'Best Available Quality (HD)', 'ext': 'mp4', 'badge': 'HD'},
@@ -275,7 +379,15 @@ def download(url, target_dir, format_id='best', progress_listener=None):
         except Exception:
             pass
 
-    # 2) Universal yt-dlp download with proven v1.3.6 format cascading
+    # 2) Split + on-device merge — true 1080p where only DASH streams exist
+    #    (video and audio arrive separately and are muxed natively in Java).
+    if platform == 'youtube' and str(format_id) == '1080':
+        split = _download_split(clean, target_dir, 1080, progress_listener)
+        if split:
+            return json.dumps(split)
+        raise RuntimeError('This video has no separate 1080p stream — pick 720p HD or Best Available.')
+
+    # 3) Universal yt-dlp download with proven v1.3.6 format cascading
     video_formats = {
         '1080': 'best[height<=1080][ext=mp4][vcodec!=none]/best[height<=1080][vcodec!=none]/best',
         '720': 'best[height<=720][ext=mp4][vcodec!=none]/best[height<=720][vcodec!=none]/best',

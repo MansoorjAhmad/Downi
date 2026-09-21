@@ -907,7 +907,31 @@ public class OmniEnginePlugin extends Plugin {
             saving.put("status", "Saving to gallery…");
             notifyListeners("onProgress", saving);
 
-            String destination = copyToGallery(new File(file.getString("path")), file.getString("title"), file.getString("ext"));
+            String destination;
+            if (file.optBoolean("merge", false)) {
+                // True 1080p: separate video + audio streams muxed on-device.
+                OmniDownloadService.updateJob(getContext(), job.id, "Merging video + audio…", 96);
+                JSObject merging = new JSObject();
+                merging.put("jobId", job.id);
+                merging.put("percent", 96);
+                merging.put("status", "Merging video + audio…");
+                notifyListeners("onProgress", merging);
+
+                File videoPart = new File(file.getString("video_path"));
+                File audioPart = new File(file.getString("audio_path"));
+                File merged = new File(videoPart.getParentFile(), file.getString("title") + "-merged.mp4");
+                if (Mp4Merger.merge(videoPart, audioPart, merged)) {
+                    destination = copyToGallery(merged, file.getString("title"), "mp4");
+                } else {
+                    try { videoPart.delete(); } catch (Exception ignored) {}
+                    try { audioPart.delete(); } catch (Exception ignored) {}
+                    throw new IllegalStateException("Could not merge 1080p on this device. Try 720p HD or Best Available.");
+                }
+                try { videoPart.delete(); } catch (Exception ignored) {}
+                try { audioPart.delete(); } catch (Exception ignored) {}
+            } else {
+                destination = copyToGallery(new File(file.getString("path")), file.getString("title"), file.getString("ext"));
+            }
             if (job.cancelled.get()) return;
 
             JSObject progress = new JSObject();
