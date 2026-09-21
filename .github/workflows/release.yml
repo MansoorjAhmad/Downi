@@ -66,12 +66,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
+          # The tagged commit's message doubles as the release notes, so
+          # "release: vX.Y.Z ..." commits publish with correct notes instead
+          # of a stale hardcoded blurb (workflow_dispatch has no head_commit).
+          NOTES: ${{ github.event.head_commit.message }}
         run: |
+          if [ -z "$NOTES" ]; then
+            NOTES="DOWNI ${TAG} release. Install directly over the previous version — the signing key is unchanged, so your settings and downloads are preserved."
+          fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" "DOWNI-${TAG}.apk" --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$TAG" "DOWNI-${TAG}.apk" \
               --repo "$GITHUB_REPOSITORY" \
               --title "DOWNI ${TAG}" \
-              --notes "DOWNI 2.5.4: Cloud Boost deployment and validation fixes. Install directly over the previous version — the signing key is unchanged, so your settings and downloads are preserved."
+              --notes "$NOTES"
           fi
