@@ -2,9 +2,6 @@ package com.omnidownloader.app;
 
 import com.getcapacitor.BridgeActivity;
 import androidx.core.splashscreen.SplashScreen;
-import android.Manifest;
-import android.content.pm.PackageManager;
-import android.os.Build;
 import com.chaquo.python.android.AndroidPlatform;
 import com.chaquo.python.Python;
 
@@ -12,7 +9,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(android.os.Bundle savedInstanceState) {
         SplashScreen.installSplashScreen(this);
-        registerPlugin(OmniEnginePlugin.class);
+        registerPlugin(DowniEnginePlugin.class);
         super.onCreate(savedInstanceState);
 
         // The https://localhost page loads Vault media from the loopback
@@ -34,9 +31,9 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception ignored) {}
         }).start();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 4103);
-        }
+        // NOTE: POST_NOTIFICATIONS is requested on the user's first Grab (from the
+        // web layer via DowniEngine.requestNotificationPermission), not at launch —
+        // a permission prompt before the first feature is just noise.
     }
 
     @Override

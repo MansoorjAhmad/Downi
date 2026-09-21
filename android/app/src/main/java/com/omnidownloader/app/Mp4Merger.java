@@ -18,7 +18,8 @@ import java.nio.ByteBuffer;
  */
 public final class Mp4Merger {
 
-    private static final int BUFFER_SIZE = 2 * 1024 * 1024;
+    // 1080p H.264 IDR frames can exceed 2 MB — a too-small buffer aborts the copy.
+    private static final int BUFFER_SIZE = 8 * 1024 * 1024;
 
     private Mp4Merger() {}
 
@@ -49,10 +50,8 @@ public final class Mp4Merger {
             started = true;
 
             videoExtractor.selectTrack(videoTrack);
-            copySamples(videoExtractor, muxer, videoOut);
-
             audioExtractor.selectTrack(audioTrack);
-            copySamples(audioExtractor, muxer, audioOut);
+            interleaveSamples(videoExtractor, videoOut, audioExtractor, audioOut, muxer);
 
             muxer.stop();
             started = false;
@@ -76,18 +75,39 @@ public final class Mp4Merger {
         return -1;
     }
 
-    private static void copySamples(MediaExtractor extractor, MediaMuxer muxer, int outTrack) {
+    /**
+     * Write samples in presentation-time order from both extractors at once.
+     * Dumping the whole video track and then the whole audio track produces a
+     * badly interleaved file (strict players hitch on it); walking both cursors
+     * keeps the output naturally interleaved, the way players expect.
+     */
+    private static void interleaveSamples(MediaExtractor video, int videoOut,
+                                          MediaExtractor audio, int audioOut,
+                                          MediaMuxer muxer) {
         ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
         MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+        boolean videoDone = false, audioDone = false;
         while (true) {
-            int size = extractor.readSampleData(buffer, 0);
-            if (size < 0) break;
+            long vTime = videoDone ? Long.MAX_VALUE : video.getSampleTime();
+            long aTime = audioDone ? Long.MAX_VALUE : audio.getSampleTime();
+            if (vTime < 0) { videoDone = true; vTime = Long.MAX_VALUE; }
+            if (aTime < 0) { audioDone = true; aTime = Long.MAX_VALUE; }
+            if (videoDone && audioDone) break;
+
+            MediaExtractor current = (vTime <= aTime) ? video : audio;
+            int outTrack = (vTime <= aTime) ? videoOut : audioOut;
+            buffer.clear();
+            int size = current.readSampleData(buffer, 0);
+            if (size < 0) {
+                if (current == video) videoDone = true; else audioDone = true;
+                continue;
+            }
             info.offset = 0;
             info.size = size;
-            info.presentationTimeUs = extractor.getSampleTime();
-            info.flags = extractor.getSampleFlags();
+            info.presentationTimeUs = current.getSampleTime();
+            info.flags = current.getSampleFlags();
             muxer.writeSampleData(outTrack, buffer, info);
-            extractor.advance();
+            current.advance();
         }
     }
 }

@@ -1,10 +1,24 @@
-# DOWNI V3.0.0 ⚡
+# DOWNI V3.0.1 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
 
 ---
+
+## 🆕 What's New in V3.0.1
+
+### The hardening release — everything fixed, everything honest
+- **Playlist batch never dies** — a failed video is skipped, the rest keep grabbing
+- **DowniDrop, for real** — shared links now open the Inspector (quality picker) instead of a silent background grab that never showed in the Queue
+- **Cancel keeps its Undo** — the Undo action no longer gets overwritten by a second generic toast
+- **Right link, right job** — history, "Last grabbed ↻" and live progress cards always belong to their own download, even with 3 parallel grabs
+- **Truthful settings** — clipboard toggle restores its real state; session stats survive restarts; the duplicate "Storage" card is gone (now Behavior + Storage)
+- **Better notifications** — unique per job, completions actually make a sound, permission asked on your first Grab instead of at launch
+- **True 1080p, smoother** — the MediaMuxer merge now writes properly interleaved files with a larger safety buffer
+- **Identity cleanup** — the whole app is DOWNI now (plugin, service, resources, settings keys — with automatic migration, nothing is lost); accent colors repaint the *entire* interface; three honest platform chips; one SVG icon language; one tagline; AMOLED black reaches the system bars
+- **Housekeeping** — stale update APKs auto-cleaned, Instagram diagnostic can't fail on a dead probe, no more stale-artifact files in the repo
+
 
 ## 🆕 What's New in V3.0.0
 

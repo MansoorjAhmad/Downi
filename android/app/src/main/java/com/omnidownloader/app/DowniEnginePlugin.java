@@ -52,14 +52,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * DOWNI native bridge — V2.5 ELITE.
+ * DOWNI native bridge.
  * Parallel download queue (3 simultaneous, more auto-queued), per-job progress
  * and cancel, true in-app updater, engine health check, Media Vault.
  */
-@CapacitorPlugin(name = "OmniEngine", permissions = {
+@CapacitorPlugin(name = "DowniEngine", permissions = {
     @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS })
 })
-public class OmniEnginePlugin extends Plugin {
+public class DowniEnginePlugin extends Plugin {
     private static final int MAX_ACTIVE = 3;
     private static final int MAX_QUEUED = 6;
 
@@ -157,8 +157,9 @@ public class OmniEnginePlugin extends Plugin {
         miscExecutor.execute(() -> {
             long freed = 0;
             try {
-                File dir = new File(getContext().getCacheDir(), "OmniEngine");
-                freed = deleteTree(dir);
+                freed += deleteTree(new File(getContext().getCacheDir(), "DowniEngine"));
+                freed += deleteTree(new File(getContext().getCacheDir(), "OmniEngine")); // legacy era
+                freed += deleteTree(new File(getContext().getCacheDir(), "OmniDrop"));   // legacy era
             } catch (Exception ignored) {}
             JSObject result = new JSObject();
             result.put("freed", freed);
@@ -198,7 +199,7 @@ public class OmniEnginePlugin extends Plugin {
         Uri tree = result.getData().getData();
         try {
             getContext().getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).edit().putString("treeUri", tree.toString()).apply();
+            getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).edit().putString("treeUri", tree.toString()).apply();
             JSObject response = new JSObject();
             response.put("folder", "Custom folder");
             response.put("uri", tree.toString());
@@ -210,7 +211,7 @@ public class OmniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void getSaveLocation(PluginCall call) {
-        String treeUri = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("treeUri", "");
+        String treeUri = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getString("treeUri", "");
         boolean custom = treeUri != null && !treeUri.isEmpty();
         JSObject result = new JSObject();
         result.put("custom", custom);
@@ -221,6 +222,27 @@ public class OmniEnginePlugin extends Plugin {
     @Override
     public void load() {
         downloadManager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+
+        // One-time identity migration: settings lived under "omni_settings".
+        try {
+            android.content.SharedPreferences next = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+            android.content.SharedPreferences legacy = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE);
+            String legacyTree = legacy.getString("treeUri", "");
+            if (next.getString("treeUri", "").isEmpty() && legacyTree != null && !legacyTree.isEmpty()) {
+                next.edit().putString("treeUri", legacyTree).apply();
+                legacy.edit().clear().apply();
+            }
+        } catch (Exception ignored) {}
+
+        // Never let a stale update APK eat storage (B14) — the installer keeps
+        // no state, so last session's file (either naming era) is pure junk now.
+        try {
+            File updates = getContext().getExternalFilesDir("updates");
+            if (updates != null) {
+                new File(updates, "downi-update.apk").delete();
+                new File(updates, "omni-update.apk").delete();
+            }
+        } catch (Exception ignored) {}
     }
 
     // ---------- Custom save folder (SAF) ----------
@@ -232,7 +254,7 @@ public class OmniEnginePlugin extends Plugin {
     public void listCustomFiles(PluginCall call) {
         miscExecutor.execute(() -> {
             com.getcapacitor.JSArray items = new com.getcapacitor.JSArray();
-            String treeUri = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("treeUri", "");
+            String treeUri = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getString("treeUri", "");
             if (treeUri != null && !treeUri.isEmpty()) {
                 try {
                     Uri tree = Uri.parse(treeUri);
@@ -478,7 +500,7 @@ public class OmniEnginePlugin extends Plugin {
             File destDir = getContext().getExternalFilesDir("updates");
             if (destDir == null) destDir = getContext().getFilesDir();
             if (!destDir.exists()) destDir.mkdirs();
-            final File destFile = new File(destDir, "omni-update.apk");
+            final File destFile = new File(destDir, "downi-update.apk");
             long lastEvent = 0;
 
             try {
@@ -486,7 +508,7 @@ public class OmniEnginePlugin extends Plugin {
                 conn.setInstanceFollowRedirects(true);
                 conn.setConnectTimeout(20000);
                 conn.setReadTimeout(30000);
-                conn.setRequestProperty("User-Agent", "DOWNI/" + getAppVersionName());
+                conn.setRequestProperty("User-Agent", "DOWNI-Android/" + getAppVersionName());
                 conn.connect();
 
                 int code = conn.getResponseCode();
@@ -555,6 +577,11 @@ public class OmniEnginePlugin extends Plugin {
     @PluginMethod
     public void cancelUpdateDownload(PluginCall call) {
         updateCancelled = true;
+        // Kill the partial file too — a cancelled update must not leak storage (B14).
+        try {
+            File updates = getContext().getExternalFilesDir("updates");
+            if (updates != null) new File(updates, "downi-update.apk").delete();
+        } catch (Exception ignored) {}
         call.resolve();
     }
 
@@ -679,11 +706,14 @@ public class OmniEnginePlugin extends Plugin {
     public void setNativeTheme(PluginCall call) {
         Boolean darkVal = call.getBoolean("dark", true);
         final boolean dark = darkVal == null || darkVal;
+        Boolean amoledVal = call.getBoolean("amoled", false);
+        final boolean amoled = amoledVal != null && amoledVal;
         getActivity().runOnUiThread(() -> {
             try {
                 android.view.Window window = getActivity().getWindow();
-                window.setStatusBarColor(android.graphics.Color.parseColor(dark ? "#060A13" : "#F0F4F8"));
-                window.setNavigationBarColor(android.graphics.Color.parseColor(dark ? "#0D1421" : "#FFFFFF"));
+                // AMOLED true-black must reach the system bars too, not just the page (B17).
+                window.setStatusBarColor(android.graphics.Color.parseColor(!dark ? "#F0F4F8" : (amoled ? "#000000" : "#060A13")));
+                window.setNavigationBarColor(android.graphics.Color.parseColor(!dark ? "#FFFFFF" : (amoled ? "#000000" : "#0D1421")));
                 android.view.View decor = window.getDecorView();
                 int flags = dark ? 0
                     : android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -870,7 +900,7 @@ public class OmniEnginePlugin extends Plugin {
         started.put("queued", true);
         notifyListeners("onProgress", started);
 
-        OmniDownloadService.startJob(getContext(), jobId, "Queued");
+        DowniDownloadService.startJob(getContext(), jobId, "Queued");
         call.setKeepAlive(true);
         enginePool.execute(() -> runJob(job));
     }
@@ -883,7 +913,7 @@ public class OmniEnginePlugin extends Plugin {
             if (job != null) {
                 job.cancelled.set(true);
                 try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
-                OmniDownloadService.finishJob(getContext(), jobId);
+                DowniDownloadService.finishJob(getContext(), jobId, false);
                 JSObject progress = new JSObject();
                 progress.put("jobId", jobId);
                 progress.put("failed", true);
@@ -894,7 +924,7 @@ public class OmniEnginePlugin extends Plugin {
             for (DownloadJob job : jobs.values()) {
                 job.cancelled.set(true);
                 try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
-                OmniDownloadService.finishJob(getContext(), job.id);
+                DowniDownloadService.finishJob(getContext(), job.id, false);
             }
             jobs.clear();
         }
@@ -902,18 +932,19 @@ public class OmniEnginePlugin extends Plugin {
     }
 
     private void runJob(DownloadJob job) {
-        File workDir = new File(new File(getContext().getCacheDir(), "OmniEngine"), job.id);
+        File workDir = new File(new File(getContext().getCacheDir(), "DowniEngine"), job.id);
         try {
             if (job.cancelled.get()) return;
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
 
-            OmniDownloadService.updateJob(getContext(), job.id, "Starting engine…", 1);
+            DowniDownloadService.updateJob(getContext(), job.id, "Starting engine…", 1);
             DownloadProgressListener listener = new DownloadProgressListener() {
                 @Override
                 public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
                     if (job.cancelled.get()) return;
                     JSObject progress = new JSObject();
                     progress.put("jobId", job.id);
+                    progress.put("url", job.url); // lets the web layer match pending cards to the right job (B5)
                     progress.put("percent", (int) percent);
                     progress.put("downloadedBytes", downloadedBytes);
                     progress.put("totalBytes", totalBytes);
@@ -924,7 +955,7 @@ public class OmniEnginePlugin extends Plugin {
                     progress.put("etaFormatted", etaSeconds > 0 ? (etaSeconds + "s left") : "");
                     progress.put("status", "Downloading…");
                     notifyListeners("onProgress", progress);
-                    OmniDownloadService.updateJob(getContext(), job.id,
+                    DowniDownloadService.updateJob(getContext(), job.id,
                         progress.getString("sizeFormatted") + String.format(Locale.US, " (%.0f%%)", percent), (int) percent);
                 }
 
@@ -938,7 +969,7 @@ public class OmniEnginePlugin extends Plugin {
             if (job.cancelled.get()) return;
 
             JSONObject file = new JSONObject(response.toString());
-            OmniDownloadService.updateJob(getContext(), job.id, "Saving to gallery…", 98);
+            DowniDownloadService.updateJob(getContext(), job.id, "Saving to gallery…", 98);
 
             JSObject saving = new JSObject();
             saving.put("jobId", job.id);
@@ -949,7 +980,7 @@ public class OmniEnginePlugin extends Plugin {
             String destination;
             if (file.optBoolean("merge", false)) {
                 // True 1080p: separate video + audio streams muxed on-device.
-                OmniDownloadService.updateJob(getContext(), job.id, "Merging video + audio…", 96);
+                DowniDownloadService.updateJob(getContext(), job.id, "Merging video + audio…", 96);
                 JSObject merging = new JSObject();
                 merging.put("jobId", job.id);
                 merging.put("percent", 96);
@@ -975,6 +1006,7 @@ public class OmniEnginePlugin extends Plugin {
 
             JSObject progress = new JSObject();
             progress.put("jobId", job.id);
+            progress.put("url", job.url);
             progress.put("percent", 100);
             progress.put("status", "Saved to your gallery");
             progress.put("complete", true);
@@ -982,7 +1014,7 @@ public class OmniEnginePlugin extends Plugin {
             progress.put("destination", destination);
             notifyListeners("onProgress", progress);
 
-            OmniDownloadService.finishJob(getContext(), job.id);
+            DowniDownloadService.finishJob(getContext(), job.id, true);
             try { job.call.resolve(progress); } catch (Exception ignored) {}
         } catch (Exception error) {
             if (!job.cancelled.get()) {
@@ -992,7 +1024,7 @@ public class OmniEnginePlugin extends Plugin {
                 String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
                 progress.put("error", friendlyError(detail));
                 notifyListeners("onProgress", progress);
-                OmniDownloadService.finishJob(getContext(), job.id);
+                DowniDownloadService.finishJob(getContext(), job.id, false);
                 try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
             }
         } finally {
@@ -1125,7 +1157,7 @@ public class OmniEnginePlugin extends Plugin {
 
         boolean saved = false;
 
-        String treeUri = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("treeUri", "");
+        String treeUri = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getString("treeUri", "");
         if (treeUri != null && !treeUri.isEmpty()) {
             try {
                 Uri tree = Uri.parse(treeUri);
@@ -1221,8 +1253,14 @@ public class OmniEnginePlugin extends Plugin {
         String base = safeFileName(title, Uri.fromFile(source));
         if (base.toLowerCase(Locale.US).endsWith("." + ext)) base = base.substring(0, base.length() - ext.length() - 1);
         String key = (base + "." + ext).toLowerCase(Locale.US);
-        android.content.SharedPreferences names = getContext().getSharedPreferences("omni_saved_names", Context.MODE_PRIVATE);
-        int number = names.getInt(key, 0);
+        android.content.SharedPreferences names = getContext().getSharedPreferences("downi_saved_names", Context.MODE_PRIVATE);
+        // Identity migration: counters used to live under "omni_saved_names".
+        android.content.SharedPreferences legacyNames = getContext().getSharedPreferences("omni_saved_names", Context.MODE_PRIVATE);
+        int number = names.getInt(key, -1);
+        if (number < 0) {
+            number = legacyNames.getInt(key, 0);
+            if (number > 0) names.edit().putInt(key, number).apply();
+        }
         String candidate = number == 0 ? base + "." + ext : base + " (" + number + ")." + ext;
         while (galleryNameExists(candidate)) {
             number++;
@@ -1265,7 +1303,7 @@ public class OmniEnginePlugin extends Plugin {
             PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
             return pInfo.versionName;
         } catch (Exception e) {
-            return "2.5.0";
+            return "DOWNI"; // UA fallback only — never a stale version number
         }
     }
 

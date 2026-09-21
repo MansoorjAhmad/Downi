@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>DOWNI — Grab Any Video</title>
+  <title>DOWNI — Grab any video. One tap.</title>
   <script src="assets/vendor/tailwind.js"></script>
   <link rel="icon" type="image/png" href="assets/icon.png">
   <!-- Apply saved theme before first paint to avoid flash; default to system preference -->
-  <script>try{var t=localStorage.getItem('omni_theme');if(!t){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}if(t==='light')document.documentElement.dataset.theme='light';}catch(e){}</script>
+  <script>try{var t=localStorage.getItem('downi_theme')||localStorage.getItem('omni_theme');if(!t){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}if(t==='light')document.documentElement.dataset.theme='light';}catch(e){}</script>
   <style>
     @font-face {
       font-family: 'Plus Jakarta Sans';
@@ -31,9 +31,22 @@
       --line: rgba(255, 255, 255, 0.07);
       --accent: #22D3EE;
       --accent-2: #3B82F6;
+      --accent-rgb: 34, 211, 238;
+      --accent-2-rgb: 59, 130, 246;
       --ok: #34D399;
       --bad: #FB7185;
       --muted: #8A94A7;
+    }
+
+    /* Accent-token utilities — every accent-colored surface uses these, so
+       switching accent in Settings repaints the WHOLE app, not half of it */
+    .text-accent { color: var(--accent); }
+    .bg-accent-soft { background: rgba(var(--accent-rgb), .12); }
+    .border-accent-soft { border-color: rgba(var(--accent-rgb), .22); }
+    .qx-on { background: var(--accent); color: #04121C; }
+    input[type="checkbox"] { accent-color: var(--accent); }
+    input[type="text"]:focus, input[type="url"]:focus, textarea:focus, select:focus {
+      border-color: rgba(var(--accent-rgb), .5) !important;
     }
 
     :root[data-theme="light"] {
@@ -43,6 +56,8 @@
       --line: rgba(0, 0, 0, 0.08);
       --accent: #0891B2;
       --accent-2: #2563EB;
+      --accent-rgb: 8, 145, 178;
+      --accent-2-rgb: 37, 99, 235;
       --ok: #059669;
       --bad: #DC2626;
       --muted: #64748B;
@@ -74,7 +89,7 @@
     :root[data-theme="light"] .bar { background: rgba(15, 23, 42, .10); }
     :root[data-theme="light"] .skel { background: linear-gradient(100deg, rgba(15,23,42,.06) 30%, rgba(15,23,42,.12) 50%, rgba(15,23,42,.06) 70%); background-size: 200% 100%; }
     :root[data-theme="light"] .grabber { background: rgba(15, 23, 42, .18); }
-    :root[data-theme="light"] .vortex { background: radial-gradient(circle at 32% 30%, rgba(8,145,178,.10), rgba(255,255,255,.98) 65%); }
+    :root[data-theme="light"] .vortex { background: radial-gradient(circle at 32% 30%, rgba(var(--accent-rgb),.10), rgba(255,255,255,.98) 65%); }
     :root[data-theme="light"] .bg-black\/75 { background: rgba(15, 23, 42, .45) !important; }
     :root[data-theme="light"] .bg-white\/5,
     :root[data-theme="light"] .bg-white\/\[0\.03\],
@@ -94,8 +109,8 @@
     body {
       color: #F2F5FA;
       background-image:
-        radial-gradient(1000px 520px at 50% -12%, rgba(34, 211, 238, 0.10), transparent 70%),
-        radial-gradient(760px 560px at 100% 102%, rgba(59, 130, 246, 0.07), transparent 60%);
+        radial-gradient(1000px 520px at 50% -12%, rgba(var(--accent-rgb), 0.10), transparent 70%),
+        radial-gradient(760px 560px at 100% 102%, rgba(var(--accent-2-rgb), 0.07), transparent 60%);
       background-attachment: fixed;
     }
 
@@ -105,7 +120,7 @@
       border-radius: 24px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
     }
-    .card-accent { border-color: rgba(34, 211, 238, 0.28); box-shadow: 0 12px 36px rgba(34, 211, 238, 0.08); }
+    .card-accent { border-color: rgba(var(--accent-rgb), 0.28); box-shadow: 0 12px 36px rgba(var(--accent-rgb), 0.08); }
 
     .btn {
       background: rgba(255, 255, 255, 0.06);
@@ -120,10 +135,10 @@
       color: #04121C;
       border: none;
       border-radius: 18px;
-      box-shadow: 0 12px 30px rgba(34, 211, 238, 0.30);
+      box-shadow: 0 12px 30px rgba(var(--accent-rgb), 0.30);
       transition: transform .15s ease, box-shadow .2s ease, opacity .2s ease;
     }
-    .btn-hero:active { transform: scale(0.98); box-shadow: 0 8px 20px rgba(34, 211, 238, 0.4); }
+    .btn-hero:active { transform: scale(0.98); box-shadow: 0 8px 20px rgba(var(--accent-rgb), 0.4); }
     .btn-hero:disabled { opacity: .55; }
 
     .chip {
@@ -133,9 +148,9 @@
       transition: all .15s ease;
     }
     .chip.on {
-      background: rgba(34,211,238,0.14);
-      border-color: rgba(34,211,238,0.4);
-      color: #7DE7F7;
+      background: rgba(var(--accent-rgb),0.14);
+      border-color: rgba(var(--accent-rgb),0.4);
+      color: var(--accent);
     }
 
     /* ---- HERO VORTEX BUTTON ---- */
@@ -143,9 +158,9 @@
       width: 132px; height: 132px; border-radius: 999px;
       display: flex; align-items: center; justify-content: center;
       position: relative; cursor: pointer; user-select: none;
-      background: radial-gradient(circle at 32% 30%, rgba(34,211,238,.16), rgba(9,14,26,.95) 65%);
-      border: 1px solid rgba(34,211,238,.35);
-      box-shadow: 0 0 44px rgba(34,211,238,.22), inset 0 0 26px rgba(34,211,238,.12);
+      background: radial-gradient(circle at 32% 30%, rgba(var(--accent-rgb),.16), rgba(9,14,26,.95) 65%);
+      border: 1px solid rgba(var(--accent-rgb),.35);
+      box-shadow: 0 0 44px rgba(var(--accent-rgb),.22), inset 0 0 26px rgba(var(--accent-rgb),.12);
       transition: transform .18s cubic-bezier(.4,0,.2,1);
     }
     .vortex:active { transform: scale(.93); }
@@ -159,7 +174,7 @@
     }
     .vortex::after {
       content: ''; position: absolute; inset: -16px; border-radius: 999px;
-      background: radial-gradient(circle, rgba(34,211,238,.16) 0%, transparent 68%);
+      background: radial-gradient(circle, rgba(var(--accent-rgb),.16) 0%, transparent 68%);
       animation: breathe 2.8s ease-in-out infinite;
       pointer-events: none;
     }
@@ -263,7 +278,7 @@
 
     /* Vortex: springier press, deeper glow while pressed */
     .vortex { transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-base) ease; }
-    .vortex:active { transform: scale(.93); box-shadow: 0 0 60px rgba(34,211,238,.35), inset 0 0 26px rgba(34,211,238,.18); }
+    .vortex:active { transform: scale(.93); box-shadow: 0 0 60px rgba(var(--accent-rgb),.35), inset 0 0 26px rgba(var(--accent-rgb),.18); }
 
     /* Confetti burst on save, invalid-input shake, thumbnail blur-up, note banner */
     .confetti-host { position: fixed; z-index: 90; pointer-events: none; }
@@ -273,7 +288,7 @@
     @keyframes shakeX { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
     #inspectorThumbnail { filter: blur(14px) saturate(.85); transition: filter .4s ease; }
     #inspectorThumbnail.loaded { filter: none; }
-    .note-banner { background: rgba(34,211,238,.08); border: 1px solid rgba(34,211,238,.22); border-radius: 14px; padding: 10px 12px; }
+    .note-banner { background: rgba(var(--accent-rgb),.08); border: 1px solid rgba(var(--accent-rgb),.22); border-radius: 14px; padding: 10px 12px; }
 
     /* AMOLED true-black + player control hiding */
     :root.amoled { --bg: #000000; --surface: #07090F; --surface-2: #0C0F16; }
@@ -293,13 +308,17 @@
   <!-- TOAST -->
   <div id="appToast" class="fixed top-3 inset-x-4 z-50 transition-all duration-300 ease-out -translate-y-28 opacity-0 pointer-events-none flex justify-center">
     <div class="max-w-md w-full py-3 px-4 pb-4 rounded-2xl dock relative overflow-hidden flex items-center gap-3 pointer-events-auto">
-      <div id="toastIcon" class="w-9 h-9 rounded-xl bg-cyan-400/15 border border-cyan-300/25 flex items-center justify-center text-sm font-bold text-cyan-300">⚡</div>
+      <div id="toastIcon" class="w-9 h-9 rounded-xl bg-accent-soft border border-accent-soft flex items-center justify-center text-sm font-bold text-accent">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+      </div>
       <div class="min-w-0 flex-1">
         <p id="toastTitle" class="text-[13px] font-extrabold text-white truncate">DOWNI</p>
         <p id="toastMsg" class="text-[11px] text-zinc-400 truncate">Notification</p>
       </div>
-      <button id="toastAction" class="hidden text-[10px] font-extrabold text-cyan-300 px-2 py-1" onclick="handleToastAction()">Undo</button>
-      <button onclick="hideToast()" class="text-zinc-500 hover:text-white text-xs px-2 py-1">✕</button>
+      <button id="toastAction" class="hidden text-[10px] font-extrabold text-accent px-2 py-1" onclick="handleToastAction()">Undo</button>
+      <button onclick="hideToast()" class="text-zinc-500 hover:text-white px-2 py-1">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
       <div id="toastLine" class="toast-line"></div>
     </div>
   </div>
@@ -338,9 +357,9 @@
         <!-- Clipboard banner -->
         <div id="clipboardBanner" class="hidden card card-accent p-4 flex items-center justify-between gap-3 fade-in">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-9 h-9 rounded-xl bg-cyan-400/15 border border-cyan-300/20 flex items-center justify-center text-base flex-shrink-0 overflow-hidden relative"><span id="clipboardIcon">📋</span><img id="clipboardThumb" src="" alt="" class="hidden absolute inset-0 w-full h-full object-cover"></div>
+            <div class="w-9 h-9 rounded-xl bg-accent-soft border border-accent-soft flex items-center justify-center text-accent flex-shrink-0 overflow-hidden relative"><span id="clipboardIcon"><svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span><img id="clipboardThumb" src="" alt="" class="hidden absolute inset-0 w-full h-full object-cover"></div>
             <div class="min-w-0">
-              <p class="text-[10px] uppercase font-extrabold tracking-widest text-cyan-300">Link detected</p>
+              <p class="text-[10px] uppercase font-extrabold tracking-widest text-accent">Link detected</p>
               <p id="clipboardUrlText" class="text-xs font-mono text-zinc-300 truncate max-w-[170px] sm:max-w-xs">https://…</p>
             </div>
           </div>
@@ -353,10 +372,10 @@
         <!-- HERO -->
         <div class="card p-5 space-y-5 fade-in">
           <div class="flex flex-col items-center pt-2">
-            <div class="vortex" onclick="handleFastDlClick()">
-              <img src="assets/logo.png" alt="Fast DL" class="w-[72px] h-[72px] rounded-full object-cover">
+            <div class="vortex" onclick="handleVortexClick()">
+              <img src="assets/logo.png" alt="DOWNI Vortex" class="w-[72px] h-[72px] rounded-full object-cover">
             </div>
-            <p class="mt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-white">Tap the vortex</p>
+            <p class="mt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-white">Tap the Vortex</p>
             <p class="text-[10px] mt-0.5" style="color:var(--muted)">Grabs whatever link is on your clipboard — instantly</p>
           </div>
 
@@ -374,11 +393,13 @@
               </svg>
             </div>
             <input id="inputManualUrl" type="url" placeholder="Paste a video link…"
-              class="w-full bg-black/40 border border-white/10 rounded-2xl pl-11 pr-20 py-4 text-[13px] text-white placeholder-zinc-500 font-mono focus:border-cyan-300/50 transition"
+              class="w-full bg-black/40 border border-white/10 rounded-2xl pl-11 pr-20 py-4 text-[13px] text-white placeholder-zinc-500 font-mono transition"
               oninput="handleUrlInputChanged()" />
             <div class="absolute right-2.5 flex items-center gap-1">
-              <button id="btnClearInput" onclick="clearManualUrl()" class="hidden px-1.5 text-zinc-500 hover:text-white text-sm">✕</button>
-              <button onclick="handlePasteButton()" class="btn px-3 py-2 text-[11px] font-bold text-cyan-300">Paste</button>
+              <button id="btnClearInput" onclick="clearManualUrl()" class="hidden px-1.5 text-zinc-500 hover:text-white">
+                <svg viewBox="0 0 24 24" class="w-4 h-4 inline" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+              <button onclick="handlePasteButton()" class="btn px-3 py-2 text-[11px] font-bold text-accent">Paste</button>
             </div>
           </div>
 
@@ -386,22 +407,22 @@
             <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5">
               <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
             </svg>
-            <span id="btnInspectText">GRAB THIS LINK</span>
+            <span id="btnInspectText">Grab this link</span>
           </button>
 
           <div class="flex flex-wrap items-center justify-center gap-1.5 pt-1">
-            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-400">YouTube</span>
-            <span class="chip on px-2.5 py-1 text-[9px] font-bold">TikTok · HD</span>
-            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-400">Instagram</span>
-            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-400">Facebook</span>
-            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-400">X</span>
-            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-400">Reddit</span>
+            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-300">YouTube</span>
+            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-300">TikTok</span>
+            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-300">Instagram</span>
           </div>
 
           <button id="lastGrabChip" onclick="handleLastGrabClick()" class="hidden w-full btn mt-1 px-4 py-2.5 text-[10px] font-mono flex items-center gap-2">
             <span style="color:var(--muted)">Last:</span>
             <span id="lastGrabText" class="truncate flex-1 text-left text-zinc-200"></span>
-            <span class="text-cyan-300 font-extrabold">↻ re-grab</span>
+            <span class="text-accent font-extrabold flex items-center gap-1">
+              <svg viewBox="0 0 24 24" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.6-6.4M21 3v6h-6"/></svg>
+              re-grab
+            </span>
           </button>
         </div>
 
@@ -414,12 +435,14 @@
           <div id="activeDownloads" class="space-y-3 stagger"></div>
         </div>
 
-        <!-- Omni grab hint -->
+        <!-- DowniDrop hint -->
         <div class="card p-4 flex items-center gap-3 fade-in">
-          <div class="w-10 h-10 rounded-2xl bg-cyan-400/12 border border-cyan-300/20 flex items-center justify-center text-cyan-300 text-base flex-shrink-0">↗</div>
+          <div class="w-10 h-10 rounded-2xl bg-accent-soft border border-accent-soft flex items-center justify-center text-accent text-base flex-shrink-0">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M12 3v12M7 8l5-5 5 5"/></svg>
+          </div>
           <div class="min-w-0 flex-1">
-            <p class="text-[12px] font-extrabold text-white">THE DOWNI GRAB</p>
-            <p class="text-[10px] mt-0.5" style="color:var(--muted)">In any app: Share → DOWNI — grabs in background</p>
+            <p class="text-[12px] font-extrabold text-white">DowniDrop</p>
+            <p class="text-[10px] mt-0.5" style="color:var(--muted)">In any app: Share → DOWNI — the Inspector opens with your link</p>
           </div>
         </div>
 
@@ -437,7 +460,7 @@
 
         <div class="grid grid-cols-3 gap-3">
           <div class="card p-3.5 text-center">
-            <p id="statActive" class="text-xl font-extrabold font-mono text-cyan-300">0</p>
+            <p id="statActive" class="text-xl font-extrabold font-mono text-accent">0</p>
             <p class="text-[9px] font-bold uppercase tracking-widest mt-0.5" style="color:var(--muted)">Active</p>
           </div>
           <div class="card p-3.5 text-center">
@@ -462,8 +485,10 @@
             <p id="vaultStorageText" class="text-[11px]" style="color:var(--muted)">Your real media library</p>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="rescanVaultStorage()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Rescan</button>
-            <button onclick="refreshVault()" class="btn w-9 h-9 flex items-center justify-center text-zinc-300 text-sm">↻</button>
+            <button onclick="rescanVaultStorage()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Rescan</button>
+            <button onclick="refreshVault()" class="btn w-9 h-9 flex items-center justify-center text-zinc-300">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.6-6.4M21 3v6h-6"/></svg>
+            </button>
             <button onclick="handleOpenSystemGallery()" class="btn px-3 py-2 text-[11px] font-bold text-zinc-300">Gallery</button>
           </div>
         </div>
@@ -476,7 +501,7 @@
         </div>
 
         <input id="vaultSearch" type="text" placeholder="Search your media…" oninput="onVaultSearch(this.value)"
-          class="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-[12px] text-white placeholder-zinc-500 font-mono focus:border-cyan-300/50 transition">
+          class="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-[12px] text-white placeholder-zinc-500 font-mono transition">
 
         <div class="flex items-center gap-2">
           <select id="vaultSort" onchange="onVaultSort(this.value)" class="flex-1 bg-black/40 border border-white/10 rounded-2xl px-3 py-2.5 text-[11px] font-bold text-zinc-300">
@@ -490,7 +515,7 @@
         <div id="vaultSelectionBar" class="hidden card p-3 flex items-center justify-between gap-2">
           <span id="vaultSelCount" class="text-[11px] font-bold text-white">0 selected</span>
           <div class="flex items-center gap-2">
-            <button onclick="bulkShareVault()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Share</button>
+            <button onclick="bulkShareVault()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Share</button>
             <button onclick="bulkDeleteVault()" class="btn px-3 py-2 text-[10px] font-bold" style="color:var(--bad)">Delete</button>
             <button onclick="clearVaultSelection()" class="btn px-3 py-2 text-[10px] font-bold text-zinc-300">Cancel</button>
           </div>
@@ -508,10 +533,12 @@
         <div class="card p-4 space-y-3">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-2xl bg-cyan-400/12 border border-cyan-300/20 flex items-center justify-center text-base">🚀</div>
+              <div class="w-10 h-10 rounded-2xl bg-accent-soft border border-accent-soft flex items-center justify-center text-accent">
+                <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+              </div>
               <div>
                 <p class="text-[12px] font-extrabold text-white">DOWNI updates</p>
-              <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300 mt-0.5"></p>
+              <p id="appVersionDisplay" class="text-[11px] font-mono text-accent mt-0.5"></p>
               </div>
             </div>
             <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn-hero px-4 py-2.5 text-[11px] font-extrabold">Check</button>
@@ -526,7 +553,9 @@
         <div class="card p-4 space-y-3">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-2xl bg-emerald-400/10 border border-emerald-300/20 flex items-center justify-center text-base">⚙️</div>
+              <div class="w-10 h-10 rounded-2xl bg-emerald-400/10 border border-emerald-300/20 flex items-center justify-center text-emerald-300">
+                <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+              </div>
               <div>
                 <p class="text-[12px] font-extrabold text-white">Engine</p>
                 <p id="engineVersionText" class="text-[11px] mt-0.5" style="color:var(--muted)">Checking…</p>
@@ -556,7 +585,7 @@
               <p class="text-[12px] font-bold text-zinc-200">Light theme</p>
               <p class="text-[10px] mt-0.5" style="color:var(--muted)">Switch to a bright interface</p>
             </div>
-            <input type="checkbox" id="chkLightTheme" onchange="applyTheme(this.checked ? 'light' : 'dark')" class="w-5 h-5 accent-cyan-400">
+            <input type="checkbox" id="chkLightTheme" onchange="applyTheme(this.checked ? 'light' : 'dark')" class="w-5 h-5">
           </div>
           <div class="flex items-center justify-between py-3 border-t border-white/5">
             <div>
@@ -575,7 +604,19 @@
               <p class="text-[12px] font-bold text-zinc-200">AMOLED black</p>
               <p class="text-[10px] mt-0.5" style="color:var(--muted)">True black in dark mode</p>
             </div>
-            <input type="checkbox" id="chkAmoled" onchange="setAmoled(this.checked)" class="w-5 h-5 accent-cyan-400">
+            <input type="checkbox" id="chkAmoled" onchange="setAmoled(this.checked)" class="w-5 h-5">
+          </div>
+        </div>
+
+        <!-- Behavior -->
+        <div class="card p-4 space-y-1">
+          <p class="text-[12px] font-extrabold text-white px-1 pb-2">Behavior</p>
+          <div class="flex items-center justify-between py-3 border-t border-white/5">
+            <div>
+              <p class="text-[12px] font-bold text-zinc-200">Clipboard auto-detect</p>
+              <p class="text-[10px] mt-0.5" style="color:var(--muted)">Banner when a video link is copied</p>
+            </div>
+            <input type="checkbox" id="chkClipboard" checked onchange="toggleClipboardDetect(this.checked)" class="w-5 h-5">
           </div>
         </div>
 
@@ -587,26 +628,14 @@
               <p class="text-[12px] font-bold text-zinc-200">Save location</p>
               <p id="folderText" class="text-[10px] mt-0.5" style="color:var(--muted)">Gallery — Movies / Music</p>
             </div>
-            <button onclick="handleChooseFolder()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Change</button>
+            <button onclick="handleChooseFolder()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Change</button>
           </div>
-          <div class="flex items-center justify-between py-3 border-t border-white/5">
-            <div>
-              <p class="text-[12px] font-bold text-zinc-200">Clipboard auto-detect</p>
-              <p class="text-[10px] mt-0.5" style="color:var(--muted)">Banner when a video link is copied</p>
-            </div>
-            <input type="checkbox" id="chkClipboard" checked onchange="toggleClipboardDetect(this.checked)" class="w-5 h-5 accent-cyan-400">
-          </div>
-        </div>
-
-        <!-- Storage -->
-        <div class="card p-4 space-y-1">
-          <p class="text-[12px] font-extrabold text-white px-1 pb-2">Storage</p>
           <div class="flex items-center justify-between py-3 border-t border-white/5">
             <div>
               <p class="text-[12px] font-bold text-zinc-200">Clear engine cache</p>
               <p class="text-[10px] mt-0.5" style="color:var(--muted)">Temp files from cancelled or failed downloads</p>
             </div>
-            <button onclick="clearDowniCache()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Clear</button>
+            <button onclick="clearDowniCache()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Clear</button>
           </div>
         </div>
 
@@ -625,7 +654,10 @@
             <span class="text-[11px]" style="color:var(--muted)">Developer</span>
             <span class="text-[12px] font-bold text-zinc-200">MansoorjAhmad</span>
           </div>
-          <button onclick="openGitHubRepo()" class="btn w-full py-3 mt-2 text-[11px] font-extrabold text-cyan-300">⭐ Star DOWNI on GitHub</button>
+          <button onclick="openGitHubRepo()" class="btn w-full py-3 mt-2 text-[11px] font-extrabold text-accent flex items-center justify-center gap-2">
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z"/></svg>
+            Star DOWNI on GitHub
+          </button>
         </div>
 
       </div>
@@ -668,7 +700,9 @@
       <div class="grabber" data-drag-dismiss="inspectorSheet"></div>
       <div class="flex items-center justify-between mt-2 mb-4">
         <span id="inspectorPlatformBadge" class="chip on px-3 py-1 text-[9px] font-extrabold uppercase tracking-widest">Video</span>
-        <button onclick="closeInspector()" class="btn w-9 h-9 flex items-center justify-center text-zinc-400 text-sm">✕</button>
+        <button onclick="closeInspector()" class="btn w-9 h-9 flex items-center justify-center text-zinc-400">
+          <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
       </div>
 
       <div class="aspect-video w-full rounded-2xl bg-black/60 overflow-hidden relative mb-4" style="border:1px solid rgba(255,255,255,.08)">
@@ -708,22 +742,24 @@
       <div id="updateInfoSection" class="mt-3">
         <div class="flex items-center justify-between mb-3">
           <span class="chip px-3 py-1 text-[9px] font-extrabold uppercase tracking-widest" style="color:var(--ok); border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.1)">Update available</span>
-          <button onclick="closeUpdateModal()" class="btn w-9 h-9 flex items-center justify-center text-zinc-400 text-sm">✕</button>
+          <button onclick="closeUpdateModal()" class="btn w-9 h-9 flex items-center justify-center text-zinc-400">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
         </div>
         <h3 id="updateVersionTitle" class="text-[16px] font-extrabold text-white">Update available</h3>
-        <p class="text-[10px] font-mono mt-0.5 text-cyan-300">GitHub Releases</p>
+        <p class="text-[10px] font-mono mt-0.5 text-accent">GitHub Releases</p>
         <div id="updateChangelog" class="text-[11px] mt-3 p-3.5 rounded-2xl bg-black/40 max-h-44 overflow-y-auto whitespace-pre-wrap font-mono border border-white/5" style="color:#B7C0D0"></div>
       </div>
 
       <div id="updateProgressSection" class="hidden mt-3 space-y-2.5">
         <div class="flex items-center justify-between">
           <p class="text-[12px] font-extrabold text-white">Downloading update…</p>
-          <span id="updateProgressPercent" class="text-[12px] font-mono font-bold text-cyan-300">0%</span>
+          <span id="updateProgressPercent" class="text-[12px] font-mono font-bold text-accent">0%</span>
         </div>
         <div class="bar live"><div id="updateProgressBar" style="width:0%"></div></div>
         <div class="flex items-center justify-between text-[11px] font-mono" style="color:var(--muted)">
           <span id="updateProgressRatio">0 MB / 0 MB</span>
-          <span id="updateProgressSpeed" class="text-emerald-300">⚡ --</span>
+          <span id="updateProgressSpeed" class="text-emerald-300">--</span>
         </div>
       </div>
 
@@ -756,17 +792,26 @@
       </div>
 
       <!-- Quick fixes -->
-      <div class="mt-3 rounded-2xl p-4 space-y-2" style="background:rgba(34,211,238,.05); border:1px solid rgba(34,211,238,.15)">
-        <p class="text-[10px] font-extrabold uppercase tracking-widest text-cyan-300">⚡ Quick fixes</p>
+      <div class="mt-3 rounded-2xl p-4 space-y-2" style="background:rgba(var(--accent-rgb),.05); border:1px solid rgba(var(--accent-rgb),.15)">
+        <p class="text-[10px] font-extrabold uppercase tracking-widest text-accent flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+          Quick fixes
+        </p>
         <p class="text-[11px] leading-relaxed" style="color:var(--muted)">On mobile data? Switch to <b>Wi-Fi</b> (or the reverse) — networks get blocked per-IP.</p>
         <div class="flex flex-wrap gap-2 pt-1">
-          <button onclick="runDiagnosticsFromError()" class="chip px-3 py-2 text-[10px] font-extrabold">🔍 Run diagnostics</button>
-          <button onclick="copyErrorDetails()" class="chip px-3 py-2 text-[10px] font-extrabold">📋 Copy details</button>
+          <button onclick="runDiagnosticsFromError()" class="chip px-3 py-2 text-[10px] font-extrabold flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+            Run diagnostics
+          </button>
+          <button onclick="copyErrorDetails()" class="chip px-3 py-2 text-[10px] font-extrabold flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+            Copy details
+          </button>
         </div>
       </div>
 
       <div class="flex items-center justify-between mt-4">
-        <button onclick="toggleErrorDetails()" class="text-[11px] font-bold text-cyan-300 underline underline-offset-4" id="btnToggleErrorDetails">View details</button>
+        <button onclick="toggleErrorDetails()" class="text-[11px] font-bold text-accent underline underline-offset-4" id="btnToggleErrorDetails">View details</button>
         <div class="flex items-center gap-2">
           <button onclick="closeErrorModal()" class="btn px-5 py-3 text-[11px] font-bold text-zinc-400">Dismiss</button>
           <button onclick="retryCurrentDownload()" class="btn-hero px-5 py-3 text-[11px] font-extrabold">Try again</button>
@@ -782,7 +827,9 @@
     <div id="playerRipple" class="absolute inset-0 z-10 pointer-events-none flex items-center justify-center opacity-0 transition-opacity duration-200">
       <span id="playerRippleText" class="px-4 py-2 rounded-2xl bg-black/70 text-white text-[13px] font-extrabold font-mono">+10s</span>
     </div>
-    <button onclick="closePlayer()" class="absolute top-3 right-3 w-10 h-10 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center text-sm z-10">✕</button>
+    <button onclick="closePlayer()" class="absolute top-3 right-3 w-10 h-10 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center z-10">
+      <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
     <div id="playerBar" class="absolute bottom-0 inset-x-0 p-4 pb-7 z-10 space-y-2" style="background:linear-gradient(to top, rgba(0,0,0,.88), transparent)">
       <div id="playerSeek" class="bar cursor-pointer" onclick="seekPlayer(event)"><div style="width:0%"></div></div>
       <div class="flex items-center justify-between text-[10px] font-mono text-white/80">
@@ -791,13 +838,15 @@
       </div>
       <div class="flex items-center justify-center gap-6 pt-1">
         <button onclick="skipPlayer(-10)" class="btn w-11 h-11 text-white text-[10px] font-bold">−10s</button>
-        <button id="playerPlayBtn" onclick="togglePlay()" class="w-14 h-14 rounded-full btn-hero text-base font-black flex items-center justify-center">▶</button>
+        <button id="playerPlayBtn" onclick="togglePlay()" class="w-14 h-14 rounded-full btn-hero flex items-center justify-center">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M7 4.5v15l13-7.5-13-7.5z"/></svg>
+        </button>
         <button onclick="skipPlayer(10)" class="btn w-11 h-11 text-white text-[10px] font-bold">+10s</button>
         <button id="btnPlayerSpeed" onclick="cyclePlayerSpeed()" class="btn px-3 h-11 text-white text-[11px] font-bold">1×</button>
       </div>
       <div class="flex items-center justify-center gap-2.5 pt-1">
         <button onclick="playerPrev()" class="btn px-3 py-2 text-[10px] font-bold text-white">← Prev</button>
-        <button onclick="openExternalPlayer()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Open external</button>
+        <button onclick="openExternalPlayer()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Open external</button>
         <button onclick="playerNext()" class="btn px-3 py-2 text-[10px] font-bold text-white">Next →</button>
       </div>
     </div>
@@ -815,8 +864,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.0.0';
-    let installedVersionCode = 40;
+    let installedVersion = '3.0.1';
+    let installedVersionCode = 41;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -835,7 +884,23 @@
     const vaultSelection = new Set();
     const vaultThumbCache = {};
 
-    function getEngine() { return window.Capacitor?.Plugins?.OmniEngine || null; }
+    function getEngine() { return window.Capacitor?.Plugins?.DowniEngine || null; }
+
+    // ---- Identity-safe storage: everything writes downi_*, reads fall back to
+    // the legacy omni_* keys once so existing users keep their settings (B16) ----
+    function storeGet(key) {
+      try {
+        const v = localStorage.getItem('downi_' + key);
+        if (v !== null) return v;
+        return localStorage.getItem('omni_' + key);
+      } catch (e) { return null; }
+    }
+    function storeSet(key, value) {
+      try { localStorage.setItem('downi_' + key, value); localStorage.removeItem('omni_' + key); } catch (e) {}
+    }
+    function storeDel(key) {
+      try { localStorage.removeItem('downi_' + key); localStorage.removeItem('omni_' + key); } catch (e) {}
+    }
     function triggerHaptic(style) {
       try { window.Capacitor?.Plugins?.Haptics?.impact?.({ style: (style || 'light').toUpperCase() }); } catch (e) {}
     }
@@ -876,15 +941,20 @@
         else { act.classList.add('hidden'); toastActionFn = null; }
       }
       const icon = document.getElementById('toastIcon');
+      const SVG = {
+        success: '<svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+        error: '<svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+        info: '<svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>'
+      };
       if (type === 'success') {
-        icon.innerText = '✓';
+        icon.innerHTML = SVG.success;
         icon.style.cssText = 'background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.35);color:var(--ok)';
       } else if (type === 'error') {
-        icon.innerText = '✕';
+        icon.innerHTML = SVG.error;
         icon.style.cssText = 'background:rgba(251,113,133,.14);border-color:rgba(251,113,133,.35);color:var(--bad)';
       } else {
-        icon.innerText = '⚡';
-        icon.style.cssText = 'background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.35);color:var(--accent)';
+        icon.innerHTML = SVG.info;
+        icon.style.cssText = 'background:rgba(var(--accent-rgb),.14);border-color:rgba(var(--accent-rgb),.35);color:var(--accent)';
       }
       const toast = document.getElementById('appToast');
       toast.classList.remove('-translate-y-28', 'opacity-0');
@@ -955,7 +1025,7 @@
 
     // ================= Clipboard =================
     async function checkClipboard() {
-      if (localStorage.getItem('omni_clipboard_detect') === '0') return;
+      if (storeGet('clipboard_detect') === '0') return;
       try {
         let text = "";
         const engine = getEngine();
@@ -1025,8 +1095,8 @@
       return extractUrl(text);
     }
 
-    // ================= FAST DL =================
-    async function handleFastDlClick() {
+    // ================= VORTEX (the hero grab) =================
+    async function handleVortexClick() {
       const vortex = document.querySelector('.vortex');
       if (vortex) {
         vortex.style.transform = 'scale(0.9)';
@@ -1044,7 +1114,7 @@
       }
       if (!clean) {
         shakeInput();
-        showToast('Fast DL needs a link', 'Copy any reel or video link, then tap the vortex.', 'info');
+          showToast('The Vortex needs a link', 'Copy any video link, then tap the Vortex.', 'info');
         return;
       }
       currentInspectedUrl = clean;
@@ -1076,7 +1146,7 @@
       }
       if (!clean) {
         shakeInput();
-        showToast('Paste a link first', 'Then tap GRAB THIS LINK.', 'info');
+        showToast('Paste a link first', 'Then tap Grab this link.', 'info');
         return;
       }
       handleInspectAndOpenModal(clean);
@@ -1085,7 +1155,7 @@
     async function handleInspectAndOpenModal(url) {
       currentInspectedUrl = url;
       const btn = document.getElementById('btnInspectText');
-      if (btn) btn.innerText = 'SCANNING…';
+      if (btn) btn.innerText = 'Scanning…';
 
       document.getElementById('inspectorThumbSkel').style.display = '';
       const thumbReset = document.getElementById('inspectorThumbnail');
@@ -1116,7 +1186,7 @@
         closeInspector();
         showToast('Inspect failed', (e && e.message) ? e.message : 'This link could not be inspected.', 'error');
       } finally {
-        if (btn) btn.innerText = 'GRAB THIS LINK';
+        if (btn) btn.innerText = 'Grab this link';
       }
     }
 
@@ -1164,7 +1234,8 @@
     function grabAllPlaylist() {
       const items = window._playlistItems || [];
       if (!items.length) return;
-      const quality = selectedInspectorQuality === 'audio' ? 'audio' : 'best';
+      // Honor the quality the user actually picked in the Inspector (B10)
+      const quality = selectedInspectorQuality || 'best';
       playlistPending = items.slice(1).map(i => ({ url: i.url, formatId: quality }));
       playlistTotal = items.length;
       closeInspector();
@@ -1247,7 +1318,7 @@
       // Remember the user's last quality choice per platform.
       let preferred = formats[0].id;
       try {
-        const saved = localStorage.getItem('omni_q_' + (currentInspectorPlatform || 'any'));
+        const saved = storeGet('q_' + (currentInspectorPlatform || 'any'));
         if (saved && formats.some(f => f.id === saved)) preferred = saved;
       } catch (e) {}
       selectedInspectorQuality = preferred;
@@ -1257,13 +1328,13 @@
         <div id="quality_card_${fmt.id}" onclick="selectInspectorQuality('${fmt.id}', '${fmt.label}')"
           class="quality-card flex items-center justify-between gap-3 p-3.5 rounded-2xl cursor-pointer transition ${fmt.id === selectedInspectorQuality ? 'chip on' : 'chip'}">
           <div class="flex items-center gap-3 min-w-0">
-            <span class="qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 ${fmt.id === selectedInspectorQuality ? 'bg-cyan-400 text-black' : 'bg-white/5 text-cyan-300'}">${fmt.badge || 'HD'}</span>
+            <span class="qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 ${fmt.id === selectedInspectorQuality ? 'qx-on' : 'bg-white/5 text-accent'}">${fmt.badge || 'HD'}</span>
             <div class="min-w-0">
               <p class="text-[12px] font-bold text-white truncate">${fmt.label} ${idx === 0 ? '<span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md align-middle" style="background:rgba(52,211,153,.15);color:var(--ok)">BEST PICK</span>' : ''}</p>
               <p class="text-[9px] font-mono uppercase mt-0.5" style="color:var(--muted)">${fmt.ext || 'mp4'}</p>
             </div>
           </div>
-          <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${fmt.id === selectedInspectorQuality ? 'bg-cyan-400 text-black' : 'bg-white/5 text-zinc-400'}">
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${fmt.id === selectedInspectorQuality ? 'qx-on' : 'bg-white/5 text-zinc-400'}">
             <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 3v13M7 11l5 5 5-5M5 21h14"/></svg>
           </div>
         </div>
@@ -1273,17 +1344,17 @@
     function selectInspectorQuality(fmtId, fmtLabel) {
       triggerHaptic('light');
       selectedInspectorQuality = fmtId;
-      try { localStorage.setItem('omni_q_' + (currentInspectorPlatform || 'any'), fmtId); } catch (e) {}
+      try { storeSet('q_' + (currentInspectorPlatform || 'any'), fmtId); } catch (e) {}
       document.querySelectorAll('.quality-card').forEach(el => {
         el.classList.remove('on');
         const badge = el.querySelector('.qx');
-        if (badge) badge.className = 'qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 bg-white/5 text-cyan-300';
+        if (badge) badge.className = 'qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 bg-white/5 text-accent';
       });
       const active = document.getElementById('quality_card_' + fmtId);
       if (active) {
         active.classList.add('on');
         const badge = active.querySelector('.qx');
-        if (badge) badge.className = 'qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 bg-cyan-400 text-black';
+        if (badge) badge.className = 'qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 qx-on';
       }
       updateConfirmButtonText(fmtLabel);
     }
@@ -1319,6 +1390,9 @@
 
       showToast('Grab queued', 'DOWNI is on it — track it below.', 'success');
 
+      // First Grab is the moment notification permission actually makes sense (B13)
+      try { engine?.requestNotificationPermission?.().catch(() => {}); } catch (e) {}
+
       if (engine) {
         engine.removeAllListeners?.('onProgress');
         engine.addListener('onProgress', (p) => handleProgressEvent(p));
@@ -1327,15 +1401,15 @@
           .then(res => {
             const jobId = (res && res.jobId) || tempId;
             activeJobs.delete(activeJobs.has(tempId) ? tempId : jobId);
-            onJobComplete(jobId, (res && res.title) || 'Video', (res && res.destination) || 'Gallery');
+            onJobComplete(jobId, (res && res.title) || 'Video', (res && res.destination) || 'Gallery', url);
           })
           .catch(err => {
             if (activeJobs.has(tempId)) activeJobs.delete(tempId);
             renderJobCards();
             const msg = (err && err.message) ? err.message : 'Download failed';
-            if (msg.toLowerCase().includes('cancel')) {
-              showToast('Cancelled', 'Download stopped.', 'info');
-            } else {
+            if (!msg.toLowerCase().includes('cancel')) {
+              // Cancels already toasted (with Undo) at the cancel call-site — a
+              // second generic toast here would overwrite the Undo action (B2).
               onDownloadError(msg, url, formatId);
             }
             updateQueueBadge();
@@ -1361,7 +1435,11 @@
       }
       let job = activeJobs.get(p.jobId);
       if (!job) {
-        const pendingKey = [...activeJobs.keys()].find(k => k.startsWith('pending_'));
+        // Match the waiting card to THIS job by URL first (parallel grabs can
+        // resolve out of order); only fall back to FIFO when no URL matches (B5).
+        const pendings = [...activeJobs.entries()].filter(([k]) => k.startsWith('pending_'));
+        const byUrl = p.url ? pendings.find(([, v]) => v.url === p.url) : null;
+        const pendingKey = byUrl ? byUrl[0] : (pendings.length ? pendings[0][0] : null);
         if (pendingKey) {
           job = activeJobs.get(pendingKey);
           activeJobs.delete(pendingKey);
@@ -1395,7 +1473,7 @@
       }
     }
 
-    function onJobComplete(jobId, title, destination) {
+    function onJobComplete(jobId, title, destination, url) {
       triggerHaptic('medium');
       confettiBurst();
       activeJobs.delete(jobId);
@@ -1409,17 +1487,23 @@
         title: title,
         destination: destination,
         date: new Date().toLocaleDateString(),
-        url: currentInspectedUrl || document.getElementById('inputManualUrl').value.trim()
+        // The job's own URL, not whatever happens to be in the input box (B4)
+        url: url || currentInspectedUrl || document.getElementById('inputManualUrl').value.trim()
       });
       saveHistory();
       updateLastGrabChip();
-      if (playlistPending.length > 0) {
-        const next = playlistPending.shift();
-        const done = playlistTotal - playlistPending.length;
-        showToast('Playlist batch', done + ' of ' + playlistTotal + ' done — next up…', 'info');
-        setTimeout(() => initiateDownload(next.url, next.formatId), 1000);
-      }
+      pumpPlaylist();
       setTimeout(() => { if (activeJobs.size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden'); }, 1200);
+    }
+
+    // Playlist batch: one failure must never kill the rest of the queue (B1) —
+    // both the success path (onJobComplete) and the error path pump the next item.
+    function pumpPlaylist() {
+      if (playlistPending.length === 0) return;
+      const next = playlistPending.shift();
+      const done = playlistTotal - playlistPending.length;
+      showToast('Playlist batch', done + ' of ' + playlistTotal + ' done — next up…', 'info');
+      setTimeout(() => initiateDownload(next.url, next.formatId), 1000);
     }
 
     function onDownloadError(errStr, url, formatId) {
@@ -1438,6 +1522,11 @@
         friendly = "This format isn't available for the video. Try another quality.";
       }
       showErrorModal('Download stopped', friendly, errStr);
+      // A failed playlist item is skipped, not fatal — the batch goes on (B1).
+      if (playlistPending.length > 0) {
+        showToast('Playlist batch', 'One video failed — grabbing the next…', 'info');
+        pumpPlaylist();
+      }
     }
 
     function renderJobCards() {
@@ -1459,7 +1548,7 @@
                 : ringSvg(job.percent)}
               <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} ${job.done ? '<span style="color:var(--ok)">Saved ✓</span>' : ''}</p>
             </div>
-            <span class="text-[12px] font-mono font-bold ${job.done ? '' : 'text-cyan-300'} flex-shrink-0" ${job.done ? 'style="color:var(--ok)"' : ''}>${Math.round(job.percent)}%</span>
+            <span class="text-[12px] font-mono font-bold ${job.done ? '' : 'text-accent'} flex-shrink-0" ${job.done ? 'style="color:var(--ok)"' : ''}>${Math.round(job.percent)}%</span>
           </div>
           <div class="bar ${job.done ? '' : 'live'}"><div style="width:${Math.max(2, job.percent)}%"></div></div>
           <div class="flex items-center justify-between text-[10px] font-mono" style="color:var(--muted)">
@@ -1467,8 +1556,8 @@
             <div class="flex items-center gap-3">
               ${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}
               ${job.speed ? `<span class="text-emerald-300 font-bold">${escapeHtml(job.speed)}</span>` : ''}
-              ${job.eta ? `<span class="text-cyan-300">${escapeHtml(job.eta)}</span>` : ''}
-              ${job.done ? '' : `<button onclick="cancelOneDownload('${id}')" class="font-sans font-bold" style="color:var(--bad)">✕</button>`}
+              ${job.eta ? `<span class="text-accent">${escapeHtml(job.eta)}</span>` : ''}
+              ${job.done ? '' : `<button onclick="cancelOneDownload('${id}')" class="font-sans font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
             </div>
           </div>
         </div>
@@ -1537,7 +1626,7 @@
     function retryCurrentDownload() {
       closeErrorModal();
       if (lastFailedUrl) initiateDownload(lastFailedUrl, lastFailedFormat);
-      else handleFastDlClick();
+      else handleVortexClick();
     }
 
     // ================= Diagnostics =================
@@ -1592,7 +1681,7 @@
           <div class="card card-accent p-4 space-y-2.5 fade-in">
             <div class="flex items-center justify-between">
               <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} <span class="font-normal" style="color:var(--muted)">— ${escapeHtml(job.status)}</span></p>
-              <span class="text-[12px] font-mono font-bold text-cyan-300">${Math.round(job.percent)}%</span>
+              <span class="text-[12px] font-mono font-bold text-accent">${Math.round(job.percent)}%</span>
             </div>
             <div class="bar live"><div style="width:${Math.max(2, job.percent)}%"></div></div>
             <div class="flex items-center justify-between text-[10px] font-mono" style="color:var(--muted)">
@@ -1806,7 +1895,7 @@
         if (!engine?.listMedia && downloadsHistory.length > 0) {
           grid.innerHTML = downloadsHistory.slice(0, 6).map(item => `
             <div class="card p-4 space-y-2">
-              <p class="text-[10px] font-mono text-cyan-300">${escapeHtml(item.date)}</p>
+              <p class="text-[10px] font-mono text-accent">${escapeHtml(item.date)}</p>
               <h4 class="text-[12px] font-bold text-white truncate">${escapeHtml(item.title)}</h4>
               <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${escapeHtml(item.destination)}</p>
             </div>
@@ -1889,7 +1978,9 @@
               <p class="text-[8px] font-mono" style="color:var(--muted)">${item.isVideo ? 'VIDEO' : 'AUDIO'}</p></div>`}
             <div class="absolute inset-x-0 bottom-0 h-10" style="background:linear-gradient(to top, rgba(0,0,0,.65), transparent)"></div>
             <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 active:opacity-100 transition">
-              <span class="w-12 h-12 rounded-full btn-hero flex items-center justify-center text-base font-extrabold">▶</span>
+              <span class="w-12 h-12 rounded-full btn-hero flex items-center justify-center">
+                <svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg>
+              </span>
             </button>
           </div>
           <div class="p-3 space-y-1">
@@ -1897,8 +1988,8 @@
             <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${dateStr ? ' · ' + dateStr : ''}${item.folder ? ' · ' + escapeHtml(item.folder) : ''}</p>
             <div class="flex gap-1.5 pt-1.5">
               <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Play</button>
-              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
-              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
           </div>
         </div>`;
@@ -1922,12 +2013,12 @@
           ${selecting ? '' : (isCustom ? `
             <div class="flex items-center gap-1.5 flex-shrink-0">
               <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn px-2.5 py-1.5 text-[10px] font-bold text-white">Open</button>
-              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>` : `
             <div class="flex items-center gap-1.5 flex-shrink-0">
               <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold text-white">Play</button>
-              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
-              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>`)}
         </div>`;
     }
@@ -1960,8 +2051,8 @@
             <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${item.modified ? ' · ' + new Date(item.modified).toLocaleDateString() : ''}</p>
             <div class="flex gap-1.5 pt-1.5">
               <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Open</button>
-              <button onclick="customVaultAction('${encodedKey}', 'share')" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
-              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+              <button onclick="customVaultAction('${encodedKey}', 'share')" class="btn px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
           </div>
         </div>`;
@@ -2069,22 +2160,22 @@
     }
 
     function playerPositionKey() {
-      return playerMeta ? ('omni_pos_' + (playerMeta.isVideo ? 'v' : 'a') + playerMeta.id) : null;
+      return playerMeta ? ('pos_' + (playerMeta.isVideo ? 'v' : 'a') + playerMeta.id) : null;
     }
     function savePlayerPosition() {
       const v = document.getElementById('playerVideo');
       const key = playerPositionKey();
       if (!key || !v || !v.duration || v.currentTime < 5) return;
       try {
-        if (v.duration - v.currentTime < 10) localStorage.removeItem(key);
-        else localStorage.setItem(key, String(Math.floor(v.currentTime)));
+        if (v.duration - v.currentTime < 10) storeDel(key);
+        else storeSet(key, String(Math.floor(v.currentTime)));
       } catch (e) {}
     }
     function restorePlayerPosition(v) {
       const key = playerPositionKey();
       if (!key || !v.duration) return;
       try {
-        const saved = parseInt(localStorage.getItem(key) || '0', 10);
+        const saved = parseInt(storeGet(key) || '0', 10);
         if (saved > 5 && saved < v.duration - 10) {
           v.currentTime = saved;
           showToast('Resumed', 'Continuing from ' + fmtClock(saved), 'info');
@@ -2099,7 +2190,7 @@
       v.addEventListener('pause', savePlayerPosition);
       v.addEventListener('ended', () => {
         const key = playerPositionKey();
-        if (key) { try { localStorage.removeItem(key); } catch (e) {} }
+        if (key) { try { storeDel(key); } catch (e) {} }
       });
       let lastTap = 0, singleTimer = null;
       v.addEventListener('click', (e) => {
@@ -2152,7 +2243,9 @@
     function updatePlayBtn() {
       const v = document.getElementById('playerVideo');
       const btn = document.getElementById('playerPlayBtn');
-      if (btn) btn.innerText = v.paused ? '▶' : '⏸';
+      if (btn) btn.innerHTML = v.paused
+        ? '<svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M7 4.5v15l13-7.5-13-7.5z"/></svg>'
+        : '<svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M7 4.5h4v15H7zM13 4.5h4v15h-4z"/></svg>';
     }
     function togglePlay() {
       const v = document.getElementById('playerVideo');
@@ -2290,7 +2383,7 @@
       bar.style.width = '0%';
       document.getElementById('updateProgressPercent').innerText = '0%';
       document.getElementById('updateProgressRatio').innerText = '0 MB / 0 MB';
-      document.getElementById('updateProgressSpeed').innerText = '⚡ --';
+      document.getElementById('updateProgressSpeed').innerText = '--';
     }
     function closeUpdateModal() { document.getElementById('updateModal')?.classList.add('hidden'); }
 
@@ -2309,7 +2402,7 @@
             document.getElementById('updateProgressPercent').innerText = pct + '%';
           }
           if (p.sizeFormatted) document.getElementById('updateProgressRatio').innerText = p.sizeFormatted;
-          if (p.speedFormatted) document.getElementById('updateProgressSpeed').innerText = '⚡ ' + p.speedFormatted;
+          if (p.speedFormatted) document.getElementById('updateProgressSpeed').innerText = p.speedFormatted;
         });
         updateListenerAttached = true;
       }
@@ -2362,12 +2455,12 @@
       const versionText = document.getElementById('engineVersionText');
       if (engine?.engineInfo) {
         engine.engineInfo().then(info => {
-          badge.innerText = '✓ HEALTHY';
+          badge.innerText = 'HEALTHY';
           if (dot) dot.style.background = 'var(--ok)';
           versionText.innerText = `yt-dlp ${info.ytDlpVersion} · Python ${info.pythonVersion}`;
           document.getElementById('aboutEngine').innerText = `yt-dlp ${info.ytDlpVersion}`;
         }).catch(() => {
-          badge.innerText = '✕ ERROR';
+          badge.innerText = 'ERROR';
           if (dot) dot.style.background = 'var(--bad)';
         });
       }
@@ -2394,7 +2487,7 @@
         if (res && res.label) document.getElementById('folderText').innerText = res.label;
       } catch (e) {}
     }
-    function toggleClipboardDetect(enabled) { localStorage.setItem('omni_clipboard_detect', enabled ? '1' : '0'); }
+    function toggleClipboardDetect(enabled) { storeSet('clipboard_detect', enabled ? '1' : '0'); }
 
 
     // ================= Utils =================
@@ -2429,12 +2522,14 @@
       return String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
     function saveHistory() {
-      try { localStorage.setItem('omni_v2_history', JSON.stringify(downloadsHistory)); } catch (e) {}
+      try { storeSet('v2_history', JSON.stringify(downloadsHistory)); storeSet('bytes_total', String(grabbedBytes)); } catch (e) {}
     }
     function loadHistory() {
-      try { downloadsHistory = JSON.parse(localStorage.getItem('omni_v2_history') || '[]'); }
+      try { downloadsHistory = JSON.parse(storeGet('v2_history') || '[]'); }
       catch (e) { downloadsHistory = []; }
       completedCount = downloadsHistory.length;
+      // Persist lifetime bytes too — otherwise a restart shows "12 completed · 0 MB" (B7)
+      grabbedBytes = parseInt(storeGet('bytes_total') || '0', 10) || 0;
       updateLastGrabChip();
     }
 
@@ -2482,14 +2577,14 @@
       const chk = document.getElementById('chkLightTheme');
       if (chk) chk.checked = (theme === 'light');
       applyAccent();
-      try { localStorage.setItem('omni_theme', theme); } catch(e) {}
-      // Keep the Android status/navigation bars in the same shade.
-      try { getEngine()?.setNativeTheme?.({ dark: theme !== 'light' }); } catch(e) {}
+      try { storeSet('theme', theme); } catch(e) {}
+      // Keep the Android status/navigation bars in the same shade (AMOLED-aware, B17).
+      try { getEngine()?.setNativeTheme?.({ dark: theme !== 'light', amoled: storeGet('amoled') === '1' }); } catch(e) {}
     }
 
     function initTheme() {
       let saved = '';
-      try { saved = localStorage.getItem('omni_theme') || ''; } catch(e) {}
+      try { saved = storeGet('theme') || ''; } catch(e) {}
       if (!saved) {
         // No explicit choice yet → follow the system preference.
         try { saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; }
@@ -2506,29 +2601,41 @@
       rose:    { a: '#FB7185', b: '#F59E0B', la: '#E11D48', lb: '#D97706' }
     };
 
+    function hexToRgbTriplet(hex) {
+      const h = (hex || '').replace('#', '');
+      if (h.length !== 6) return '34, 211, 238';
+      return parseInt(h.slice(0, 2), 16) + ', ' + parseInt(h.slice(2, 4), 16) + ', ' + parseInt(h.slice(4, 6), 16);
+    }
     function applyAccent() {
       let name = 'cyan';
-      try { name = localStorage.getItem('omni_accent') || 'cyan'; } catch (e) {}
+      try { name = storeGet('accent') || 'cyan'; } catch (e) {}
       const c = ACCENTS[name] || ACCENTS.cyan;
       const light = document.documentElement.dataset.theme === 'light';
-      document.documentElement.style.setProperty('--accent', light ? c.la : c.a);
-      document.documentElement.style.setProperty('--accent-2', light ? c.lb : c.b);
+      const a = light ? c.la : c.a, b = light ? c.lb : c.b;
+      const root = document.documentElement.style;
+      root.setProperty('--accent', a);
+      root.setProperty('--accent-2', b);
+      // RGB twins power every rgba(var(--accent-rgb), α) surface in the app
+      root.setProperty('--accent-rgb', hexToRgbTriplet(a));
+      root.setProperty('--accent-2-rgb', hexToRgbTriplet(b));
     }
     function setAccent(name) {
-      try { localStorage.setItem('omni_accent', name); } catch (e) {}
+      try { storeSet('accent', name); } catch (e) {}
       applyAccent();
       triggerHaptic('light');
       showToast('Accent updated', 'Your DOWNI glow is now ' + name + '.', 'success');
     }
     function applyAmoled() {
       let on = false;
-      try { on = localStorage.getItem('omni_amoled') === '1'; } catch (e) {}
+      try { on = storeGet('amoled') === '1'; } catch (e) {}
       document.documentElement.classList.toggle('amoled', on);
       const chk = document.getElementById('chkAmoled');
       if (chk) chk.checked = on;
+      // True black has to reach the status/nav bars too, not just the page (B17).
+      try { getEngine()?.setNativeTheme?.({ dark: document.documentElement.dataset.theme !== 'light', amoled: on }); } catch (e) {}
     }
     function setAmoled(on) {
-      try { localStorage.setItem('omni_amoled', on ? '1' : '0'); } catch (e) {}
+      try { storeSet('amoled', on ? '1' : '0'); } catch (e) {}
       applyAmoled();
       triggerHaptic('light');
     }
@@ -2557,6 +2664,11 @@
       setupVaultLongPress();
       updateVaultSelectionBar();
       handleSharedIntent();
+
+      // Restore the clipboard toggle's real state — the checkbox used to render
+      // checked regardless of the saved setting (B6).
+      const chkClip = document.getElementById('chkClipboard');
+      if (chkClip) chkClip.checked = storeGet('clipboard_detect') !== '0';
 
       const pv = document.getElementById('playerVideo');
       if (pv) {
@@ -2590,16 +2702,9 @@
           }
         });
       }
-
-      window.addEventListener('onShareReceived', (e) => {
-        if (e.detail?.url) {
-          const clean = extractUrl(e.detail.url);
-          if (clean) {
-            document.getElementById('inputManualUrl').value = clean;
-            handleInspectAndOpenModal(clean);
-          }
-        }
-      });
+      // NOTE: the warm-share 'onShareReceived' listener is registered once in
+      // handleSharedIntent() — a second registration here double-opened the
+      // Inspector for every share (B9).
     });
   </script>
 </body>

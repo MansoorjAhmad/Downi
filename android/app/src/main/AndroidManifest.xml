@@ -24,24 +24,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-        </activity>
-
-        <activity
-            android:name=".ShareReceiverActivity"
-            android:theme="@style/AppTheme.ShareReceiver"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:exported="true">
+            <!-- DowniDrop: shared links land in the Inspector, not a silent background download -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/*" />
             </intent-filter>
+
         </activity>
 
         <service
-            android:name=".OmniDownloadService"
+            android:name=".DowniDownloadService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
@@ -49,7 +43,7 @@
         <service
             android:name=".GrabTileService"
             android:exported="true"
-            android:icon="@drawable/omni_app_icon"
+            android:icon="@drawable/downi_app_icon"
             android:label="DOWNI — Grab"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
