@@ -397,7 +397,10 @@ def diagnose():
     check('Internet reachability', lambda: _head('https://www.google.com/generate_204'))
     check('YouTube extraction', lambda: _extract('https://www.youtube.com/watch?v=dQw4w9WgXcQ'))
     check('Instagram extraction', lambda: _extract('https://www.instagram.com/reel/DcZTAe4jKBp'))
-    check('TikTok API reachability', lambda: _head('https://www.tikwm.com/'))
+    # Exercise the REAL TikTok path (the tikwm API the engine downloads through),
+    # not a bare HEAD to the site root — tikwm 403s plain HEAD requests, which
+    # made working downloads show up as a failed diagnostic.
+    check('TikTok API reachability', lambda: _fetch_tiktok_data('https://www.tiktok.com/@tiktok/video/7106594312292453675'))
 
     return json.dumps({
         'results': results,

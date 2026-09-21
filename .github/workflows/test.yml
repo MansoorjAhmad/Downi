@@ -17,6 +17,8 @@ jobs:
       - name: Install engine deps
         run: pip install yt-dlp==2026.8.19 certifi
       - name: Run engine smoke test
+        env:
+          PYTHONIOENCODING: utf-8
         run: python ci/smoke_test.py
 
   build:
