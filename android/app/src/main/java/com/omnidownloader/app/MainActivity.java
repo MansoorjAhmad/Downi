@@ -28,6 +28,9 @@ public class MainActivity extends BridgeActivity {
                 if (!Python.isStarted()) {
                     Python.start(new AndroidPlatform(getApplicationContext()));
                 }
+                // Warm the engine too: importing downloader pulls in yt-dlp, so the
+                // first Grab starts seconds faster.
+                Python.getInstance().getModule("downloader").callAttr("engine_info");
             } catch (Exception ignored) {}
         }).start();
 

@@ -292,6 +292,10 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             .setPriority(NotificationCompat.PRIORITY_DEFAULT);
 
         if (videoUri != null && mime != null) {
+            // Rich notification: show a frame from the saved video as the large icon.
+            android.graphics.Bitmap thumb = thumbnailBitmap(videoUri);
+            if (thumb != null) builder.setLargeIcon(thumb);
+
             // Action 1: Play Video
             Intent playIntent = new Intent(Intent.ACTION_VIEW);
             playIntent.setDataAndType(videoUri, mime);
@@ -316,6 +320,30 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         }
 
         getSystemService(NotificationManager.class).notify(FG_NOTIFICATION_ID, builder.build());
+    }
+
+    /** Grabs a frame from a saved video for use as a notification large icon. */
+    private android.graphics.Bitmap thumbnailBitmap(Uri uri) {
+        android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(this, uri);
+            android.graphics.Bitmap frame = retriever.getFrameAtTime(1_000_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+            if (frame == null) frame = retriever.getFrameAtTime(0);
+            if (frame == null) return null;
+            int target = 256;
+            if (frame.getWidth() > target) {
+                float scale = (float) target / frame.getWidth();
+                android.graphics.Bitmap scaled = android.graphics.Bitmap.createScaledBitmap(
+                    frame, target, Math.max(1, (int) (frame.getHeight() * scale)), true);
+                frame.recycle();
+                return scaled;
+            }
+            return frame;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try { retriever.release(); } catch (Exception ignored) {}
+        }
     }
 
     private void runSharedDownload(String rawUrl) {

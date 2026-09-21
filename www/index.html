@@ -1155,6 +1155,33 @@
       }
     }
 
+    function handleSharedIntent() {
+      // Cold start: the app may have been opened by a share.
+      const engine = getEngine();
+      if (engine?.getSharedUrl) {
+        engine.getSharedUrl().then(res => {
+          const clean = res && res.url ? extractUrl(res.url) : '';
+          if (clean) openSharedLink(clean);
+        }).catch(() => {});
+      }
+      // Warm start: MainActivity fires this event for ACTION_SEND.
+      window.addEventListener('onShareReceived', (e) => {
+        try {
+          const payload = (e && (e.detail || e.data)) || {};
+          const clean = payload.url ? extractUrl(payload.url) : '';
+          if (clean) openSharedLink(clean);
+        } catch (err) {}
+      });
+    }
+
+    function openSharedLink(url) {
+      if (!url) return;
+      document.getElementById('inputManualUrl').value = url;
+      handleUrlInputChanged();
+      handleInspectAndOpenModal(url);
+      showToast('Shared link', 'Pick a quality to grab it.', 'success');
+    }
+
     function handleLastGrabClick() {
       const last = downloadsHistory[0];
       if (last && last.url) {
@@ -2481,6 +2508,7 @@
       applyAmoled();
       setupVaultLongPress();
       updateVaultSelectionBar();
+      handleSharedIntent();
 
       const pv = document.getElementById('playerVideo');
       if (pv) {
