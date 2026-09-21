@@ -387,6 +387,25 @@ public class OmniEnginePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setNativeTheme(PluginCall call) {
+        Boolean darkVal = call.getBoolean("dark", true);
+        final boolean dark = darkVal == null || darkVal;
+        getActivity().runOnUiThread(() -> {
+            try {
+                android.view.Window window = getActivity().getWindow();
+                window.setStatusBarColor(android.graphics.Color.parseColor(dark ? "#060A13" : "#F0F4F8"));
+                window.setNavigationBarColor(android.graphics.Color.parseColor(dark ? "#0D1421" : "#FFFFFF"));
+                android.view.View decor = window.getDecorView();
+                int flags = dark ? 0
+                    : android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                    | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                decor.setSystemUiVisibility(flags);
+            } catch (Exception ignored) {}
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
     public void getMediaStreamUrl(PluginCall call) {
         Double idVal = call.getDouble("id");
         long id = idVal == null ? 0L : idVal.longValue();
