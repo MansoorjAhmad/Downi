@@ -216,13 +216,29 @@ def inspect(url):
         thumbnail = ''
         webpage_url = clean
 
-    formats = [
-        {'id': 'best', 'label': 'Best Available Quality (HD)', 'ext': 'mp4', 'badge': 'HD'},
-        {'id': '1080', 'label': '1080p Full HD', 'ext': 'mp4', 'badge': '1080p'},
-        {'id': '720', 'label': '720p HD Quality', 'ext': 'mp4', 'badge': '720p'},
-        {'id': '480', 'label': '480p Standard Quality', 'ext': 'mp4', 'badge': '480p'},
-        {'id': 'audio', 'label': 'Audio Track (MP3 / M4A)', 'ext': 'mp3', 'badge': 'MP3'},
-    ]
+    # Honest, platform-aware quality choices. No ffmpeg is bundled on-device, so
+    # every download is a single muxed (video+audio) stream. YouTube only serves
+    # muxed streams up to 720p, so advertising 1080p there would be a lie.
+    if platform == 'youtube':
+        formats = [
+            {'id': 'best', 'label': 'Best Available Quality (HD)', 'ext': 'mp4', 'badge': 'HD'},
+            {'id': '720', 'label': '720p HD Quality', 'ext': 'mp4', 'badge': '720p'},
+            {'id': '480', 'label': '480p Standard Quality', 'ext': 'mp4', 'badge': '480p'},
+            {'id': '360', 'label': '360p Data Saver', 'ext': 'mp4', 'badge': '360p'},
+            {'id': 'audio', 'label': 'Audio Track (MP3 / M4A)', 'ext': 'mp3', 'badge': 'MP3'},
+        ]
+        note = ('YouTube serves video and audio separately above 720p and this app '
+                'does not bundle a merger yet, so downloads max out at 720p with sound. '
+                'True 1080p merging is planned for a future update.')
+    else:
+        formats = [
+            {'id': 'best', 'label': 'Best Available Quality (HD)', 'ext': 'mp4', 'badge': 'HD'},
+            {'id': '1080', 'label': 'Up to 1080p Full HD', 'ext': 'mp4', 'badge': '1080p'},
+            {'id': '720', 'label': '720p HD Quality', 'ext': 'mp4', 'badge': '720p'},
+            {'id': '480', 'label': '480p Standard Quality', 'ext': 'mp4', 'badge': '480p'},
+            {'id': 'audio', 'label': 'Audio Track (MP3 / M4A)', 'ext': 'mp3', 'badge': 'MP3'},
+        ]
+        note = ''
 
     return json.dumps({
         'title': title,
@@ -232,6 +248,7 @@ def inspect(url):
         'webpage_url': webpage_url,
         'platform': platform,
         'formats': formats,
+        'note': note,
     })
 
 

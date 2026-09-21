@@ -1,8 +1,19 @@
-# DOWNI V2.6.5 ⚡
+# DOWNI V2.6.6 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
+
+---
+
+## 🆕 What's New in V2.6.6
+
+### Perfection pass — everything honest, nothing stale
+- **Build-sync guard** — Gradle refuses to build if the bundled UI is stale (`preBuild` enforces `npx cap sync android`), so an outdated interface can never ship again.
+- **Honest quality picker** — YouTube shows its real maximum (720p, since no ffmpeg merger is bundled yet — true 1080p merging is planned for v2.7); other platforms offer up to 1080p. Clear notes replace silent lies.
+- **Custom save folder, finished** — Settings shows the real save location, and DowniDrop background downloads honor it too.
+- **Updater hardened** — points at the correct `MansoorjAhmad/Downi` repo, pre-checks "Install unknown apps", and explains unavailable qualities plainly.
+- **Polish & security** — adaptive launcher icon, brand-matched splash, haptics on key actions, Vault player loopback server locked with a per-session token, cleartext HTTP restricted to the local player only, dead Capacitor plugins removed.
 
 ---
 
@@ -49,7 +60,7 @@ DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application eng
 
 | Platform | Method |
 |----------|--------|
-| **YouTube & Shorts** | Full source quality via yt-dlp |
+| **YouTube & Shorts** | HD via yt-dlp (up to 720p muxed; 1080p merging planned) |
 | **Instagram** | Clean MP4 — Reels, Stories, Posts |
 | **TikTok** | Direct HD CDN (`hdplay`) — no bouncing watermark |
 | **Facebook** | Clean CDN stream |
@@ -63,8 +74,8 @@ DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application eng
 | Feature | Details |
 |---------|---------|
 | **Platforms** | YouTube, Instagram, TikTok, Twitter/X, Facebook + any direct link |
-| **Formats** | 1080p / 720p / 480p / Best / MP3 audio-only |
-| **Downloads** | 3 simultaneous, up to 9 queued — fully parallel |
+| **Formats** | Up to 1080p (YouTube: up to 720p), 480p, Best, MP3/M4A audio-only |
+| **Downloads** | 3 simultaneous, up to 6 in the queue — fully parallel |
 | **Vault** | Browse, play, share & delete your downloaded files |
 | **Theme** | Light & Dark mode — Settings → Appearance |
 | **Clipboard detect** | Auto-detects copied video links — tap to grab instantly |
@@ -79,16 +90,17 @@ DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application eng
 - **Dual-Engine Core**: Capacitor 6 + native Java bridges + Chaquopy on-device Python (yt-dlp `2026.8.19`)
 - **Parallel Queue**: `MAX_ACTIVE = 3` thread pool, `MAX_QUEUED = 6` overflow queue
 - **Offline-First UI**: All web assets (Tailwind, fonts) bundled inside the APK — works with zero internet
-- **Resilient Fallback**: Platform-aware multi-tier stream selection with Cloud Boost relay
+- **Resilient Fallback**: Platform-aware multi-tier stream selection, 100% on-device
 
 ---
 
 ## 📦 Releasing a New Version
 
-1. Bump `versionCode` / `versionName` in `android/app/build.gradle`.
-2. Commit and tag: `git tag vX.Y.Z && git push origin main --tags`.
-3. GitHub Actions builds the signed APK and attaches it to the release automatically.
-4. Users tap **Check Updates** in the app — progress bar, one-tap install.
+1. Run `npx cap sync android` (enforced automatically by the `preBuild` guard since v2.6.6).
+2. Bump `versionCode` / `versionName` in `android/app/build.gradle`.
+3. Commit and tag: `git tag vX.Y.Z && git push origin main --tags`.
+4. GitHub Actions builds the signed APK and attaches it to the release automatically.
+5. Users tap **Check Updates** in the app — progress bar, one-tap install.
 
 ### Signing (CI)
 

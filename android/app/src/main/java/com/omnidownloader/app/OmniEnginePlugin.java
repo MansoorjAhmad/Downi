@@ -110,6 +110,16 @@ public class OmniEnginePlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void getSaveLocation(PluginCall call) {
+        String treeUri = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("treeUri", "");
+        boolean custom = treeUri != null && !treeUri.isEmpty();
+        JSObject result = new JSObject();
+        result.put("custom", custom);
+        result.put("label", custom ? "Custom folder" : "Gallery — Movies / Music");
+        call.resolve(result);
+    }
+
     @Override
     public void load() {
         downloadManager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
@@ -142,8 +152,8 @@ public class OmniEnginePlugin extends Plugin {
             result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
-            result.put("versionName", "2.5.0");
-            result.put("versionCode", 25);
+            result.put("versionName", "2.6.6");
+            result.put("versionCode", 35L);
             call.resolve(result);
         }
     }
@@ -158,6 +168,12 @@ public class OmniEnginePlugin extends Plugin {
         File apkFile = new File(filePath);
         if (!apkFile.exists()) {
             call.reject("APK file does not exist at " + filePath);
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && !getContext().getPackageManager().canRequestPackageInstalls()) {
+            call.reject("Install unknown apps permission required — allow it for DOWNI in system settings, then retry.");
             return;
         }
 
@@ -413,7 +429,7 @@ public class OmniEnginePlugin extends Plugin {
         try {
             int port = MediaStreamServer.get(getContext()).start();
             JSObject result = new JSObject();
-            result.put("url", "http://127.0.0.1:" + port + "/media/" + id + "?type=" + (isVideo ? "video" : "audio"));
+            result.put("url", "http://127.0.0.1:" + port + "/media/" + id + "?type=" + (isVideo ? "video" : "audio") + "&t=" + MediaStreamServer.get(getContext()).getToken());
             call.resolve(result);
         } catch (Exception e) {
             call.reject("Could not start the in-app player service.", e);
@@ -711,6 +727,7 @@ public class OmniEnginePlugin extends Plugin {
                 result.put("thumbnail", info.optString("thumbnail", ""));
                 result.put("url", info.optString("webpage_url", url));
                 result.put("platform", info.optString("platform", "other"));
+                result.put("note", info.optString("note", ""));
 
                 JSONArray fmts = info.optJSONArray("formats");
                 if (fmts != null) {
@@ -912,6 +929,7 @@ public class OmniEnginePlugin extends Plugin {
         String lower = detail.toLowerCase(Locale.US);
         if (lower.contains("certificate") || lower.contains("ssl")) return "Secure connection failed. Check your internet, then retry.";
         if (lower.contains("private") || lower.contains("login") || lower.contains("sign in")) return "This video needs an account or is private. Try a public link.";
+        if (lower.contains("requested format is not available")) return "That quality is not available for this link. Try Best Available or a lower quality.";
         if (lower.contains("unsupported") || lower.contains("no video formats")) return "This public link is not supported yet. Try another public video link.";
         return "Download failed: " + detail;
     }

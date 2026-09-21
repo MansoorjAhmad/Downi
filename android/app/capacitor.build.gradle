@@ -12,8 +12,6 @@ dependencies {
     implementation project(':capacitor-app')
     implementation project(':capacitor-clipboard')
     implementation project(':capacitor-haptics')
-    implementation project(':capacitor-local-notifications')
-    implementation project(':capacitor-filesystem')
 
 }
 

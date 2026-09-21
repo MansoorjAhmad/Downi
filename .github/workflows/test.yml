@@ -1,0 +1,41 @@
+name: Test — Engine Smoke + Debug Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Extraction smoke test (READ_THIS matrix, CI tier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install engine deps
+        run: pip install yt-dlp==2026.8.19 certifi
+      - name: Run engine smoke test
+        run: python ci/smoke_test.py
+
+  build:
+    name: Debug APK build (exercises the bundled-UI freshness guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci || npm install
+      - run: npx cap sync android
+      - name: Build debug APK (unsigned)
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug

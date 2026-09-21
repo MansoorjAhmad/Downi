@@ -284,8 +284,8 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("DowniDrop — Download Complete! 🎉")
-            .setContentText(title != null ? title : "Video saved to your gallery")
-            .setSubText("Ready in Gallery")
+            .setContentText(title != null ? title : "Video saved")
+            .setSubText("Saved ✓")
             .setOnlyAlertOnce(false)
             .setOngoing(false)
             .setAutoCancel(true)
@@ -334,7 +334,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
             String ext = file.optString("ext", "mp4");
             currentDownloadTitle = title;
 
-            showStatus("Saving to your gallery…", 98);
+            showStatus("Saving the file…", 98);
             Uri savedUri = saveToGallery(new File(file.getString("path")), title, ext);
             String mime = ext.equalsIgnoreCase("mp3") || ext.equalsIgnoreCase("m4a") ? "audio/" + ext : "video/mp4";
 
@@ -398,6 +398,28 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         String name = nextGalleryName(base, ext);
         String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
         if (mime == null) mime = ext.startsWith("m4") || ext.equals("mp3") ? "audio/" + ext : "video/mp4";
+
+        // Honor the user's custom save folder (Settings → Save location), matching
+        // the in-app download path in OmniEnginePlugin.copyToGallery. Falls through
+        // to Gallery if the folder grant was lost (revoked permission, removed SD…).
+        String treeUri = getSharedPreferences("omni_settings", MODE_PRIVATE).getString("treeUri", "");
+        if (treeUri != null && !treeUri.isEmpty()) {
+            try {
+                Uri tree = Uri.parse(treeUri);
+                Uri parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree));
+                Uri destination = android.provider.DocumentsContract.createDocument(getContentResolver(), parent, mime, name);
+                if (destination != null) {
+                    try (InputStream input = new FileInputStream(source); OutputStream output = getContentResolver().openOutputStream(destination)) {
+                        if (output != null) {
+                            byte[] buffer = new byte[65536];
+                            for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
+                            source.delete();
+                            return destination;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
 
         ContentValues values = new ContentValues();
         values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);

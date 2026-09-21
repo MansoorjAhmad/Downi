@@ -2,14 +2,7 @@
   "appId": "com.omnidownloader.app",
   "appName": "DOWNI",
   "webDir": "www",
-  "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https"
-  },
-  "plugins": {
-    "LocalNotifications": {
-      "smallIcon": "ic_stat_icon",
-      "iconColor": "#10B981"
-    }
   }
 }

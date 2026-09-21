@@ -29,6 +29,11 @@ public class MediaStreamServer {
     private volatile ServerSocket serverSocket;
     private final Context context;
 
+    /** Random per-process token so other apps on this device cannot pull media over loopback. */
+    private final String token = java.util.UUID.randomUUID().toString().replace("-", "");
+
+    public String getToken() { return token; }
+
     public static MediaStreamServer get(Context context) {
         if (instance == null) {
             synchronized (MediaStreamServer.class) {
@@ -88,6 +93,10 @@ public class MediaStreamServer {
 
             String[] parts = requestLine.split(" ");
             String path = parts.length > 1 ? parts[1] : "/";
+            if (!path.contains("t=" + token)) {
+                writeSimple(client, 403, "forbidden");
+                return;
+            }
             boolean audio = path.contains("type=audio");
             String idPart = path.replace("/media/", "");
             int q = idPart.indexOf('?');

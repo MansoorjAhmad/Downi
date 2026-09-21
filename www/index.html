@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>DOWNI 2.5 — Grab Any Video</title>
+  <title>DOWNI — Grab Any Video</title>
   <script src="assets/vendor/tailwind.js"></script>
   <link rel="icon" type="image/png" href="assets/icon.png">
   <!-- Apply saved theme before first paint to avoid flash; default to system preference -->
@@ -419,7 +419,7 @@
               <div class="w-10 h-10 rounded-2xl bg-cyan-400/12 border border-cyan-300/20 flex items-center justify-center text-base">🚀</div>
               <div>
                 <p class="text-[12px] font-extrabold text-white">DOWNI updates</p>
-              <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300 mt-0.5">v2.5.4 (29)</p>
+              <p id="appVersionDisplay" class="text-[11px] font-mono text-cyan-300 mt-0.5"></p>
               </div>
             </div>
             <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn-hero px-4 py-2.5 text-[11px] font-extrabold">Check</button>
@@ -492,7 +492,7 @@
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">About</p>
           <div class="flex items-center justify-between py-2.5 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">App</span>
-            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400">v2.6.3</span></span>
+            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400"></span></span>
           </div>
           <div class="flex items-center justify-between py-2.5 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">Engine</span>
@@ -561,6 +561,7 @@
       <div id="inspectorQualitiesList" class="space-y-2">
         <div class="skel h-14"></div><div class="skel h-14"></div><div class="skel h-14"></div>
       </div>
+      <p id="inspectorQualityNote" class="hidden text-[10px] mt-3 leading-relaxed" style="color:var(--muted)"></p>
 
       <button id="btnConfirmDownloadQuality" onclick="proceedSelectedQualityDownload()" class="btn-hero w-full py-4 mt-4 text-[13px] font-extrabold">
         <span id="btnConfirmDownloadText">Download</span>
@@ -579,7 +580,7 @@
           <span class="chip px-3 py-1 text-[9px] font-extrabold uppercase tracking-widest" style="color:var(--ok); border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.1)">Update available</span>
           <button onclick="closeUpdateModal()" class="btn w-9 h-9 flex items-center justify-center text-zinc-400 text-sm">✕</button>
         </div>
-        <h3 id="updateVersionTitle" class="text-[16px] font-extrabold text-white">DOWNI v2.x</h3>
+        <h3 id="updateVersionTitle" class="text-[16px] font-extrabold text-white">Update available</h3>
         <p class="text-[10px] font-mono mt-0.5 text-cyan-300">GitHub Releases</p>
         <div id="updateChangelog" class="text-[11px] mt-3 p-3.5 rounded-2xl bg-black/40 max-h-44 overflow-y-auto whitespace-pre-wrap font-mono border border-white/5" style="color:#B7C0D0"></div>
       </div>
@@ -670,14 +671,14 @@
 
   <script>
     // ================= State =================
-    const GITHUB_REPO = 'MansoorjAhmad/OmniDownloader';
+    const GITHUB_REPO = 'MansoorjAhmad/Downi';
     let currentTab = 'grab';
     let downloadsHistory = [];
     let detectedClipboardUrl = '';
     let currentInspectedUrl = '';
     let selectedInspectorQuality = 'best';
-    let installedVersion = '2.6.2';
-    let installedVersionCode = 32;
+    let installedVersion = '2.6.6';
+    let installedVersionCode = 35;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -693,7 +694,9 @@
     const vaultThumbCache = {};
 
     function getEngine() { return window.Capacitor?.Plugins?.OmniEngine || null; }
-    function triggerHaptic() {}
+    function triggerHaptic(style) {
+      try { window.Capacitor?.Plugins?.Haptics?.impact?.({ style: (style || 'light').toUpperCase() }); } catch (e) {}
+    }
 
     // ================= Navigation =================
     function switchTab(tab) {
@@ -837,6 +840,7 @@
         return;
       }
       currentInspectedUrl = clean;
+      triggerHaptic('medium');
       initiateDownload(clean, 'best');
     }
 
@@ -845,6 +849,7 @@
         document.getElementById('inputManualUrl').value = detectedClipboardUrl;
         document.getElementById('clipboardBanner')?.classList.add('hidden');
         currentInspectedUrl = detectedClipboardUrl;
+        triggerHaptic('medium');
         initiateDownload(detectedClipboardUrl, 'best');
       }
     }
@@ -878,6 +883,8 @@
       document.getElementById('inspectorTitle').innerText = 'Scanning qualities…';
       document.getElementById('inspectorUploader').innerText = '';
       document.getElementById('inspectorQualitiesList').innerHTML = '<div class="skel h-14"></div><div class="skel h-14"></div><div class="skel h-14"></div>';
+      const noteReset = document.getElementById('inspectorQualityNote');
+      if (noteReset) { noteReset.innerText = ''; noteReset.classList.add('hidden'); }
       document.getElementById('inspectorModal')?.classList.remove('hidden');
 
       try {
@@ -890,6 +897,11 @@
           document.getElementById('inspectorDuration').innerText = formatDuration(info.duration);
           document.getElementById('inspectorPlatformBadge').innerText = (info.platform || 'video').toUpperCase();
           renderInspectorQualities(info.formats);
+          const noteEl = document.getElementById('inspectorQualityNote');
+          if (noteEl) {
+            noteEl.innerText = info.note || '';
+            noteEl.classList.toggle('hidden', !info.note);
+          }
         } else {
           renderInspectorQualities([]);
         }
@@ -905,7 +917,7 @@
       if (!formats || formats.length === 0) {
         formats = [
           { id: 'best', label: 'Best Available Quality', ext: 'mp4', badge: 'Best' },
-          { id: '1080', label: '1080p Full HD', ext: 'mp4', badge: '1080p' },
+          { id: '1080', label: 'Up to 1080p Full HD', ext: 'mp4', badge: '1080p' },
           { id: '720', label: '720p HD Quality', ext: 'mp4', badge: '720p' },
           { id: '480', label: '480p Standard', ext: 'mp4', badge: '480p' },
           { id: 'audio', label: 'Audio Only (MP3)', ext: 'mp3', badge: 'MP3' }
@@ -932,6 +944,7 @@
     }
 
     function selectInspectorQuality(fmtId, fmtLabel) {
+      triggerHaptic('light');
       selectedInspectorQuality = fmtId;
       document.querySelectorAll('.quality-card').forEach(el => {
         el.classList.remove('on');
@@ -1054,12 +1067,13 @@
     }
 
     function onJobComplete(jobId, title, destination) {
+      triggerHaptic('medium');
       activeJobs.delete(jobId);
       completedCount++;
       renderJobCards();
       renderQueueTab();
       updateQueueBadge();
-      showToast('Saved to Gallery ✓', title, 'success');
+      showToast('Saved ✓', title + (destination ? ' · ' + destination : ''), 'success');
       downloadsHistory.unshift({
         id: Date.now().toString(),
         title: title,
@@ -1072,6 +1086,7 @@
     }
 
     function onDownloadError(errStr, url, formatId) {
+      triggerHaptic('heavy');
       currentRawError = errStr;
       let friendly = "The media stream could not be downloaded. The video may be private, restricted, or the connection dropped.";
       const lower = (errStr || "").toLowerCase();
@@ -1650,7 +1665,26 @@
     }
 
     function openGitHubRepo() { window.open(`https://github.com/${GITHUB_REPO}`, '_system'); }
-    function handleChooseFolder() { getEngine()?.chooseFolder?.(); }
+    async function handleChooseFolder() {
+      const engine = getEngine();
+      if (!engine?.chooseFolder) return;
+      try {
+        await engine.chooseFolder();
+        document.getElementById('folderText').innerText = 'Custom folder';
+        showToast('Save location', 'New downloads will be saved to your chosen folder.', 'success');
+      } catch (e) {
+        const msg = (e && e.message) ? e.message : '';
+        if (!msg.toLowerCase().includes('cancel')) showToast('Folder not set', msg || 'Could not use that folder.', 'error');
+      }
+    }
+    async function refreshSaveLocationLabel() {
+      const engine = getEngine();
+      if (!engine?.getSaveLocation) return;
+      try {
+        const res = await engine.getSaveLocation();
+        if (res && res.label) document.getElementById('folderText').innerText = res.label;
+      } catch (e) {}
+    }
     function toggleClipboardDetect(enabled) { localStorage.setItem('omni_clipboard_detect', enabled ? '1' : '0'); }
 
 
@@ -1758,6 +1792,7 @@
       initTheme();
       loadHistory();
       setupSheetDrag();
+      refreshSaveLocationLabel();
 
       const pv = document.getElementById('playerVideo');
       if (pv) {
