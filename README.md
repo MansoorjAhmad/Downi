@@ -1,8 +1,35 @@
-# DOWNI V2.6.7 ⚡
+# DOWNI V3.0.0 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
+
+---
+
+## 🆕 What's New in V3.0.0
+
+### The smooth-and-fast release
+**Feel**
+- Design system with a single motion language — springy sheets, staggered lists, press feedback, success pulses, reduced-motion support
+- Vortex confetti on every save, haptics mapped to every action
+- Vault 2.0: search, sort, storage stats, grid ⇄ list, **long-press multi-select with bulk share/delete**
+- Player 2.0: double-tap ±10s, speed control, **resumes where you left off**, swipe-down to close, tap to hide controls
+- Queue: progress ring, live speed sparkline, cancel with **Undo**
+- Grab: clipboard banner with **video thumbnail**, "Last grabbed ↻" chip, invalid-link shake
+- Inspector: **BEST PICK** badge, remembers your quality per platform, blur-up thumbnails
+- Settings: 4 accent colors, **AMOLED true-black**, clear engine cache, tap-to-copy version
+- Rich notifications with video thumbnails, Quick Settings tile, shared links open the Inspector
+
+**Speed**
+- **True 1080p Full HD on YouTube** — separate video + audio downloaded and merged on-device with Android's native MediaMuxer (no ffmpeg bloat)
+- **Instant re-inspect** — same link re-opens the picker in milliseconds (5-minute cache)
+- **Concurrent fragment downloads** (3) for faster HLS/DASH fetches
+- Engine pre-warmed at launch — the first grab starts faster
+- Downloads continue in the background — the foreground service keeps the engine alive
+
+**Power**
+- **Playlist batch mode** — paste a YouTube playlist, tap Grab all, watch them queue one by one
+- Vault custom-folder files are fully integrated (Open / Share / Delete)
 
 ---
 
