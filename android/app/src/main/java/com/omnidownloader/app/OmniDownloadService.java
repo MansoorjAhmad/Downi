@@ -413,6 +413,7 @@ public class OmniDownloadService extends Service implements DownloadProgressList
                         if (output != null) {
                             byte[] buffer = new byte[65536];
                             for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
+                            scanSafDocument(destination, mime);
                             source.delete();
                             return destination;
                         }
@@ -460,6 +461,24 @@ public class OmniDownloadService extends Service implements DownloadProgressList
         }
         source.delete();
         return destination;
+    }
+
+    /**
+     * SAF writes are not always indexed by MediaScanner, which left saved
+     * videos invisible in the Vault (a MediaStore query) and gallery apps.
+     * Resolve the real path on primary storage and hand it to the scanner.
+     */
+    private void scanSafDocument(Uri documentUri, String mime) {
+        try {
+            String docId = android.provider.DocumentsContract.getDocumentId(documentUri);
+            int colon = docId.indexOf(':');
+            if (colon <= 0) return;
+            String device = docId.substring(0, colon);
+            String rel = docId.substring(colon + 1);
+            if (!"primary".equals(device) || rel.isEmpty()) return;
+            File f = new File(Environment.getExternalStorageDirectory(), rel);
+            android.media.MediaScannerConnection.scanFile(this, new String[]{f.getAbsolutePath()}, new String[]{mime}, null);
+        } catch (Exception ignored) {}
     }
 
     private synchronized String nextGalleryName(String base, String ext) {

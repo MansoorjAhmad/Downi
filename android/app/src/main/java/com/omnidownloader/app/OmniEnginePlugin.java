@@ -125,6 +125,142 @@ public class OmniEnginePlugin extends Plugin {
         downloadManager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
     }
 
+    // ---------- Custom save folder (SAF) ----------
+    // Files written to a user-picked folder are not MediaStore rows, so the
+    // Vault (which reads MediaStore) never showed them. List them straight
+    // from the SAF tree so every download is visible and manageable.
+
+    @PluginMethod
+    public void listCustomFiles(PluginCall call) {
+        miscExecutor.execute(() -> {
+            com.getcapacitor.JSArray items = new com.getcapacitor.JSArray();
+            String treeUri = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE).getString("treeUri", "");
+            if (treeUri != null && !treeUri.isEmpty()) {
+                try {
+                    Uri tree = Uri.parse(treeUri);
+                    Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
+                    String[] projection = {
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE,
+                        DocumentsContract.Document.COLUMN_SIZE,
+                        DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                    };
+                    try (Cursor c = getContext().getContentResolver().query(children, projection, null, null, null)) {
+                        if (c != null) {
+                            while (c.moveToNext()) {
+                                try {
+                                    String docId = c.getString(0);
+                                    String name = c.getString(1) != null ? c.getString(1) : "";
+                                    String mime = c.getString(2);
+                                    long size = c.getLong(3);
+                                    long modified = c.getLong(4);
+                                    String lower = name.toLowerCase(Locale.US);
+                                    boolean isVideo = (mime != null && mime.startsWith("video/")) || lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".webm") || lower.endsWith(".mov");
+                                    boolean isAudio = (mime != null && mime.startsWith("audio/")) || lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".wav") || lower.endsWith(".ogg");
+                                    if (!isVideo && !isAudio) continue;
+                                    Uri docUri = DocumentsContract.buildDocumentUriUsingTree(tree, docId);
+                                    JSObject obj = new JSObject();
+                                    obj.put("uri", docUri.toString());
+                                    obj.put("name", name);
+                                    obj.put("size", size);
+                                    obj.put("modified", modified);
+                                    obj.put("mime", mime != null ? mime : (isVideo ? "video/mp4" : "audio/mp4"));
+                                    obj.put("isVideo", isVideo);
+                                    items.put(obj);
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+            JSObject result = new JSObject();
+            result.put("files", items);
+            call.resolve(result);
+        });
+    }
+
+    @PluginMethod
+    public void openCustomFile(PluginCall call) {
+        String uri = call.getString("uri");
+        String mime = call.getString("mime", "video/mp4");
+        if (uri == null || uri.isEmpty()) {
+            call.reject("File reference missing.");
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(Uri.parse(uri), mime);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("No app found to play this file.", e);
+        }
+    }
+
+    @PluginMethod
+    public void shareCustomFile(PluginCall call) {
+        String uri = call.getString("uri");
+        String mime = call.getString("mime", "video/mp4");
+        if (uri == null || uri.isEmpty()) {
+            call.reject("File reference missing.");
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType(mime);
+            intent.putExtra(Intent.EXTRA_STREAM, Uri.parse(uri));
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(intent, "Share media");
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not share this file.", e);
+        }
+    }
+
+    @PluginMethod
+    public void deleteCustomFile(PluginCall call) {
+        String uri = call.getString("uri");
+        if (uri == null || uri.isEmpty()) {
+            call.reject("File reference missing.");
+            return;
+        }
+        miscExecutor.execute(() -> {
+            try {
+                boolean ok = DocumentsContract.deleteDocument(getContext().getContentResolver(), Uri.parse(uri));
+                if (ok) {
+                    JSObject result = new JSObject();
+                    result.put("deleted", true);
+                    call.resolve(result);
+                } else {
+                    call.reject("Storage refused the delete.");
+                }
+            } catch (Exception e) {
+                call.reject("Storage refused the delete.", e);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void rescanStorage(PluginCall call) {
+        miscExecutor.execute(() -> {
+            try {
+                String[] dirs = {
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getAbsolutePath(),
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).getAbsolutePath(),
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath()
+                };
+                android.media.MediaScannerConnection.scanFile(getContext(), dirs, null, null);
+            } catch (Exception ignored) {}
+            JSObject result = new JSObject();
+            result.put("started", true);
+            call.resolve(result);
+        });
+    }
+
     @PluginMethod
     public void getClipboardText(PluginCall call) {
         ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
@@ -152,8 +288,8 @@ public class OmniEnginePlugin extends Plugin {
             result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
-            result.put("versionName", "2.6.6");
-            result.put("versionCode", 35L);
+            result.put("versionName", "2.6.7");
+            result.put("versionCode", 36L);
             call.resolve(result);
         }
     }
@@ -798,6 +934,25 @@ public class OmniEnginePlugin extends Plugin {
         } catch (Exception ignored) {}
     }
 
+    /**
+     * SAF writes are not always indexed by MediaScanner, which left saved
+     * videos invisible in the Vault (a MediaStore query) and in gallery apps.
+     * Resolve the real path when the document lives on primary storage and
+     * hand it to the media scanner.
+     */
+    private void scanSafDocument(Uri documentUri, String mime) {
+        try {
+            String docId = DocumentsContract.getDocumentId(documentUri);
+            int colon = docId.indexOf(':');
+            if (colon <= 0) return;
+            String device = docId.substring(0, colon);
+            String rel = docId.substring(colon + 1);
+            if (!"primary".equals(device) || rel.isEmpty()) return;
+            File f = new File(Environment.getExternalStorageDirectory(), rel);
+            android.media.MediaScannerConnection.scanFile(getContext(), new String[]{f.getAbsolutePath()}, new String[]{mime}, null);
+        } catch (Exception ignored) {}
+    }
+
     private String copyToGallery(File source, String title, String extension) {
         if (source == null || !source.exists()) {
             return "Downloaded file missing";
@@ -823,6 +978,7 @@ public class OmniEnginePlugin extends Plugin {
                             saved = true;
                         }
                     }
+                    if (saved) scanSafDocument(destination, mime);
                 }
             } catch (Exception ignored) {}
             if (saved) {

@@ -393,6 +393,7 @@
             <p class="text-[11px]" style="color:var(--muted)">Your real media library</p>
           </div>
           <div class="flex items-center gap-2">
+            <button onclick="rescanVaultStorage()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Rescan</button>
             <button onclick="refreshVault()" class="btn w-9 h-9 flex items-center justify-center text-zinc-300 text-sm">↻</button>
             <button onclick="handleOpenSystemGallery()" class="btn px-3 py-2 text-[11px] font-bold text-zinc-300">Gallery</button>
           </div>
@@ -677,8 +678,8 @@
     let detectedClipboardUrl = '';
     let currentInspectedUrl = '';
     let selectedInspectorQuality = 'best';
-    let installedVersion = '2.6.6';
-    let installedVersionCode = 35;
+    let installedVersion = '2.6.7';
+    let installedVersionCode = 36;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -1301,12 +1302,21 @@
       const engine = getEngine();
       if (engine?.listMedia) {
         if (grid && vaultItems.length === 0) grid.innerHTML = '<div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div>';
-        engine.listMedia().then(res => {
-          const videos = (res.videos || []).map(v => ({ ...v, kind: 'video' }));
-          const audios = (res.audios || []).map(a => ({ ...a, kind: 'audio' }));
-          vaultItems = [...videos, ...audios];
+        Promise.all([
+          engine.listMedia().then(res => {
+            const videos = (res.videos || []).map(v => ({ ...v, kind: 'video' }));
+            const audios = (res.audios || []).map(a => ({ ...a, kind: 'audio' }));
+            return [...videos, ...audios];
+          }).catch(() => []),
+          engine.listCustomFiles ? engine.listCustomFiles().then(res => (res.files || [])).catch(() => []) : Promise.resolve([])
+        ]).then(([media, custom]) => {
+          // Custom-folder files that got media-scanned already appear as
+          // MediaStore items above — hide those duplicates.
+          const seen = new Set(media.map(m => (m.name || '').toLowerCase() + ':' + m.size));
+          const customOnly = custom.filter(f => !seen.has((f.name || '').toLowerCase() + ':' + f.size));
+          vaultItems = [...media, ...customOnly.map(f => ({ ...f, kind: 'custom' }))];
           renderVaultGrid();
-        }).catch(() => { vaultItems = []; renderVaultGrid(); });
+        });
       } else {
         vaultItems = [];
         renderVaultGrid();
@@ -1338,6 +1348,15 @@
           `).join('');
           return;
         }
+        if (engine?.listMedia && downloadsHistory.length > 0) {
+          grid.innerHTML = `<div class="col-span-2 card p-6 text-center fade-in space-y-3">
+            <div class="text-3xl">📂</div>
+            <p class="text-[12px] font-bold text-white">Downloads saved — storage not showing them yet?</p>
+            <p class="text-[11px]" style="color:var(--muted)">Tap Rescan to re-index Movies, Music and Downloads. Files in your custom folder appear here automatically.</p>
+            <button onclick="rescanVaultStorage()" class="btn-hero px-5 py-3 text-[11px] font-extrabold">Rescan storage</button>
+          </div>`;
+          return;
+        }
         grid.innerHTML = `<div class="col-span-2 card p-10 text-center fade-in">
           <div class="text-3xl mb-2">🎬</div>
           <p class="text-[12px] font-bold text-white">Nothing here yet</p>
@@ -1347,6 +1366,7 @@
       }
 
       grid.innerHTML = items.map(item => {
+        if (item.kind === 'custom') return customCardHtml(item);
         const key = (item.isVideo ? 'v' : 'a') + item.id;
         const thumb = vaultThumbCache[key];
         const dateStr = item.dateModified ? new Date(item.dateModified * 1000).toLocaleDateString() : '';
@@ -1388,6 +1408,60 @@
           }).catch(() => {});
         }
       });
+    }
+
+    function customCardHtml(item) {
+      return `
+        <div class="card overflow-hidden fade-in">
+          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
+            <div class="text-center">
+              <div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
+              <p class="text-[8px] font-mono" style="color:var(--muted)">CUSTOM FOLDER</p>
+            </div>
+            <div class="absolute inset-x-0 bottom-0 h-10" style="background:linear-gradient(to top, rgba(0,0,0,.65), transparent)"></div>
+          </div>
+          <div class="p-3 space-y-1">
+            <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
+            <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${item.modified ? ' · ' + new Date(item.modified).toLocaleDateString() : ''}</p>
+            <div class="flex gap-1.5 pt-1.5">
+              <button onclick="customVaultAction('${encodeURIComponent(item.uri)}', 'open')" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Open</button>
+              <button onclick="customVaultAction('${encodeURIComponent(item.uri)}', 'share')" class="btn px-2.5 py-1.5 text-[10px] text-cyan-300 font-bold">↗</button>
+              <button onclick="customVaultAction('${encodeURIComponent(item.uri)}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold" style="color:var(--bad)">✕</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function customVaultAction(encodedUri, action) {
+      const uri = decodeURIComponent(encodedUri);
+      const item = vaultItems.find(i => i.uri === uri);
+      if (!item) return;
+      const engine = getEngine();
+      if (!engine) return;
+      const mime = item.mime || (item.isVideo ? 'video/mp4' : 'audio/mp4');
+      if (action === 'open') {
+        if (engine.openCustomFile) {
+          engine.openCustomFile({ uri: uri, mime: mime })
+            .catch(e => showToast('Cannot open', (e && e.message) || 'No player found.', 'error'));
+        } else if (engine.openMedia) {
+          engine.openMedia({});
+        }
+      } else if (action === 'share') {
+        engine.shareCustomFile?.({ uri: uri, mime: mime })
+          .catch(() => showToast('Cannot share', 'Sharing failed.', 'error'));
+      } else if (action === 'delete') {
+        engine.deleteCustomFile?.({ uri: uri })
+          .then(() => { showToast('Deleted', item.name, 'success'); refreshVault(); })
+          .catch(() => showToast('Cannot delete', 'Storage refused.', 'error'));
+      }
+    }
+
+    function rescanVaultStorage() {
+      const engine = getEngine();
+      if (!engine?.rescanStorage) { refreshVault(); return; }
+      showToast('Scanning', 'Re-indexing Movies, Music and Downloads…', 'info');
+      engine.rescanStorage().then(() => setTimeout(refreshVault, 2500)).catch(() => refreshVault());
     }
 
     // ================= Vault in-app player =================
