@@ -628,6 +628,30 @@
     </div>
   </div>
 
+  <!-- VAULT PLAYER (full-screen, in-app) -->
+  <div id="playerModal" class="fixed inset-0 z-[60] hidden bg-black">
+    <video id="playerVideo" class="absolute inset-0 w-full h-full object-contain" playsinline></video>
+    <p id="playerTitle" class="absolute top-4 left-4 right-16 text-[12px] font-bold text-white truncate z-10">Media</p>
+    <button onclick="closePlayer()" class="absolute top-3 right-3 w-10 h-10 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center text-sm z-10">✕</button>
+    <div class="absolute bottom-0 inset-x-0 p-4 pb-7 z-10 space-y-2" style="background:linear-gradient(to top, rgba(0,0,0,.88), transparent)">
+      <div id="playerSeek" class="bar cursor-pointer" onclick="seekPlayer(event)"><div style="width:0%"></div></div>
+      <div class="flex items-center justify-between text-[10px] font-mono text-white/80">
+        <span id="playerTime">0:00</span>
+        <span id="playerDur">0:00</span>
+      </div>
+      <div class="flex items-center justify-center gap-6 pt-1">
+        <button onclick="skipPlayer(-10)" class="btn w-11 h-11 text-white text-[10px] font-bold">−10s</button>
+        <button id="playerPlayBtn" onclick="togglePlay()" class="w-14 h-14 rounded-full btn-hero text-base font-black flex items-center justify-center">▶</button>
+        <button onclick="skipPlayer(10)" class="btn w-11 h-11 text-white text-[10px] font-bold">+10s</button>
+      </div>
+      <div class="flex items-center justify-center gap-2.5 pt-1">
+        <button onclick="playerPrev()" class="btn px-3 py-2 text-[10px] font-bold text-white">← Prev</button>
+        <button onclick="openExternalPlayer()" class="btn px-3 py-2 text-[10px] font-bold text-cyan-300">Open external</button>
+        <button onclick="playerNext()" class="btn px-3 py-2 text-[10px] font-bold text-white">Next →</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ================= State =================
     const GITHUB_REPO = 'MansoorjAhmad/OmniDownloader';
@@ -1335,11 +1359,105 @@
       });
     }
 
-    function playVaultMedia(id, isVideo) {
-      const engine = getEngine();
-      const res = engine?.openMedia?.({ id: id, isVideo: isVideo });
-      if (res && res.catch) res.catch(err => showToast('Cannot play', err?.message || 'No player found', 'error'));
+    // ================= Vault in-app player =================
+    let playerQueue = [];      // snapshot of the vault list being played
+    let playerIndex = 0;
+    let playerMeta = null;     // { id, isVideo } of what's loaded
+
+    function fmtClock(sec) {
+      if (!isFinite(sec) || sec < 0) sec = 0;
+      const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+      return m + ':' + (s < 10 ? '0' : '') + s;
     }
+
+    async function playVaultMedia(id, isVideo) {
+      const engine = getEngine();
+      playerQueue = filteredVaultItems().length > 0 ? filteredVaultItems() : vaultItems;
+      playerIndex = playerQueue.findIndex(i => i.id === id && i.isVideo === isVideo);
+      if (playerIndex < 0) {
+        playerQueue = vaultItems;
+        playerIndex = playerQueue.findIndex(i => i.id === id && i.isVideo === isVideo);
+      }
+      if (!engine?.getMediaStreamUrl) {
+        // Older native build without the player bridge → external fallback.
+        const res = engine?.openMedia?.({ id: id, isVideo: isVideo });
+        if (res && res.catch) res.catch(err => showToast('Cannot play', err?.message || 'No player found', 'error'));
+        return;
+      }
+      try {
+        const res = await engine.getMediaStreamUrl({ id: id, isVideo: isVideo });
+        openPlayerWith(res.url, id, isVideo);
+      } catch (e) {
+        showToast('Cannot play', e?.message || 'Player failed to start', 'error');
+      }
+    }
+
+    function openPlayerWith(url, id, isVideo) {
+      playerMeta = { id: id, isVideo: isVideo };
+      const item = playerQueue[playerIndex] || {};
+      document.getElementById('playerTitle').innerText = item.name || 'Media';
+      const v = document.getElementById('playerVideo');
+      v.src = url;
+      document.getElementById('playerModal').classList.remove('hidden');
+      v.play().catch(() => {});
+    }
+
+    function updatePlayerUi() {
+      const v = document.getElementById('playerVideo');
+      const fill = document.getElementById('playerSeek')?.firstElementChild;
+      if (fill) fill.style.width = (v.duration ? (v.currentTime / v.duration) * 100 : 0) + '%';
+      const t = document.getElementById('playerTime'), d = document.getElementById('playerDur');
+      if (t) t.innerText = fmtClock(v.currentTime);
+      if (d) d.innerText = fmtClock(v.duration);
+    }
+    function updatePlayBtn() {
+      const v = document.getElementById('playerVideo');
+      const btn = document.getElementById('playerPlayBtn');
+      if (btn) btn.innerText = v.paused ? '▶' : '⏸';
+    }
+    function togglePlay() {
+      const v = document.getElementById('playerVideo');
+      if (v.paused) v.play().catch(() => {}); else v.pause();
+    }
+    function skipPlayer(delta) {
+      const v = document.getElementById('playerVideo');
+      v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + delta));
+    }
+    function seekPlayer(ev) {
+      const v = document.getElementById('playerVideo');
+      const track = ev.currentTarget.getBoundingClientRect();
+      const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - track.left;
+      if (v.duration) v.currentTime = Math.max(0, Math.min(1, x / track.width)) * v.duration;
+    }
+    function playerNext() { stepPlayer(1); }
+    function playerPrev() { stepPlayer(-1); }
+    async function stepPlayer(dir) {
+      if (!playerQueue.length) return;
+      playerIndex = (playerIndex + dir + playerQueue.length) % playerQueue.length;
+      const item = playerQueue[playerIndex];
+      const engine = getEngine();
+      if (!engine?.getMediaStreamUrl) return;
+      try {
+        const res = await engine.getMediaStreamUrl({ id: item.id, isVideo: item.isVideo });
+        openPlayerWith(res.url, item.id, item.isVideo);
+      } catch (e) {
+        showToast('Cannot play', e?.message || 'Player failed to start', 'error');
+      }
+    }
+    function closePlayer() {
+      const v = document.getElementById('playerVideo');
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+      playerMeta = null;
+      document.getElementById('playerModal').classList.add('hidden');
+    }
+    function openExternalPlayer() {
+      if (!playerMeta) return;
+      const res = getEngine()?.openMedia?.({ id: playerMeta.id, isVideo: playerMeta.isVideo });
+      if (res && res.catch) res.catch(err => showToast('Cannot open', err?.message || 'No app found', 'error'));
+    }
+
     function shareVaultMedia(id, isVideo) {
       const engine = getEngine();
       const res = engine?.shareMedia?.({ id: id, isVideo: isVideo });
@@ -1617,6 +1735,15 @@
       initTheme();
       loadHistory();
       setupSheetDrag();
+
+      const pv = document.getElementById('playerVideo');
+      if (pv) {
+        pv.addEventListener('timeupdate', updatePlayerUi);
+        pv.addEventListener('durationchange', updatePlayerUi);
+        pv.addEventListener('play', updatePlayBtn);
+        pv.addEventListener('pause', updatePlayBtn);
+        pv.addEventListener('ended', () => playerNext());
+      }
 
       getInstalledVersionInfo().then(local => {
         const shortVer = 'v' + String(local.versionName).replace(/^v/i, '').split('.').slice(0, 2).join('.');

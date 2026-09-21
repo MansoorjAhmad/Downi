@@ -15,6 +15,13 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OmniEnginePlugin.class);
         super.onCreate(savedInstanceState);
 
+        // The https://localhost page loads Vault media from the loopback
+        // player server (http://127.0.0.1) — allow that mixed content pair.
+        try {
+            android.webkit.WebView webView = getBridge().getWebView();
+            webView.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        } catch (Exception ignored) {}
+
         // Pre-warm Chaquopy runtime asynchronously in background (0ms UI lag)
         new Thread(() -> {
             try {

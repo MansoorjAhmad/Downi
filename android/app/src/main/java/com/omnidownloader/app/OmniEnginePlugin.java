@@ -387,6 +387,21 @@ public class OmniEnginePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getMediaStreamUrl(PluginCall call) {
+        Double idVal = call.getDouble("id");
+        long id = idVal == null ? 0L : idVal.longValue();
+        boolean isVideo = call.getBoolean("isVideo", true);
+        try {
+            int port = MediaStreamServer.get(getContext()).start();
+            JSObject result = new JSObject();
+            result.put("url", "http://127.0.0.1:" + port + "/media/" + id + "?type=" + (isVideo ? "video" : "audio"));
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Could not start the in-app player service.", e);
+        }
+    }
+
+    @PluginMethod
     public void openMedia(PluginCall call) {
         Double idVal = call.getDouble("id");
         long id = idVal == null ? 0L : idVal.longValue();
