@@ -684,6 +684,13 @@
       <div id="inspectorQualitiesList" class="space-y-2 stagger">
         <div class="skel h-14"></div><div class="skel h-14"></div><div class="skel h-14"></div>
       </div>
+      <div id="playlistBanner" class="hidden card-accent card p-3 flex items-center justify-between gap-2 mt-3">
+        <div class="min-w-0">
+          <p class="text-[11px] font-extrabold text-white"><span id="playlistCount">0</span> videos in this playlist</p>
+          <p class="text-[9px] font-mono" style="color:var(--muted)">Batch mode — one tap grabs them all</p>
+        </div>
+        <button onclick="grabAllPlaylist()" class="btn-hero px-3 py-2 text-[10px] font-extrabold flex-shrink-0">Grab all</button>
+      </div>
       <p id="inspectorQualityNote" class="hidden text-[10px] mt-3 leading-relaxed" style="color:var(--muted)"></p>
 
       <button id="btnConfirmDownloadQuality" onclick="proceedSelectedQualityDownload()" class="btn-hero w-full py-4 mt-4 text-[13px] font-extrabold">
@@ -1128,6 +1135,41 @@
         noteEl.innerText = info.note ? 'ℹ️ ' + info.note : '';
         noteEl.classList.toggle('hidden', !info.note);
       }
+      checkPlaylist(currentInspectedUrl, currentInspectorPlatform);
+    }
+
+    // ---- Playlist batch mode ----
+    let playlistPending = [];
+    let playlistTotal = 0;
+
+    function checkPlaylist(url, platform) {
+      const banner = document.getElementById('playlistBanner');
+      if (!banner) return;
+      banner.classList.add('hidden');
+      playlistPending = [];
+      playlistTotal = 0;
+      if (platform !== 'youtube' || !/list=/.test(url)) return;
+      const engine = getEngine();
+      if (!engine?.playlistInspect) return;
+      engine.playlistInspect({ url: url }).then(res => {
+        if (!res || !res.items || res.items.length < 2) return;
+        playlistTotal = res.items.length;
+        const count = document.getElementById('playlistCount');
+        if (count) count.innerText = String(res.items.length);
+        banner.classList.remove('hidden');
+        window._playlistItems = res.items;
+      }).catch(() => {});
+    }
+
+    function grabAllPlaylist() {
+      const items = window._playlistItems || [];
+      if (!items.length) return;
+      const quality = selectedInspectorQuality === 'audio' ? 'audio' : 'best';
+      playlistPending = items.slice(1).map(i => ({ url: i.url, formatId: quality }));
+      playlistTotal = items.length;
+      closeInspector();
+      showToast('Playlist batch', 'Grabbing ' + items.length + ' videos — they queue one by one.', 'success');
+      initiateDownload(items[0].url, quality);
     }
 
     // Background scan when a clipboard link is detected — thumbnail preview on
@@ -1371,6 +1413,12 @@
       });
       saveHistory();
       updateLastGrabChip();
+      if (playlistPending.length > 0) {
+        const next = playlistPending.shift();
+        const done = playlistTotal - playlistPending.length;
+        showToast('Playlist batch', done + ' of ' + playlistTotal + ' done — next up…', 'info');
+        setTimeout(() => initiateDownload(next.url, next.formatId), 1000);
+      }
       setTimeout(() => { if (activeJobs.size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden'); }, 1200);
     }
 

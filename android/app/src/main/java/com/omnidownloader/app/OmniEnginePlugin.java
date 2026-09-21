@@ -360,6 +360,45 @@ public class OmniEnginePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void playlistInspect(PluginCall call) {
+        String url = call.getString("url", "").trim();
+        if (url.isEmpty()) {
+            call.reject("Paste a playlist link.");
+            return;
+        }
+        call.setKeepAlive(true);
+        miscExecutor.execute(() -> {
+            try {
+                if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
+                PyObject response = Python.getInstance().getModule("downloader").callAttr("playlist_inspect", url);
+                if (response == null || "None".equals(response.toString())) {
+                    call.reject("No playlist found on that link.");
+                    return;
+                }
+                JSONObject info = new JSONObject(response.toString());
+                JSObject result = new JSObject();
+                result.put("count", info.optInt("count", 0));
+                com.getcapacitor.JSArray list = new com.getcapacitor.JSArray();
+                JSONArray items = info.optJSONArray("items");
+                if (items != null) {
+                    for (int i = 0; i < items.length(); i++) {
+                        JSONObject obj = items.getJSONObject(i);
+                        JSObject item = new JSObject();
+                        item.put("url", obj.optString("url"));
+                        item.put("title", obj.optString("title", "Video"));
+                        item.put("duration", obj.optInt("duration", 0));
+                        list.put(item);
+                    }
+                }
+                result.put("items", list);
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject("Could not read that playlist.", error);
+            }
+        });
+    }
+
+    @PluginMethod
     public void getClipboardText(PluginCall call) {
         ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
         String text = "";

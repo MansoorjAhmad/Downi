@@ -120,6 +120,7 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
         'nopart': True,
         'socket_timeout': 30,
         'retries': 3,
+        'concurrent_fragment_downloads': 3,
     }
     video_path = None
     audio_path = None
@@ -438,6 +439,7 @@ def download(url, target_dir, format_id='best', progress_listener=None):
         'nopart': True,
         'socket_timeout': 30,
         'retries': 3,
+        'concurrent_fragment_downloads': 3,
         'progress_hooks': [_progress_hook] if progress_listener else [],
     }
 
@@ -481,6 +483,50 @@ def engine_info():
         'yt_dlp_version': yt_dlp.version.__version__,
         'python': platform.python_version(),
     })
+
+
+def playlist_inspect(url, max_items=25):
+    """Flat-extract a playlist's entries for the batch downloader.
+
+    Uses extract_flat so it is fast (no per-video network work). Returns None
+    when the URL is not a playlist or nothing was found.
+    """
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'extract_flat': 'in_playlist',
+        'playlist_items': '1:%d' % max_items,
+        'ca_certs': certifi.where(),
+        'socket_timeout': 30,
+        'retries': 2,
+    }
+    try:
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception:
+        return None
+    if not info:
+        return None
+    entries = info.get('entries') or []
+    items = []
+    for entry in entries[:max_items]:
+        if not entry:
+            continue
+        raw = entry.get('url') or entry.get('webpage_url') or ''
+        if raw and not raw.startswith('http'):
+            ie = (entry.get('ie_key') or info.get('extractor_key') or '').lower()
+            if 'youtube' in ie or 'youtu' in (info.get('webpage_url') or '').lower():
+                raw = 'https://www.youtube.com/watch?v=' + raw
+        if raw.startswith('http'):
+            items.append({
+                'url': raw,
+                'title': entry.get('title') or 'Video',
+                'duration': int(entry.get('duration') or 0),
+            })
+    if not items:
+        return None
+    return {'count': len(items), 'items': items}
 
 
 def diagnose():
