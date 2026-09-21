@@ -32,6 +32,9 @@ build/
 original-OmniDownloader.apk
 recovered-apk-ui.html
 
+# Stray test media downloaded during engine testing
+/*.mp4
+
 # OS and Editor files
 .DS_Store
 Thumbs.db

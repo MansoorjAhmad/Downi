@@ -1,8 +1,17 @@
-# DOWNI V2.6.3 ⚡
+# DOWNI V2.6.5 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
+
+---
+
+## 🆕 What's New in V2.6.5
+
+### In-App Player + Full Light Theme
+- **In-app Vault player** — play downloaded videos and audio right inside DOWNI: full-screen video, seek bar, ±10s, prev/next through the Vault, audio supported. "Open external" still one tap away.
+- **Complete light theme** — header, sheets, cards, skeletons, backdrops and the vortex all adapt; first launch follows your system preference (Settings → Appearance still overrides); Android status/navigation bars follow the theme.
+- **Banned feature removed for good** — the old Instagram session-harvesting login code is fully deleted from the codebase (see `READ_THIS_BEFORE_UPGRADE.md`, now tracked in the repo), and the dead Cloud Boost relay folder is gone.
 
 ---
 
