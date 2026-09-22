@@ -64,6 +64,24 @@ def _detect_platform(url):
     return 'other'
 
 
+# Height cap used by the split+merge fallback for each quality lane.
+# 'best' caps at 1080 on purpose: YouTube's H.264 (avc1) video-only streams only
+# exist up to 1080p, and H.264 + M4A is the one pair MediaMuxer can mux on every
+# supported device (VP9 needs API 29+, AV1 needs API 34+).
+_LANE_MAX_HEIGHTS = {
+    'best': 1080,
+    '1080': 1080,
+    '720': 720,
+    '480': 480,
+    '360': 360,
+}
+
+
+def _lane_height(format_id):
+    """Height cap for the merge fallback of a given quality lane."""
+    return _LANE_MAX_HEIGHTS.get(str(format_id).lower(), 1080)
+
+
 # ---------------------------------------------------------------------------
 # Split download (DASH video + audio) for on-device muxing — no ffmpeg needed
 # ---------------------------------------------------------------------------
@@ -88,14 +106,19 @@ def _scaled_hook(progress_listener, lo, hi):
             speed = d.get('speed') or 0.0
             eta = d.get('eta') or 0
             frac = (float(downloaded) / float(total)) if total > 0 else 0.0
-            pct = lo + (hi - lo) * min(1.0, frac)
+            # lo..hi are fractions of the whole job (0.0-0.7 for the video
+            # stream, 0.7-0.95 for the audio stream) but the Java listener wants
+            # a percentage, exactly like the combined-path hook below. Without
+            # the *100 the bar sat below 1% for the entire merge and then jumped
+            # straight to the Java 96/98/100 "merging"/"saving" steps.
+            pct = (lo + (hi - lo) * min(1.0, frac)) * 100.0
             try:
                 progress_listener.onProgress(float(pct), int(downloaded), int(total), float(speed or 0.0), int(eta or 0))
             except Exception:
                 pass
         elif status == 'finished':
             try:
-                progress_listener.onProgress(float(hi), 0, 0, 0.0, 0)
+                progress_listener.onProgress(float(hi) * 100.0, 0, 0, 0.0, 0)
             except Exception:
                 pass
 
@@ -361,7 +384,7 @@ def inspect(url):
 # Download (Exact rock-solid v1.3.6 core + progress listener)
 # ---------------------------------------------------------------------------
 
-def download(url, target_dir, format_id='best', progress_listener=None):
+def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
     os.makedirs(target_dir, exist_ok=True)
     clean = _clean_url(url)
     platform = _detect_platform(clean)
@@ -474,6 +497,36 @@ def download(url, target_dir, format_id='best', progress_listener=None):
     })
 
 
+def download(url, target_dir, format_id='best', progress_listener=None):
+    """Public entry point for a single download.
+
+    YouTube (and increasingly other sites) now serve adaptive-only streams: there
+    is no combined video+audio format any more, so every "best"/height selector
+    that asks for one misses and yt-dlp raises "Requested format is not
+    available". Those lanes now fall back to the SAME proven split+merge path
+    that true 1080p uses (H.264 video-only + M4A audio-only, muxed on-device by
+    Mp4Merger). No client spoofing, no forced UA, no new selectors.
+
+    Cancel semantics are preserved: a cancelled listener makes _download_split
+    return None, the original error is re-raised, and the Java layer stays
+    silent because job.cancelled is set.
+    """
+    try:
+        return _download_lanes(url, target_dir, format_id, progress_listener)
+    except Exception as exc:
+        if str(format_id).lower() in ('audio', 'mp3', 'm4a'):
+            raise
+        if 'requested format is not available' not in str(exc).lower():
+            raise
+        clean = _clean_url(url)
+        if _detect_platform(clean) != 'youtube':
+            raise
+        split = _download_split(clean, target_dir, _lane_height(format_id), progress_listener)
+        if split:
+            return json.dumps(split)
+        raise
+
+
 def engine_info():
     """Diagnostic info for the Settings screen."""
     import yt_dlp
@@ -561,8 +614,33 @@ def diagnose():
         except Exception:
             _head('https://www.instagram.com/')
 
+    def _youtube_downloadable():
+        """Probe what a download actually needs, not just metadata.
+
+        Metadata extraction alone cannot tell a working network from a broken
+        download path: YouTube now serves adaptive-only streams, so every
+        combined selector misses and the split+merge lane has to carry it
+        (v3.0.3). Engine health has to fail when neither can resolve, or it
+        reports green while every video lane is dead.
+        """
+        u = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+        combined = 'best[ext=mp4][vcodec!=none]/best[vcodec!=none]/best'
+        try:
+            with YoutubeDL({'quiet': True, 'no_warnings': True, 'skip_download': True,
+                            'ca_certs': certifi.where(), 'format': combined}) as ydl:
+                ydl.extract_info(u, download=False)
+            return
+        except Exception:
+            pass
+        for selector in ('bestvideo[ext=mp4][vcodec^=avc1][height<=1080]/bestvideo[height<=1080]',
+                         'bestaudio[ext=m4a]/bestaudio'):
+            opts = {'quiet': True, 'no_warnings': True, 'skip_download': True,
+                    'ca_certs': certifi.where(), 'format': selector}
+            with YoutubeDL(opts) as ydl:
+                ydl.extract_info(u, download=False)
+
     check('Internet reachability', lambda: _head('https://www.google.com/generate_204'))
-    check('YouTube extraction', lambda: _extract('https://www.youtube.com/watch?v=dQw4w9WgXcQ'))
+    check('YouTube extraction', _youtube_downloadable)
     check('Instagram extraction', _check_instagram)
     # Exercise the REAL TikTok path (the tikwm API the engine downloads through),
     # not a bare HEAD to the site root — tikwm 403s plain HEAD requests, which

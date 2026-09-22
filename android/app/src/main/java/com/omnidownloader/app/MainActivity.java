@@ -52,6 +52,10 @@ public class MainActivity extends BridgeActivity {
         }
         if (sharedUrl != null && !sharedUrl.trim().isEmpty()) {
             String payload = "{\"url\":" + org.json.JSONObject.quote(sharedUrl) + "}";
+            // Best-effort delivery: if the WebView is mid-load, the JS listener is
+            // not registered yet and the event is lost. Do NOT consume the intent
+            // here — the boot block's getSharedUrl() then picks the share up (and
+            // consumes it there). Consuming on the fly silently loses warm shares.
             getBridge().triggerJSEvent("onShareReceived", "window", payload);
         }
     }

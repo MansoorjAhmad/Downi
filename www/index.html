@@ -864,8 +864,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.0.2';
-    let installedVersionCode = 42;
+    let installedVersion = '3.0.3';
+    let installedVersionCode = 43;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -1011,7 +1011,7 @@
       const off = c - (Math.min(100, Math.max(0, pct || 0)) / 100) * c;
       return `<svg width="24" height="24" viewBox="0 0 24 24" class="flex-shrink-0" style="transform:rotate(-90deg)">
         <circle cx="12" cy="12" r="${r}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.5"/>
-        <circle cx="12" cy="12" r="${r}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" style="transition:stroke-dashoffset .3s ease"/>
+        <circle cx="12" cy="12" r="${r}" class="jringfg" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" style="transition:stroke-dashoffset .3s ease"/>
       </svg>`;
     }
 
@@ -1048,12 +1048,19 @@
       } catch (e) {}
     }
 
-    function handleGrabClipboardLink() {
-      if (detectedClipboardUrl) {
-        document.getElementById('inputManualUrl').value = detectedClipboardUrl;
-        document.getElementById('clipboardBanner')?.classList.add('hidden');
-        handleInspectAndOpenModal(detectedClipboardUrl);
-      }
+    async function handleGrabClipboardLink() {
+      // Read the clipboard fresh: the banner shows a cached snapshot from the
+      // last checkClipboard() run, and the user may have copied a new link
+      // since then (found on a real device — the banner grabbed a stale link).
+      let url = detectedClipboardUrl;
+      try {
+        url = (await grabClipboardUrl()) || url;
+      } catch (e) {}
+      if (!url) return;
+      detectedClipboardUrl = url;
+      document.getElementById('inputManualUrl').value = url;
+      document.getElementById('clipboardBanner')?.classList.add('hidden');
+      handleInspectAndOpenModal(url);
     }
 
     function handlePasteButton() {
@@ -1102,15 +1109,21 @@
         vortex.style.transform = 'scale(0.9)';
         setTimeout(() => { vortex.style.transform = ''; }, 180);
       }
-      let clean = extractUrl(document.getElementById('inputManualUrl').value.trim());
+      // Clipboard first — that is the Vortex's entire job ("grabs whatever link
+      // is on your clipboard — instantly"). The URL field is only the fallback:
+      // a DowniDrop share or an earlier paste can leave a stale link sitting
+      // there (found on a real device: a freshly copied link was ignored in
+      // favor of the old field text).
+      let clean = '';
+      try {
+        clean = await grabClipboardUrl();
+      } catch (e) {}
       if (!clean) {
-        try {
-          clean = await grabClipboardUrl();
-          if (clean) {
-            document.getElementById('inputManualUrl').value = clean;
-            handleUrlInputChanged();
-          }
-        } catch (e) {}
+        clean = extractUrl(document.getElementById('inputManualUrl').value.trim());
+      }
+      if (clean) {
+        document.getElementById('inputManualUrl').value = clean;
+        handleUrlInputChanged();
       }
       if (!clean) {
         shakeInput();
@@ -1122,14 +1135,20 @@
       initiateDownload(clean, 'best');
     }
 
-    function handleClipboardFastDl() {
-      if (detectedClipboardUrl) {
-        document.getElementById('inputManualUrl').value = detectedClipboardUrl;
-        document.getElementById('clipboardBanner')?.classList.add('hidden');
-        currentInspectedUrl = detectedClipboardUrl;
-        triggerHaptic('medium');
-        initiateDownload(detectedClipboardUrl, 'best');
-      }
+    async function handleClipboardFastDl() {
+      // Same as the Inspect button: a fresh clipboard read, cached value only as
+      // the fallback if the read fails.
+      let url = detectedClipboardUrl;
+      try {
+        url = (await grabClipboardUrl()) || url;
+      } catch (e) {}
+      if (!url) return;
+      detectedClipboardUrl = url;
+      document.getElementById('inputManualUrl').value = url;
+      document.getElementById('clipboardBanner')?.classList.add('hidden');
+      currentInspectedUrl = url;
+      triggerHaptic('medium');
+      initiateDownload(url, 'best');
     }
 
     // ================= Inspect =================
@@ -1280,8 +1299,19 @@
       // Warm start: MainActivity fires this event for ACTION_SEND.
       window.addEventListener('onShareReceived', (e) => {
         try {
-          const payload = (e && (e.detail || e.data)) || {};
-          const clean = payload.url ? extractUrl(payload.url) : '';
+          // Capacitor 6's native bridge does NOT build a CustomEvent: it makes a
+          // plain Event and copies the payload onto the event object itself
+          // (ev.url = ...), so e.detail and e.data are both undefined. Reading
+          // only e.detail/e.data silently dropped every warm share — the share
+          // arrived, nothing opened (found on a real device).
+          let payload = {};
+          const raw = (e && (e.detail || e.data)) || null;
+          if (raw) {
+            payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          } else if (e && e.url) {
+            payload = { url: e.url };
+          }
+          const clean = payload && payload.url ? extractUrl(payload.url) : '';
           if (clean) openSharedLink(clean);
         } catch (err) {}
       });
@@ -1529,6 +1559,33 @@
       }
     }
 
+    function jobCardHtml(id, job) {
+      const pct = Math.round(job.percent);
+      return `
+        <div class="card ${job.done ? '' : 'card-accent'} p-4 space-y-2.5 fade-in" data-job="${id}" data-done="${job.done ? 1 : 0}" ${job.done ? 'style="border-color:rgba(52,211,153,.4)"' : ''}>
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="jring">${job.done
+                ? '<span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 pop" style="background:rgba(52,211,153,.2);color:var(--ok)">✓</span>'
+                : ringSvg(job.percent)}</span>
+              <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} ${job.done ? '<span style="color:var(--ok)">Saved ✓</span>' : ''}</p>
+            </div>
+            <span class="jpct text-[12px] font-mono font-bold ${job.done ? '' : 'text-accent'} flex-shrink-0" ${job.done ? 'style="color:var(--ok)"' : ''}>${pct}%</span>
+          </div>
+          <div class="bar jbar ${job.done ? '' : 'live'}"><div style="width:${Math.max(2, job.percent)}%"></div></div>
+          <div class="flex items-center justify-between text-[10px] font-mono" style="color:var(--muted)">
+            <span class="jstatus">${escapeHtml(job.size || job.status)}</span>
+            <div class="flex items-center gap-3">
+              <span class="jspark">${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}</span>
+              <span class="jspeed text-emerald-300 font-bold">${job.speed ? escapeHtml(job.speed) : ''}</span>
+              <span class="jeta text-accent">${job.eta ? escapeHtml(job.eta) : ''}</span>
+              ${job.done ? '' : `<button onclick="cancelOneDownload('${id}')" class="font-sans font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderJobCards() {
       const wrap = document.getElementById('activeDownloadsWrap');
       const container = document.getElementById('activeDownloads');
@@ -1539,29 +1596,39 @@
         return;
       }
       wrap.classList.remove('hidden');
-      container.innerHTML = [...activeJobs.entries()].map(([id, job]) => `
-        <div class="card ${job.done ? '' : 'card-accent'} p-4 space-y-2.5 fade-in" ${job.done ? 'style="border-color:rgba(52,211,153,.4)"' : ''}>
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2 min-w-0">
-              ${job.done
-                ? '<span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 pop" style="background:rgba(52,211,153,.2);color:var(--ok)">✓</span>'
-                : ringSvg(job.percent)}
-              <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} ${job.done ? '<span style="color:var(--ok)">Saved ✓</span>' : ''}</p>
-            </div>
-            <span class="text-[12px] font-mono font-bold ${job.done ? '' : 'text-accent'} flex-shrink-0" ${job.done ? 'style="color:var(--ok)"' : ''}>${Math.round(job.percent)}%</span>
-          </div>
-          <div class="bar ${job.done ? '' : 'live'}"><div style="width:${Math.max(2, job.percent)}%"></div></div>
-          <div class="flex items-center justify-between text-[10px] font-mono" style="color:var(--muted)">
-            <span>${escapeHtml(job.size || job.status)}</span>
-            <div class="flex items-center gap-3">
-              ${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}
-              ${job.speed ? `<span class="text-emerald-300 font-bold">${escapeHtml(job.speed)}</span>` : ''}
-              ${job.eta ? `<span class="text-accent">${escapeHtml(job.eta)}</span>` : ''}
-              ${job.done ? '' : `<button onclick="cancelOneDownload('${id}')" class="font-sans font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
-            </div>
-          </div>
-        </div>
-      `).join('');
+
+      // Rebuild card frames only when the job set (or a job's done state) changes;
+      // plain progress ticks update the numbers in place. Rebuilding the whole DOM
+      // every ~250 ms replayed each card's fade-in and made the cards blink
+      // (found on-device: "the downloading thing is blinking").
+      const ids = [...activeJobs.keys()];
+      const frames = {};
+      container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
+      const needRebuild = ids.length !== Object.keys(frames).length || ids.some(id => {
+        const f = frames[id];
+        return !f || (f.dataset.done === '1') !== !!activeJobs.get(id).done;
+      });
+      if (needRebuild) {
+        container.innerHTML = ids.map(id => jobCardHtml(id, activeJobs.get(id))).join('');
+        container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
+      }
+
+      const RING_C = 2 * Math.PI * 9;
+      ids.forEach(id => {
+        const job = activeJobs.get(id);
+        const card = frames[id];
+        if (!card || job.done) return;
+        const pct = Math.round(job.percent);
+        const pctEl = card.querySelector('.jpct'); if (pctEl) pctEl.textContent = pct + '%';
+        const barEl = card.querySelector('.jbar > div'); if (barEl) barEl.style.width = Math.max(2, job.percent) + '%';
+        const ringEl = card.querySelector('.jringfg');
+        if (ringEl) ringEl.setAttribute('stroke-dashoffset', (RING_C - Math.min(100, Math.max(0, job.percent)) / 100 * RING_C).toFixed(1));
+        const stEl = card.querySelector('.jstatus'); if (stEl) stEl.textContent = job.size || job.status;
+        const spEl = card.querySelector('.jspeed'); if (spEl) spEl.textContent = job.speed || '';
+        const etaEl = card.querySelector('.jeta'); if (etaEl) etaEl.textContent = job.eta || '';
+        const sparkEl = card.querySelector('.jspark');
+        if (sparkEl) sparkEl.innerHTML = (job.speedSeries && job.speedSeries.length > 2) ? sparklineSvg(job.speedSeries) : '';
+      });
     }
 
     function cancelOneDownload(jobId) {
@@ -1948,11 +2015,36 @@
           engine.getThumbnail({ id: item.id, isVideo: item.isVideo }).then(res => {
             if (res && res.data) {
               vaultThumbCache[key] = res.data;
-              renderVaultGrid();
+              // Update just this card in place — a full renderVaultGrid() here
+              // replayed every card's entrance animation once per thumbnail, which
+              // made the whole Vault blink while thumbnails streamed in (found
+              // on-device: "why is it blinking?").
+              applyVaultThumb(key, res.data);
             }
           }).catch(() => {});
         }
       });
+    function applyVaultThumb(key, data) {
+      // In-place thumbnail update for one card (no grid re-render, so no blink and
+      // no lost scroll position). Finds the card by its data-vault-key.
+      const grid = document.getElementById('vaultMediaGrid');
+      if (!grid) return;
+      const card = Array.from(grid.querySelectorAll('[data-vault-key]'))
+        .find(el => el.dataset.vaultKey === key);
+      if (!card) return;
+      const holder = card.querySelector('.aspect-square');
+      if (!holder) return;
+      let img = holder.querySelector('img.vault-thumb');
+      if (!img) {
+        img = document.createElement('img');
+        img.className = 'vault-thumb w-full h-full object-cover fade-in';
+        holder.prepend(img);
+        const ph = holder.querySelector('.text-center');
+        if (ph) ph.remove();
+      }
+      img.src = 'data:image/jpeg;base64,' + data;
+    }
+
     }
 
     function vaultTap(encodedKey) {
@@ -2698,6 +2790,14 @@
       syncEngineRules();
       setTimeout(checkClipboard, 600);
       setTimeout(() => checkAppUpdates(true), 4000);
+
+      // The clipboard banner must reflect a fresh copy, not just boot-time
+      // state — re-check when the app regains focus (found on a real device:
+      // the banner kept showing a link copied before the app was last opened).
+      window.addEventListener('focus', () => checkClipboard());
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) checkClipboard();
+      });
 
       const engine = getEngine();
       if (engine?.getSharedUrl) {

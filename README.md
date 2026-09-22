@@ -1,8 +1,52 @@
-# DOWNI V3.0.2 ⚡
+# DOWNI V3.0.3 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
+
+---
+
+## 🆕 What's New in V3.0.3
+
+### YouTube works again — all of it
+
+YouTube stopped handing out combined video+audio files and now serves **adaptive-only** streams
+(video-only + audio-only). Every lane that asked for a combined file — the **Vortex** one-tap grab
+and the **720p / 480p / 360p** Inspector choices — died with *"That quality is not available for
+this link."* Only the 1080p lane kept working, because it already downloaded the two streams
+separately and muxed them on the device.
+
+- **Every video lane now falls back to that same proven split + on-device merge** — H.264
+  video-only + M4A audio-only, muxed by Android's own MediaMuxer. No ffmpeg on board, no client
+  spoofing, no forced User-Agent: the pinned options in `READ_THIS_BEFORE_UPGRADE.md` are untouched.
+- **`Best Available` and `720p` cap at the highest *muxable* stream** (H.264, up to 1080p), so the
+  result plays on every supported device. VP9 needs Android 10+, AV1 needs Android 14+.
+- **Merge progress is honest now** — the split lane reported a fraction (0.95) where the app
+  expected a percentage, so the bar crawled under 1% and then jumped. It now runs
+  0→70% (video) → 95% (audio) → *Merging…* → *Saving to gallery…*.
+- **Engine health can no longer lie** — Settings → *Run diagnostics* only checked that YouTube
+  *metadata* resolved, so it stayed green while every download lane was failing. It now probes
+  whether a real download lane can resolve, and says so honestly when it cannot.
+- **Audio-only grabs were never affected** — M4A streams still resolve directly.
+- **DowniDrop works from a running app too** — a shared link now opens the Inspector even when DOWNI
+  was already open. Capacitor's native bridge delivers the share payload as properties on a plain
+  `Event` (`event.url`), not in `event.detail`, so the old listener silently dropped every warm
+  share. Cold-start shares were fine; warm-start ones were dead until now.
+- **The Vortex and the "Link detected" banner honor the freshest copied link** — the Vortex used to
+  read the URL field before the clipboard (so a stale pasted link won over a fresh copy), and the
+  banner only read the clipboard once at app start. Both now read the clipboard fresh, and the
+  banner also re-checks whenever the app regains focus.
+- **The Vault lists your downloads again on Android 10+** — the media query read `RELATIVE_PATH`
+  without projecting it, so every row threw and was silently skipped. The Vault looked empty on any
+  modern phone even though the files were sitting in Movies/Music.
+- **The Vault grid and the live download cards no longer blink** — both rebuilt their entire DOM on
+  every thumbnail/progress tick, replaying each card's entrance animation (the "blinking"). Now
+  thumbnails and progress update in place, and cards only rebuild when one is added, removed, or
+  finishes.
+
+> Tester's note: a 60fps 4K demo (e.g. *Big Buck Bunny*) is a ~258 MB 1080p download through this
+> path. When you run `DEVICE_TEST.md`, pick **short** clips — otherwise you are measuring your
+> connection, not the engine.
 
 ---
 

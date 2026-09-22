@@ -449,8 +449,8 @@ public class DowniEnginePlugin extends Plugin {
             result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
-            result.put("versionName", "3.0.2");
-            result.put("versionCode", 42L);
+            result.put("versionName", "3.0.3");
+            result.put("versionCode", 43L);
             call.resolve(result);
         }
     }
@@ -623,13 +623,29 @@ public class DowniEnginePlugin extends Plugin {
     private JSONArray queryMedia(boolean video) {
         JSONArray items = new JSONArray();
         Uri collection = video ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-        String[] projection = {
-            MediaStore.MediaColumns._ID,
-            MediaStore.MediaColumns.DISPLAY_NAME,
-            MediaStore.MediaColumns.SIZE,
-            MediaStore.MediaColumns.DATE_MODIFIED,
-            MediaStore.MediaColumns.MIME_TYPE
-        };
+        // RELATIVE_PATH exists only on API 29+, and ONLY when it is part of the
+        // projection: getColumnIndexOrThrow() on a column that was not projected
+        // throws, and the old per-row catch silently skipped every item — so the
+        // Vault listed nothing on Android 10+ (found on-device: empty Vault).
+        String[] projection;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            projection = new String[]{
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+                MediaStore.MediaColumns.MIME_TYPE,
+                MediaStore.MediaColumns.RELATIVE_PATH,
+            };
+        } else {
+            projection = new String[]{
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+                MediaStore.MediaColumns.MIME_TYPE,
+            };
+        }
         try (Cursor cursor = getContext().getContentResolver().query(
                 collection, projection, null, null,
                 MediaStore.MediaColumns.DATE_MODIFIED + " DESC")) {

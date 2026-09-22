@@ -14,6 +14,10 @@ hardship check. Mark ✅ / ❌ per cell.
 
 For each ✅: file exists in Vault, size > 0 KB, plays with audio, correct format (.mp4/.m4a).
 
+> Tip: pick SHORT clips for the YouTube cells. YouTube now serves adaptive-only streams, so a 60fps
+> 4K demo (e.g. Big Buck Bunny) is a ~258 MB 1080p download — on a slow link that looks like a
+> stalled engine. A 19-second clip (e.g. "Me at the zoo") proves the same path in seconds.
+
 ## 2. v3.0 features matrix
 
 | Feature | Check |
