@@ -1,10 +1,27 @@
-# DOWNI V3.0.3 ⚡
+# DOWNI V3.0.4 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
 
 ---
+
+## 🆕 What's New in V3.0.4
+
+### The Vault is yours now — only yours
+
+The Vault used to list **every video and song on the phone** — camera clips, WhatsApp
+media, screen recordings — because its storage query asked Android for everything and
+DOWNI saved its downloads loose into the shared `Movies/` and `Music/` roots.
+
+- **DOWNI now keeps its own folders** — every new download lands in `Movies/DOWNI/` or
+  `Music/DOWNI/`, which also gives you a clean **DOWNI album** in your gallery app.
+- **The Vault shows only what DOWNI downloaded** — the query is scoped to the DOWNI
+  folders, plus the names the app has ever saved (so downloads from older versions
+  stay listed after the update — nothing disappears).
+- **The blinking is gone for good** — the Vault's entrance animation now plays exactly
+  once. Refreshes (a download finishing, a delete, re-opening the tab) update the grid
+  silently instead of replaying every card's animation.
 
 ## 🆕 What's New in V3.0.3
 

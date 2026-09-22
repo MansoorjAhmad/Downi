@@ -21,7 +21,7 @@ _Last updated: 2026-09-22 (after v3.0.2 / web v2.1.1). Read this first in a fres
 | Local path | `C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app` | `C:\Users\Manso\Documents\Codex\downi-web` |
 | Remote | github.com/MansoorjAhmad/Downi | github.com/MansoorjAhmad/downi-web |
 | Live channel | GitHub Releases → in-app updater | getdowni.vercel.app (auto-deploy on push) |
-| Current version | **v3.0.3** (versionCode 43), signed APK `DOWNI-v3.0.3.apk` | **v2.1.1** (`WEB_VERSION` in index.html) |
+| Current version | **v3.0.4** (versionCode 44), Vault scoped to DOWNI-only + blink-free | **v2.1.1** (`WEB_VERSION` in index.html) |
 | Tests | `.github/workflows/test.yml` (engine smoke + debug build, every push) | none yet (manual) |
 | Release trigger | `git push origin vX.Y.Z` → `.github/workflows/release.yml` builds + publishes | `git push origin main` → Vercel |
 
@@ -129,15 +129,17 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 - [ ] Play Store track: AAB build, targetSdk 35+, ProGuard rules, listing assets. (`/privacy` already exists on web for the listing requirement.)
 
 **P2 — candidate polish (not yet agreed with the user)**
-- [ ] Scope the Vault to DOWNI's own folder + tracked items (today the query lists *all* device media — a privacy smell).
+- [x] ~~Scope the Vault to DOWNI's own folder + tracked items~~ — **DONE in v3.0.4** (user-confirmed: Vault must show only DOWNI downloads).
 - [ ] Web: offline queue messaging, analytics (none today), per-release OG card refresh.
 - [ ] APK size budget: release ≈ 39.8 MB — inspect what the Chaquopy/yt-dlp payload could shave.
 - [ ] Unit tests for `Mp4Merger` interleave + `_safe_name` / `extractUrl` (CI covers only the smoke script today).
 
-**Open questions for the user**
-1. Play Store track — pursue (AAB + targetSdk bump + listing) or stay sideload-only?
-2. Any analytics at all? (Zero tracking today — a selling point, but no visibility.)
-3. Vault scoping (P2) — restrict to DOWNI downloads, or keep showing everything?
+**Owner decisions (locked 2026-09-22)**
+1. Play Store track — **rejected permanently**. Sideload-only via GitHub Releases.
+2. Analytics — **rejected permanently**. Zero tracking is a core value ("we provide value, we don't take their data").
+3. Vault scoping — **done in v3.0.4**: only DOWNI downloads, never the whole gallery.
+4. Brand/identity — **frozen**. No rebrands, no redesign pivots; polish the current experience only.
+5. Priority order — APK Vault perfection first (v3.0.4), then full focus on the web app (users reporting issues).
 
 ---
 

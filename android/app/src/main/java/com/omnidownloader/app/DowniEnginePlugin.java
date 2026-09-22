@@ -44,8 +44,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -646,16 +648,44 @@ public class DowniEnginePlugin extends Plugin {
                 MediaStore.MediaColumns.MIME_TYPE,
             };
         }
+        // The Vault shows ONLY what DOWNI downloaded — never the whole gallery.
+        java.util.HashSet<Long> seen = new java.util.HashSet<>();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            String rootDir = video ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_MUSIC;
+            // 1) Everything inside DOWNI's own folder (Movies/DOWNI/, Music/DOWNI/).
+            collectMedia(items, collection, projection,
+                MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?",
+                new String[]{rootDir + "/DOWNI/%"}, video, seen, false);
+            // 2) Legacy rows saved at the collection root (Movies/, Music/) before
+            //    DOWNI had its own folder — matched against names this app saved,
+            //    so existing users' downloads don't vanish after the update.
+            collectMedia(items, collection, projection,
+                MediaStore.MediaColumns.RELATIVE_PATH + " = ?",
+                new String[]{rootDir + "/"}, video, seen, true);
+        } else {
+            // Pre-Android 10 has no RELATIVE_PATH: tracked names only.
+            collectMedia(items, collection, projection, null, null, video, seen, true);
+        }
+        return items;
+    }
+
+    private void collectMedia(JSONArray items, Uri collection, String[] projection,
+                              String selection, String[] args, boolean video,
+                              java.util.Set<Long> seen, boolean trackedOnly) {
         try (Cursor cursor = getContext().getContentResolver().query(
-                collection, projection, null, null,
+                collection, projection, selection, args,
                 MediaStore.MediaColumns.DATE_MODIFIED + " DESC")) {
-            if (cursor == null) return items;
+            if (cursor == null) return;
             int count = 0;
             while (cursor.moveToNext() && count < 300) {
                 try {
+                    long id = cursor.getLong(0);
+                    if (seen.contains(id)) continue;
+                    String name = cursor.getString(1);
+                    if (trackedOnly && !isTrackedDowniName(name)) continue;
                     JSONObject item = new JSONObject();
-                    item.put("id", cursor.getLong(0));
-                    item.put("name", cursor.getString(1) != null ? cursor.getString(1) : "Media");
+                    item.put("id", id);
+                    item.put("name", name != null ? name : "Media");
                     item.put("size", cursor.getLong(2));
                     item.put("dateModified", cursor.getLong(3));
                     String mime = cursor.getString(4);
@@ -667,12 +697,26 @@ public class DowniEnginePlugin extends Plugin {
                     } else {
                         item.put("folder", video ? "Movies" : "Music");
                     }
+                    seen.add(id);
                     items.put(item);
                     count++;
                 } catch (Exception ignored) {}
             }
         } catch (Exception ignored) {}
-        return items;
+    }
+
+    /**
+     * True when displayName is one this app saved. nextGalleryName() records every
+     * base name ("title.ext", lowercased) in the downi_saved_names prefs; actual
+     * files may carry a " (N)" suffix before the extension, which we strip first.
+     */
+    private boolean isTrackedDowniName(String displayName) {
+        if (displayName == null) return false;
+        String name = displayName.toLowerCase(Locale.US)
+            .replaceAll("\\s*\\(\\d+\\)(?=\\.[^.]+$)", "");
+        if (getContext().getSharedPreferences("downi_saved_names", Context.MODE_PRIVATE).contains(name)) return true;
+        // Identity migration: names saved while the app was still OmniDownloader.
+        return getContext().getSharedPreferences("omni_saved_names", Context.MODE_PRIVATE).contains(name);
     }
 
     @PluginMethod
@@ -1237,7 +1281,10 @@ public class DowniEnginePlugin extends Plugin {
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
             values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES);
+                // DOWNI's own folders: Movies/DOWNI/ and Music/DOWNI/. This is what
+                // lets the Vault scope itself to OUR downloads only (and gives users
+                // a clean "DOWNI" album in their gallery app).
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, (mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES) + "/DOWNI/");
                 values.put(MediaStore.MediaColumns.IS_PENDING, 1);
             }
 

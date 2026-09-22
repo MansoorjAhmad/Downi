@@ -5,6 +5,7 @@ Full release notes + signed APKs live on
 
 | Version | Code | Highlights |
 |---|---|---|
+| **3.0.4** | 44 | Vault is now DOWNI-only: downloads save into their own `Movies/DOWNI/` + `Music/DOWNI/` folders (a clean DOWNI album in gallery apps), and the Vault query is scoped to those folders plus the app's tracked save names — the whole device gallery no longer leaks into the Vault, and existing users' downloads stay listed. Vault blinking eliminated for good: the entrance animation plays once, later refreshes update silently (no per-refresh animation replay) |
 | **3.0.3** | 43 | YouTube fixed for adaptive-only streams (every video lane falls back to the proven split + on-device MediaMuxer merge; merge progress now reports real percentages); warm-share Inspector fixed (Capacitor hands the payload on the event itself, not `e.detail` — DowniDrop works from a running app); the Vortex and clipboard banner honor the freshest copied link; Vault lists your downloads again on Android 10+ (RELATIVE_PATH was read but never projected); the Vault grid and the live download cards no longer blink (per-tick DOM rebuilds replayed the entrance animation); Engine health probes a downloadable lane instead of metadata only |
 | **3.0.2** | 42 | Fix dead text-selection share (PROCESS_TEXT), fix double Inspector on cold-share, Vault media permission fix (downloads always listed), VP9/AV1 1080p codec gates with honest errors, monochrome QS-tile icon, device test matrix doc |
 | **3.0.1** | 41 | Hardening release — B1–B20 fixed + identity cleanup (Omni → Downi) |
