@@ -21,7 +21,7 @@ _Last updated: 2026-09-22 (after v3.0.2 / web v2.1.1). Read this first in a fres
 | Local path | `C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app` | `C:\Users\Manso\Documents\Codex\downi-web` |
 | Remote | github.com/MansoorjAhmad/Downi | github.com/MansoorjAhmad/downi-web |
 | Live channel | GitHub Releases → in-app updater | getdowni.vercel.app (auto-deploy on push) |
-| Current version | **v3.0.2** (versionCode 42), signed APK `DOWNI-v3.0.2.apk` | **v2.1.1** (`WEB_VERSION` in index.html) |
+| Current version | **v3.0.3** (versionCode 43), signed APK `DOWNI-v3.0.3.apk` | **v2.1.1** (`WEB_VERSION` in index.html) |
 | Tests | `.github/workflows/test.yml` (engine smoke + debug build, every push) | none yet (manual) |
 | Release trigger | `git push origin vX.Y.Z` → `.github/workflows/release.yml` builds + publishes | `git push origin main` → Vercel |
 
