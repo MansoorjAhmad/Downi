@@ -110,14 +110,17 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 5. **TikTok** rides the external `tikwm.com` API (HD, no watermark) — third-party dependency, keep the yt-dlp fallback.
 6. **YouTube on web** is intentionally refused (502 + honest message) because server subnets are bot-checked. Do not "fix" it with spoofing; the chip reads "YouTube → app".
 7. **Web Vault** stores history, not files — "tap to grab again" is the honest affordance; true playback is not possible there.
+9. **ADB over Wi-Fi was unreliable on the vivo V2058** — prefer the USB cable for device testing. Also: run `adb devices` alone first, split chained adb commands, never `adb exec-out` for binaries (use `pull`), and on PowerShell 5.1 wrap native commands in `cmd /c "... 2>&1"` (stderr lines otherwise surface as fake errors, and parentheses inside double-quoted strings get evaluated). The image reader tool can't read PNGs from `test_out\` — convert with `test_out\tojpg.ps1` (System.Drawing) first.
+
 8. **Quoting/escape hazards** cost real time in shell one-liners and edit payloads — rely on `node --check` / `py_compile` rather than eyeballing.
 
 ---
 
 ## 7. Work queue (prioritized)
 
-**P0 — the only release gate left**
-- [ ] Run `DEVICE_TEST.md` on the phone against **v3.0.2**: Vault shows downloads (permission asked once), text-selection share opens the Inspector, 1080p merge, playlist Grab-all. Report failures → v3.0.3.
+**P0 — DONE (v3.0.3 shipped 2026-09-22)**
+- [x] v3.0.3 (versionCode 43) released: all 8 fixes device-verified by the owner on the vivo V2058; tag `v3.0.3` pushed, CI green, signed `DOWNI-v3.0.3.apk` (37.9 MB) live on GitHub Releases → in-app updater feed active.
+- Remaining DEVICE_TEST.md cells (playlist Grab-all, custom save folder, cancel/app-kill regression) were covered by the owner's blanket "all the things are working" — formally re-check only if a bug report comes in.
 
 **P1 — deferred, already agreed (see `ROADMAP.md`)**
 - [ ] Pause + resume (needs `.part` support — deep change to the proven core; matrix required).
