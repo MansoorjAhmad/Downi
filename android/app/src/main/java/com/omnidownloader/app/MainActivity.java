@@ -40,12 +40,19 @@ public class MainActivity extends BridgeActivity {
     public void onNewIntent(android.content.Intent intent) {
         setIntent(intent);
         super.onNewIntent(intent);
-        if (android.content.Intent.ACTION_SEND.equals(intent.getAction())) {
-            String sharedUrl = intent.getStringExtra(android.content.Intent.EXTRA_TEXT);
-            if (sharedUrl != null && !sharedUrl.trim().isEmpty()) {
-                String payload = "{\"url\":" + org.json.JSONObject.quote(sharedUrl) + "}";
-                getBridge().triggerJSEvent("onShareReceived", "window", payload);
-            }
+        String action = intent.getAction();
+        String sharedUrl = null;
+        if (android.content.Intent.ACTION_SEND.equals(action)) {
+            sharedUrl = intent.getStringExtra(android.content.Intent.EXTRA_TEXT);
+        } else if (android.content.Intent.ACTION_PROCESS_TEXT.equals(action)) {
+            // Text-selection share (overflow menu → DOWNI). API 23+.
+            CharSequence value = intent.getCharSequenceExtra(android.content.Intent.EXTRA_PROCESS_TEXT);
+            if (value == null) value = intent.getCharSequenceExtra(android.content.Intent.EXTRA_PROCESS_TEXT_READONLY);
+            if (value != null) sharedUrl = value.toString();
+        }
+        if (sharedUrl != null && !sharedUrl.trim().isEmpty()) {
+            String payload = "{\"url\":" + org.json.JSONObject.quote(sharedUrl) + "}";
+            getBridge().triggerJSEvent("onShareReceived", "window", payload);
         }
     }
 }

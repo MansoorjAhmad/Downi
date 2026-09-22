@@ -57,7 +57,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * and cancel, true in-app updater, engine health check, Media Vault.
  */
 @CapacitorPlugin(name = "DowniEngine", permissions = {
-    @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS })
+    @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS }),
+    @Permission(alias = "mediaModern", strings = { Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO }),
+    @Permission(alias = "mediaLegacy", strings = { Manifest.permission.READ_EXTERNAL_STORAGE })
 })
 public class DowniEnginePlugin extends Plugin {
     private static final int MAX_ACTIVE = 3;
@@ -447,8 +449,8 @@ public class DowniEnginePlugin extends Plugin {
             result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
-            result.put("versionName", "3.0.0");
-            result.put("versionCode", 40L);
+            result.put("versionName", "3.0.2");
+            result.put("versionCode", 42L);
             call.resolve(result);
         }
     }
@@ -1110,11 +1112,44 @@ public class DowniEnginePlugin extends Plugin {
         JSObject result = new JSObject();
         android.content.Intent intent = getActivity().getIntent();
         String shared = "";
-        if (intent != null && android.content.Intent.ACTION_SEND.equals(intent.getAction())) {
-            String value = intent.getStringExtra(android.content.Intent.EXTRA_TEXT);
-            if (value != null) shared = value;
+        if (intent != null) {
+            String action = intent.getAction();
+            if (android.content.Intent.ACTION_SEND.equals(action)) {
+                String value = intent.getStringExtra(android.content.Intent.EXTRA_TEXT);
+                if (value != null) shared = value;
+            } else if (android.content.Intent.ACTION_PROCESS_TEXT.equals(action)) {
+                // Text-selection share (overflow menu → DOWNI). API 23+.
+                CharSequence value = intent.getCharSequenceExtra(android.content.Intent.EXTRA_PROCESS_TEXT);
+                if (value == null) value = intent.getCharSequenceExtra(android.content.Intent.EXTRA_PROCESS_TEXT_READONLY);
+                if (value != null) shared = value.toString();
+            }
+            if (!shared.isEmpty()) {
+                // Consume the share so a second read (boot block + handleSharedIntent)
+                // never re-opens the Inspector for the same intent.
+                intent.setAction("__downi_consumed__");
+            }
         }
         result.put("url", shared);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void requestMediaPermission(PluginCall call) {
+        String alias = Build.VERSION.SDK_INT >= 33 ? "mediaModern" : "mediaLegacy";
+        if (getPermissionState(alias) == PermissionState.GRANTED) {
+            JSObject result = new JSObject();
+            result.put("granted", true);
+            call.resolve(result);
+            return;
+        }
+        requestPermissionForAlias(alias, call, "mediaPermissionCallback");
+    }
+
+    @PermissionCallback
+    private void mediaPermissionCallback(PluginCall call) {
+        String alias = Build.VERSION.SDK_INT >= 33 ? "mediaModern" : "mediaLegacy";
+        JSObject result = new JSObject();
+        result.put("granted", getPermissionState(alias) == PermissionState.GRANTED);
         call.resolve(result);
     }
 

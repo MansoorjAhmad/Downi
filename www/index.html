@@ -864,8 +864,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.0.1';
-    let installedVersionCode = 41;
+    let installedVersion = '3.0.2';
+    let installedVersionCode = 42;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -1723,9 +1723,18 @@
     // ================= Vault =================
     function setVaultFilter(filter) { vaultFilter = filter; renderVaultGrid(); }
 
-    function refreshVault() {
+    async function refreshVault() {
       const grid = document.getElementById('vaultMediaGrid');
       const engine = getEngine();
+      // Vault lists device media → needs the runtime media permission (Android 13+
+      // READ_MEDIA_*, older READ_EXTERNAL_STORAGE). Ask only when the user is
+      // actually looking at the Vault, never at launch or in the background.
+      if (engine?.requestMediaPermission && currentTab === 'vault') {
+        try {
+          const perm = await engine.requestMediaPermission();
+          if (perm && perm.granted === false) showToast('Vault permission', 'Allow media access so DOWNI can list your downloads.', 'info');
+        } catch (e) {}
+      }
       if (engine?.listMedia) {
         if (grid && vaultItems.length === 0) grid.innerHTML = '<div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div>';
         Promise.all([

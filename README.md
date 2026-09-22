@@ -1,8 +1,19 @@
-# DOWNI V3.0.1 ⚡
+# DOWNI V3.0.2 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
+
+---
+
+## 🆕 What's New in V3.0.2
+
+### Fixes + gate-keeping
+- **Text-selection share works** — "DOWNI" in Android's text menu opens the Inspector (PROCESS_TEXT was wired in the manifest but never handled).
+- **No more double Inspector** — cold-start shares are consumed once.
+- **Vault always lists your downloads** — the app now asks for media access when you open the Vault (Android 13+ requires it in code, not just the manifest).
+- **Honest 1080p on every video** — VP9/AV1 ladders merge on Android 10+/14+; older phones get a clear "try 720p" message instead of a broken file.
+- **Device test matrix is now a repo file** (`DEVICE_TEST.md`) — The Law's gate is executable, checkboxes included.
 
 ---
 

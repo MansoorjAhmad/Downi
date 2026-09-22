@@ -4,6 +4,7 @@ import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
+import android.os.Build;
 
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -42,6 +43,14 @@ public final class Mp4Merger {
 
             MediaFormat videoFormat = videoExtractor.getTrackFormat(videoTrack);
             MediaFormat audioFormat = audioExtractor.getTrackFormat(audioTrack);
+
+            // Container support gates: VP8/VP9 in MP4 needs API 29+, AV1 needs API 34+.
+            // Fail fast with the honest error instead of aborting mid-merge.
+            String vMime = videoFormat.getString(MediaFormat.KEY_MIME);
+            if (vMime != null) {
+                if (vMime.startsWith("video/x-vnd.on2") && Build.VERSION.SDK_INT < 29) return false;
+                if (vMime.startsWith("video/av01") && Build.VERSION.SDK_INT < 34) return false;
+            }
 
             muxer = new MediaMuxer(outFile.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
             int videoOut = muxer.addTrack(videoFormat);
