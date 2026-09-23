@@ -474,8 +474,8 @@ public class DowniEnginePlugin extends Plugin {
             // (the hardcoded "3.0.3" here used to misreport every newer release).
             // BuildConfig generation is disabled in this build, so keep these two
             // literals in step with versionName/versionCode in app/build.gradle.
-            result.put("versionName", "3.1.3");
-            result.put("versionCode", 48L);
+            result.put("versionName", "3.1.4");
+            result.put("versionCode", 49L);
             call.resolve(result);
         }
     }

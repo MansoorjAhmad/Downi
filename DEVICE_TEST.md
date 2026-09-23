@@ -59,3 +59,27 @@ For each ✅: file exists in Vault, size > 0 KB, plays with audio, correct forma
 
 Device: vivo V2058, USB only.
 
+## 4. v3.1.4 matrix (release gate for the v3.1.1–3.1.3 fold-in — MANDATORY)
+
+v3.1.4 carries no new behavior of its own — this matrix exists to prove the three folded-in
+versions survive contact with the real phone **together**, and to capture the DowniDrop
+evidence block on camera.
+
+| # | Test | Check |
+|---|---|---|
+| 1 | **Cold-start DowniDrop** — force-stop DOWNI, share a TikTok link | ☐ toast appears, app does NOT yank open (v3.1.1 task-riding), progress notification, file lands in Vault |
+| 2 | Warm share (app open in background) | ☐ same result, no Inspector |
+| 3 | **Cancel from the progress notification** | ☐ stops cleanly, NO "couldn't grab that" error flash, no file in Vault, notification clears |
+| 4 | **Queue-history bridge** — fully kill the app after 1–2, relaunch | ☐ every background grab appears in Queue history (not just the Vault), correct order, no duplicates |
+| 5 | Quality memory headless — pick 720p for TikTok in Inspector once, then cold instant-share | ☐ grabs at 720p |
+| 6 | Custom save folder set → instant DowniDrop share | ☐ file lands in the custom folder AND appears in Vault |
+| 7 | **Rapid 5-share** — five TikTok links back-to-back | ☐ all 5 complete serially; 5 distinct completion notifications (no overwrite); 5 Queue-history rows in order — none lost, none duplicated (**B8 FIFO evidence**) |
+| 8 | Segmented speed sanity — one large TikTok (≥40 MB if findable) | ☐ visibly faster than the v3.1.0 single-stream era; file plays start-to-finish (v3.1.2/3.1.3 path) |
+| 9 | YouTube chunked lane — short clip, Inspector → 720p | ☐ plays with sound |
+| 10 | Instagram public reel → Vortex 1-tap | ☐ saves and plays |
+| 11 | **Updater (last — after the Release is live)** | ☐ Settings → Check Updates finds v3.1.4, downloads, installs in place |
+
+Plus the §3 regression sweep: cancel mid-download (in-app + DowniDrop), airplane-mode honesty, 3-parallel + queued 4th.
+
+> Sign and date here when green: ______________
+
