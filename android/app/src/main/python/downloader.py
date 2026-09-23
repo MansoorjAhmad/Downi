@@ -11,6 +11,7 @@ import time
 import urllib.parse
 import urllib.request
 import certifi
+from concurrent.futures import ThreadPoolExecutor
 from yt_dlp import YoutubeDL
 
 
@@ -144,6 +145,9 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
         'socket_timeout': 30,
         'retries': 3,
         'concurrent_fragment_downloads': 3,
+        # Chunked HTTP: yt-dlp opens a new ranged connection per 10 MB instead
+        # of riding one throttled socket for the whole file (v3.1.2 speed).
+        'http_chunk_size': 10 * 1024 * 1024,
     }
     video_path = None
     audio_path = None
@@ -151,8 +155,8 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
         video_opts = dict(base)
         video_opts['format'] = (
             'bestvideo[ext=mp4][vcodec^=avc1][height<=%d]/'
-            'bestvideo[ext=mp4][vcodec^=avc1]/'
-            'bestvideo[height<=%d]' % (max_height, max_height)
+            'bestvideo[ext=mp4][vcodec^=avc1][height<=%d]/'
+            'bestvideo[height<=%d]' % (max_height, max_height, max_height)
         )
         video_opts['progress_hooks'] = [_scaled_hook(progress_listener, 0.0, 0.7)] if progress_listener else []
         with YoutubeDL(video_opts) as ydl:
@@ -173,14 +177,21 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
             except OSError:
                 pass
             return None
-    except Exception:
+    except Exception as exc:
         for leftover in (video_path, audio_path):
             if leftover:
                 try:
                     os.remove(leftover)
                 except OSError:
                     pass
-        return None
+        # Only "Requested format is not available" means this video genuinely has
+        # no separate streams — that stays a soft None so callers can say so.
+        # Everything else (cancel, network drops, throttling) must propagate with
+        # its REAL message; swallowing it here used to misreport timeouts as
+        # "no separate 1080p stream".
+        if 'requested format is not available' in str(exc).lower():
+            return None
+        raise
 
     return {
         'merge': True,
@@ -188,7 +199,7 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
         'audio_path': audio_path,
         'title': _safe_name((v_info.get('title') if v_info else '') or 'video'),
         'ext': 'mp4',
-        'platform': 'youtube',
+        'platform': _detect_platform(url),
     }
 
 
@@ -205,17 +216,121 @@ def _fetch_tiktok_data(url):
         'web': 1,
         'hd': 1
     }).encode('utf-8')
-    req = urllib.request.Request(
-        api,
-        data=data,
-        headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'Referer': 'https://www.tikwm.com/'
-        }
-    )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read().decode('utf-8', errors='ignore'))
+
+    # tikwm rate-limits burst traffic (several rapid shares in a row) with a
+    # non-zero code or a dropped connection. Retry up to 3x with a short
+    # backoff before letting the caller fail — this alone fixes most of the
+    # "first grab works, second grab dies" reports.
+    payload = None
+    last_error = None
+    for attempt in range(3):
+        req = urllib.request.Request(
+            api,
+            data=data,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Referer': 'https://www.tikwm.com/'
+            }
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                payload = json.loads(resp.read().decode('utf-8', errors='ignore'))
+            if payload.get('code') == 0:
+                return payload
+            last_error = payload.get('msg') or 'TikTok API busy'
+        except Exception as exc:
+            last_error = str(exc)
+        if attempt < 2:
+            time.sleep(1.0 + attempt)
+
+    if payload is not None:
+        return payload
+    raise RuntimeError('TikTok throttled that grab. Wait a few seconds, then retry. (%s)' % last_error)
+
+
+def _download_segmented(stream_url, target_path, headers, total, progress_listener=None, segments=4):
+    """Download one file over parallel HTTP range connections.
+
+    When a CDN throttles PER CONNECTION, parallel segments multiply real
+    speed. Each worker resumes its own byte range on a dropped connection
+    (up to 2 retries) and a user cancel stops every worker at the next chunk.
+    `stream_url` should already be the final post-redirect URL so workers
+    don't each pay a redirect round trip.
+    """
+    SEGMENTS = max(1, int(segments))
+    span = total // SEGMENTS
+    bounds = []
+    for i in range(SEGMENTS):
+        seg_start = i * span
+        seg_end = total - 1 if i == SEGMENTS - 1 else (seg_start + span - 1)
+        bounds.append((seg_start, seg_end))
+
+    downloaded = [0] * SEGMENTS
+    started = time.time()
+
+    # Pre-allocate so workers can seek+write disjoint ranges concurrently.
+    with open(target_path, 'wb') as f:
+        f.truncate(total)
+
+    def _worker(idx, seg_start, seg_end):
+        expected = seg_end - seg_start + 1
+        got = 0
+        attempt = 0
+        while True:
+            try:
+                h = dict(headers)
+                h['Range'] = 'bytes=%d-%d' % (seg_start + got, seg_end)
+                req = urllib.request.Request(stream_url, headers=h)
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    with open(target_path, 'r+b') as f:
+                        f.seek(seg_start + got)
+                        while True:
+                            if progress_listener and hasattr(progress_listener, 'isCancelled') and progress_listener.isCancelled():
+                                raise RuntimeError("Download cancelled.")
+                            chunk = resp.read(256 * 1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            got += len(chunk)
+                            downloaded[idx] = got
+                if got < expected:
+                    raise IOError('Segment ended early (%d/%d bytes)' % (got, expected))
+                return
+            except RuntimeError:
+                raise
+            except Exception:
+                attempt += 1
+                if attempt > 2:
+                    raise
+                time.sleep(1.0)
+
+    with ThreadPoolExecutor(max_workers=SEGMENTS) as pool:
+        futures = [pool.submit(_worker, i, s, e) for i, (s, e) in enumerate(bounds)]
+        last_cb = 0.0
+        while not all(f.done() for f in futures):
+            now = time.time()
+            if progress_listener and now - last_cb > 0.25:
+                last_cb = now
+                done_bytes = sum(downloaded)
+                elapsed = max(0.001, now - started)
+                speed = done_bytes / elapsed
+                eta = int((total - done_bytes) / speed) if speed > 0 else 0
+                pct = done_bytes / total * 100.0
+                try:
+                    progress_listener.onProgress(float(min(99.0, pct)), int(done_bytes), int(total), float(speed), int(eta))
+                except Exception:
+                    pass
+            time.sleep(0.2)
+        # Re-raise the first worker failure (cancel included).
+        for f in futures:
+            f.result()
+
+    if progress_listener:
+        try:
+            progress_listener.onProgress(100.0, total, total, 0.0, 0)
+        except Exception:
+            pass
 
 
 def _download_stream_direct(stream_url, target_path, referer='', progress_listener=None):
@@ -225,7 +340,51 @@ def _download_stream_direct(stream_url, target_path, referer='', progress_listen
     }
     if referer:
         headers['Referer'] = referer
-    req = urllib.request.Request(stream_url, headers=headers)
+
+    # Probe ONCE: a 1-byte range request that (a) follows tikwm's 302 to the
+    # real TikTok CDN URL and (b) reveals the true file size. Every segment
+    # below then talks straight to the CDN — v3.1.2 made each of the 4
+    # segments re-pay the redirect + TLS handshake, which burned ~0.5-1s per
+    # segment before any bytes moved.
+    total = 0
+    final_url = stream_url
+    try:
+        probe_headers = dict(headers)
+        probe_headers['Range'] = 'bytes=0-0'
+        probe = urllib.request.Request(stream_url, headers=probe_headers)
+        with urllib.request.urlopen(probe, timeout=20) as resp:
+            final_url = resp.geturl() or stream_url
+            if getattr(resp, 'status', 200) == 206:
+                content_range = resp.headers.get('Content-Range') or ''
+                if '/' in content_range:
+                    total = int(content_range.split('/')[-1])
+    except Exception:
+        total = 0
+
+    if total > 512 * 1024:
+        # Size-adaptive parallelism: tiny clips barely benefit from many
+        # connections (handshake cost dominates), big files want more pipes
+        # to outrun per-connection CDN throttling.
+        if total < 8 * 1024 * 1024:
+            segments = 2
+        elif total < 40 * 1024 * 1024:
+            segments = 4
+        else:
+            segments = 6
+        try:
+            _download_segmented(final_url, target_path, headers, total, progress_listener, segments)
+            return
+        except RuntimeError:
+            raise  # user cancel — never fall back or retry
+        except Exception:
+            try:
+                if os.path.exists(target_path):
+                    os.remove(target_path)
+            except OSError:
+                pass
+            total = 0  # fall through to single-stream
+
+    req = urllib.request.Request(final_url, headers=headers)
     with urllib.request.urlopen(req, timeout=35) as resp:
         total = int(resp.headers.get('Content-Length') or 0)
         downloaded = 0
@@ -273,8 +432,33 @@ def _download_tiktok_direct(url, target_dir, is_audio=False, progress_listener=N
     ext = 'mp3' if is_audio else 'mp4'
     filename = f"{title[:50]}-{item.get('id', 'video')}.{ext}"
     out_path = os.path.join(target_dir, filename)
-    _download_stream_direct(stream_url, out_path, 'https://www.tiktok.com/', progress_listener)
+    # The tikwm CDN occasionally drops a stream mid-read; retry once with a
+    # fresh connection (deleting the partial file) before giving up. A user
+    # cancel ("Download cancelled.") is a RuntimeError and passes straight
+    # through — retries must never resurrect a cancelled job.
+    for attempt in range(2):
+        try:
+            _download_stream_direct(stream_url, out_path, 'https://www.tiktok.com/', progress_listener)
+            break
+        except RuntimeError:
+            raise
+        except Exception:
+            try:
+                if os.path.exists(out_path):
+                    os.remove(out_path)
+            except OSError:
+                pass
+            if attempt == 1:
+                raise
+            time.sleep(1.5)
     filesize = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+    if filesize <= 0:
+        try:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        except OSError:
+            pass
+        raise RuntimeError('TikTok returned an empty media stream. Wait a few seconds, then retry.')
     return {
         'path': out_path,
         'title': title,
@@ -313,8 +497,18 @@ def inspect(url):
                         {'id': 'audio', 'label': 'Audio Track (MP3)', 'ext': 'mp3', 'badge': 'MP3'}
                     ]
                 })
-        except Exception:
-            pass
+            # tikwm answered but refused the lookup (throttled / unknown post) —
+            # same fast-fail, never the slow yt-dlp crawl.
+            return json.dumps({
+                'error': 'TikTok is throttling lookups right now. Wait a few seconds, then retry.'
+            })
+        except Exception as exc:
+            # No silent fall-through to the yt-dlp lane for TikTok inspects
+            # either: it crawls against the bot wall for minutes and the user
+            # just stares at "Scanning qualities…". Fail fast and honestly (B9).
+            return json.dumps({
+                'error': 'TikTok is throttling lookups right now. Wait a few seconds, then retry.'
+            })
 
     # 2) Standard yt-dlp extraction with certifi (identical to v1.3.6)
     options = {
@@ -356,8 +550,8 @@ def inspect(url):
             {'id': '360', 'label': '360p Data Saver', 'ext': 'mp4', 'badge': '360p'},
             {'id': 'audio', 'label': 'Audio Track (MP3 / M4A)', 'ext': 'mp3', 'badge': 'MP3'},
         ]
-        note = ('YouTube serves 1080p as separate video and audio — DOWNI merges them on your '
-                'device. Pick "Best" for the fastest grab, or 1080p Full HD for maximum quality.')
+        note = ('YouTube serves HD as separate video and audio — DOWNI merges them on your '
+                'device, so HD grabs take a little longer. 360p Data Saver is the quick single-file grab.')
     else:
         formats = [
             {'id': 'best', 'label': 'Best Available Quality (HD)', 'ext': 'mp4', 'badge': 'HD'},
@@ -400,26 +594,42 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
             return json.dumps(res)
         except RuntimeError:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            # No silent fall-through to the yt-dlp lane for TikTok: that path
+            # crawls for minutes against TikTok's bot wall and usually dies
+            # with boilerplate anyway. After the tikwm retries above, fail
+            # fast with an honest, actionable message instead.
+            raise RuntimeError(
+                'TikTok throttled that grab. Wait a few seconds, then retry. (%s)' % exc
+            )
 
-    # 2) Split + on-device merge — true 1080p where only DASH streams exist
-    #    (video and audio arrive separately and are muxed natively in Java).
-    if platform == 'youtube' and str(format_id) == '1080':
-        split = _download_split(clean, target_dir, 1080, progress_listener)
+    # 2) YouTube HD lanes: split + on-device merge. YouTube only ever serves ONE
+    #    combined stream with audio — format 18 at 360p — so a combined selector
+    #    for best/720/480 resolves it and silently hands the user 360p no matter
+    #    what they picked (verified live against yt-dlp 2026.08.19 — A1). Every
+    #    lane above 360p therefore goes straight to the same split+merge path
+    #    the 1080 lane has used since v3.0.3, capped at the lane's height. The
+    #    360 lane keeps the single-file combined grab: it IS the cheap one.
+    if platform == 'youtube' and not is_audio and str(format_id) != '360':
+        split = _download_split(clean, target_dir, _lane_height(format_id), progress_listener)
         if split:
             return json.dumps(split)
-        raise RuntimeError('This video has no separate 1080p stream — pick 720p HD or Best Available.')
+        raise RuntimeError('This video has no separate streams to merge — pick 360p Data Saver or try again.')
 
-    # 3) Universal yt-dlp download with proven v1.3.6 format cascading
+    # 3) Universal yt-dlp download — every lane demands a COMBINED stream
+    #    (video+audio in one file). The old trailing '/best' could silently match
+    #    a video-only format, which is how YouTube 720p/480p/best shipped muted
+    #    360p-or-worse files and Reddit/X delivered silent videos (A1/B10). With
+    #    no bare fallback, adaptive-only sites raise "Requested format is not
+    #    available" here and download() routes them to split+merge instead.
     video_formats = {
-        '1080': 'best[height<=1080][ext=mp4][vcodec!=none]/best[height<=1080][vcodec!=none]/best',
-        '720': 'best[height<=720][ext=mp4][vcodec!=none]/best[height<=720][vcodec!=none]/best',
-        '480': 'best[height<=480][ext=mp4][vcodec!=none]/best[height<=480][vcodec!=none]/best',
-        '360': 'best[height<=360][ext=mp4][vcodec!=none]/best[height<=360][vcodec!=none]/best',
-        'best': 'best[ext=mp4][vcodec!=none]/best[vcodec!=none]/best',
+        '1080': 'best[height<=1080][ext=mp4][vcodec!=none][acodec!=none]/best[height<=1080][vcodec!=none][acodec!=none]',
+        '720': 'best[height<=720][ext=mp4][vcodec!=none][acodec!=none]/best[height<=720][vcodec!=none][acodec!=none]',
+        '480': 'best[height<=480][ext=mp4][vcodec!=none][acodec!=none]/best[height<=480][vcodec!=none][acodec!=none]',
+        '360': 'best[height<=360][ext=mp4][vcodec!=none][acodec!=none]/best[height<=360][vcodec!=none][acodec!=none]',
+        'best': 'best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]',
     }
-    fmt = 'bestaudio[ext=m4a]/bestaudio/best' if is_audio else video_formats.get(str(format_id), 'best[ext=mp4][vcodec!=none]/best[vcodec!=none]/best')
+    fmt = 'bestaudio[ext=m4a]/bestaudio/best' if is_audio else video_formats.get(str(format_id), video_formats['best'])
 
     last_callback_time = [0.0]
 
@@ -463,6 +673,7 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
         'socket_timeout': 30,
         'retries': 3,
         'concurrent_fragment_downloads': 3,
+        'http_chunk_size': 10 * 1024 * 1024,  # v3.1.2 speed: ranged 10 MB chunks
         'progress_hooks': [_progress_hook] if progress_listener else [],
     }
 
@@ -500,16 +711,17 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
 def download(url, target_dir, format_id='best', progress_listener=None):
     """Public entry point for a single download.
 
-    YouTube (and increasingly other sites) now serve adaptive-only streams: there
-    is no combined video+audio format any more, so every "best"/height selector
-    that asks for one misses and yt-dlp raises "Requested format is not
-    available". Those lanes now fall back to the SAME proven split+merge path
-    that true 1080p uses (H.264 video-only + M4A audio-only, muxed on-device by
-    Mp4Merger). No client spoofing, no forced UA, no new selectors.
+    Every video lane selector demands a combined video+audio stream. YouTube
+    (and increasingly other sites — Reddit, X) serve adaptive-only streams, so
+    those selectors miss and yt-dlp raises "Requested format is not available".
+    Any lane on ANY platform then falls back to the SAME proven split+merge
+    path that true 1080p uses (H.264 video-only + M4A audio-only, muxed
+    on-device by Mp4Merger), capped at the lane's height. No client spoofing,
+    no forced UA, no new selectors.
 
     Cancel semantics are preserved: a cancelled listener makes _download_split
-    return None, the original error is re-raised, and the Java layer stays
-    silent because job.cancelled is set.
+    return None, an error is raised, and the Java layer stays silent because
+    job.cancelled is set.
     """
     try:
         return _download_lanes(url, target_dir, format_id, progress_listener)
@@ -519,12 +731,12 @@ def download(url, target_dir, format_id='best', progress_listener=None):
         if 'requested format is not available' not in str(exc).lower():
             raise
         clean = _clean_url(url)
-        if _detect_platform(clean) != 'youtube':
-            raise
         split = _download_split(clean, target_dir, _lane_height(format_id), progress_listener)
         if split:
             return json.dumps(split)
-        raise
+        raise RuntimeError(
+            'Could not fetch this video with audio in that quality — pick another quality.'
+        )
 
 
 def engine_info():
@@ -624,7 +836,9 @@ def diagnose():
         reports green while every video lane is dead.
         """
         u = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-        combined = 'best[ext=mp4][vcodec!=none]/best[vcodec!=none]/best'
+        # Mirror the real lane selectors (combined video+audio only) so the
+        # diagnostic exercises exactly what a download attempts.
+        combined = 'best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]'
         try:
             with YoutubeDL({'quiet': True, 'no_warnings': True, 'skip_download': True,
                             'ca_certs': certifi.where(), 'format': combined}) as ydl:

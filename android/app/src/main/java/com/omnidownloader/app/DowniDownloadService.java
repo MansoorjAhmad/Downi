@@ -26,6 +26,7 @@ import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
 import com.chaquo.python.android.AndroidPlatform;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -231,10 +232,16 @@ public class DowniDownloadService extends Service {
 
             NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
             notifySharedCompletion(title, destination);
+            recordDropCompletion(url, title, destination);
         } catch (Exception error) {
             NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
-            String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
-            notifySharedFailure(url, friendlyError(detail));
+            // A user-cancelled job raises "Download cancelled." out of the engine —
+            // that is not a failure and must never scare the user with an error card.
+            AtomicBoolean flag = sharedJobs.get(jobId);
+            if (flag == null || !flag.get()) {
+                String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
+                notifySharedFailure(url, friendlyError(detail));
+            }
         } finally {
             sharedJobs.remove(jobId);
             activeJobs.remove(jobId);
@@ -274,7 +281,11 @@ public class DowniDownloadService extends Service {
     // ---------- Gallery save (ported from DowniEnginePlugin — same behavior, headless) ----------
 
     private String saveToGallery(File source, String title, String extension) {
-        if (source == null || !source.exists()) return "Downloaded file missing";
+        if (source == null || !source.exists()) {
+            // Returning the words "Downloaded file missing" as the DESTINATION made
+            // a failed save look like a success (C9) — fail loudly instead.
+            throw new IllegalStateException("Downloaded file went missing before it could be saved.");
+        }
         String displayName = nextGalleryName(title, extension, source);
         String ext = (extension == null || extension.trim().isEmpty()) ? "mp4" : extension.toLowerCase(Locale.US);
         String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
@@ -306,6 +317,7 @@ public class DowniDownloadService extends Service {
         }
 
         // Method 1: MediaStore
+        Uri pendingRow = null;
         try {
             ContentValues values = new ContentValues();
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
@@ -316,6 +328,7 @@ public class DowniDownloadService extends Service {
             }
             Uri collection = mime.startsWith("audio/") ? MediaStore.Audio.Media.EXTERNAL_CONTENT_URI : MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
             Uri destination = getContentResolver().insert(collection, values);
+            pendingRow = destination;
             if (destination != null) {
                 try (InputStream input = new FileInputStream(source); OutputStream output = getContentResolver().openOutputStream(destination)) {
                     if (output != null) {
@@ -332,6 +345,11 @@ public class DowniDownloadService extends Service {
             }
         } catch (Exception ignored) {
             saved = false;
+            // A row left with IS_PENDING=1 becomes a grey "ghost" video in gallery
+            // apps (C3) — remove it when the copy blew up mid-write.
+            if (pendingRow != null) {
+                try { getContentResolver().delete(pendingRow, null, null); } catch (Exception ignored2) {}
+            }
         }
 
 
@@ -443,7 +461,47 @@ public class DowniDownloadService extends Service {
         if (lower.contains("private") || lower.contains("login") || lower.contains("sign in")) return "This video needs an account or is private. Try a public link.";
         if (lower.contains("requested format is not available")) return "That quality is not available for this link. Try Best Available or a lower quality.";
         if (lower.contains("unsupported") || lower.contains("no video formats")) return "This public link is not supported yet. Try another public video link.";
-        return "Download failed: " + detail;
+        if (lower.contains("tiktok") && (lower.contains("unexpected response") || lower.contains("throttled") || lower.contains("empty media stream")))
+            return "TikTok throttled that grab. Wait a few seconds, then tap to retry.";
+        // Never show yt-dlp's raw bug-report boilerplate to a user — keep the signal only.
+        String cleaned = detail;
+        int boiler = lower.indexOf("please report this issue");
+        if (boiler > 0) cleaned = cleaned.substring(0, boiler).trim();
+        cleaned = cleaned.replace("DownloadError: ERROR:", "").replace("ERROR:", "").trim();
+        if (cleaned.isEmpty()) cleaned = "The media stream could not be downloaded. The video may be private, restricted, or the connection dropped.";
+        if (cleaned.length() > 180) cleaned = cleaned.substring(0, 180).trim() + "…";
+        return "Download failed: " + cleaned;
+    }
+
+    // ---------- Drop history handoff ----------
+
+    /** Serializes appends (service thread) against drains (WebView thread) — C6. */
+    public static final Object DROP_HISTORY_LOCK = new Object();
+
+    /**
+     * The headless path has no WebView, so it cannot write to the web layer's
+     * localStorage history. Instead it appends each completed grab to a
+     * SharedPreferences queue; DowniEnginePlugin.drainDropHistory hands the
+     * batch to the web layer on next launch, which merges it into the Queue
+     * history (v3.1.1 — fixes drops landing in the Vault with no history row).
+     */
+    private void recordDropCompletion(String url, String title, String destination) {
+        try {
+            synchronized (DROP_HISTORY_LOCK) {
+                android.content.SharedPreferences prefs = getSharedPreferences("downi_settings", MODE_PRIVATE);
+                JSONArray arr = new JSONArray(prefs.getString("pendingDropHistory", "[]"));
+                JSONObject item = new JSONObject();
+                String id = "drop" + System.currentTimeMillis();
+                item.put("id", id);
+                item.put("url", url == null ? "" : url);
+                item.put("title", title == null ? "Video" : title);
+                item.put("destination", destination == null ? "" : destination);
+                item.put("ts", System.currentTimeMillis());
+                arr.put(item);
+                while (arr.length() > 50) arr.remove(0);
+                prefs.edit().putString("pendingDropHistory", arr.toString()).commit();
+            }
+        } catch (Exception ignored) {}
     }
 
     // ---------- Notifications ----------

@@ -124,14 +124,24 @@ public class DowniEnginePlugin extends Plugin {
         try {
             com.getcapacitor.JSArray videoIds = call.getArray("videoIds");
             com.getcapacitor.JSArray audioIds = call.getArray("audioIds");
+            // Custom-folder (SAF) selections ride along in the SAME sheet — the
+            // web layer used to fire one share intent per custom file, stacking
+            // N share sheets on top of each other.
+            com.getcapacitor.JSArray customUris = call.getArray("customUris");
             java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
             boolean anyVideo = false;
+            boolean anyAudio = false;
             if (videoIds != null) for (int i = 0; i < videoIds.length(); i++) {
                 uris.add(Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, String.valueOf(videoIds.getLong(i))));
                 anyVideo = true;
             }
             if (audioIds != null) for (int i = 0; i < audioIds.length(); i++) {
                 uris.add(Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(audioIds.getLong(i))));
+                anyAudio = true;
+            }
+            if (customUris != null) for (int i = 0; i < customUris.length(); i++) {
+                String u = customUris.getString(i);
+                if (u != null && !u.isEmpty()) uris.add(Uri.parse(u));
             }
             if (uris.isEmpty()) {
                 call.reject("Nothing selected.");
@@ -145,7 +155,9 @@ public class DowniEnginePlugin extends Plugin {
                 intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
                 intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
             }
-            intent.setType(anyVideo ? "video/*" : "audio/*");
+            // Mixed or SAF-only selections: let the targets sniff the type.
+            boolean mixed = (anyVideo && anyAudio) || (customUris != null && customUris.length() > 0);
+            intent.setType(mixed ? "*/*" : (anyVideo ? "video/*" : "audio/*"));
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             Intent chooser = Intent.createChooser(intent, "Share media");
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -158,6 +170,13 @@ public class DowniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void clearCache(PluginCall call) {
+        // Never wipe the engine cache mid-download: the partial files of every
+        // active job live under it, so clearing used to silently kill running
+        // grabs (the engine then failed with confusing "file missing" errors).
+        if (!jobs.isEmpty()) {
+            call.reject("Downloads are still running. Cancel them first, then clear the cache.");
+            return;
+        }
         miscExecutor.execute(() -> {
             long freed = 0;
             try {
@@ -451,8 +470,12 @@ public class DowniEnginePlugin extends Plugin {
             result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
-            result.put("versionName", "3.0.3");
-            result.put("versionCode", 43L);
+            // Fall back to the values baked into the build, not a frozen literal
+            // (the hardcoded "3.0.3" here used to misreport every newer release).
+            // BuildConfig generation is disabled in this build, so keep these two
+            // literals in step with versionName/versionCode in app/build.gradle.
+            result.put("versionName", "3.1.3");
+            result.put("versionCode", 48L);
             call.resolve(result);
         }
     }
@@ -868,55 +891,6 @@ public class DowniEnginePlugin extends Plugin {
         }
     }
 
-    // ---------- Vault file listing ----------
-    @PluginMethod
-    public void listVaultFiles(PluginCall call) {
-        miscExecutor.execute(() -> {
-            File vaultDir = getContext().getExternalFilesDir(null);
-            JSObject result = new JSObject();
-            JSONArray items = new JSONArray();
-            if (vaultDir != null && vaultDir.isDirectory()) {
-                File[] files = vaultDir.listFiles();
-                if (files != null) {
-                    for (File f : files) {
-                        try {
-                            JSONObject obj = new JSONObject();
-                            obj.put("path", f.getAbsolutePath());
-                            obj.put("name", f.getName());
-                            obj.put("size", f.length());
-                            String lower = f.getName().toLowerCase();
-                            obj.put("isVideo", lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".mkv"));
-                            items.put(obj);
-                        } catch (Exception ignored) {}
-                    }
-                }
-            }
-            result.put("files", items);
-            call.resolve(result);
-        });
-    }
-
-    // ---------- Vault file deletion ----------
-    @PluginMethod
-    public void removeVaultFile(PluginCall call) {
-        String path = call.getString("path");
-        if (path == null) {
-            call.reject("Path is required");
-            return;
-        }
-        miscExecutor.execute(() -> {
-            File f = new File(path);
-            JSObject result = new JSObject();
-            if (f.exists() && f.delete()) {
-                result.put("deleted", true);
-                call.resolve(result);
-            } else {
-                result.put("deleted", false);
-                call.reject("Failed to delete file");
-            }
-        });
-    }
-
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || getPermissionState("notifications") == PermissionState.GRANTED) {
@@ -957,6 +931,7 @@ public class DowniEnginePlugin extends Plugin {
 
         JSObject started = new JSObject();
         started.put("jobId", jobId);
+        started.put("url", rawUrl); // lets the web layer map pending cards even before the first tick (B8)
         started.put("percent", 0);
         started.put("status", "Queued");
         started.put("queued", true);
@@ -974,13 +949,12 @@ public class DowniEnginePlugin extends Plugin {
             DownloadJob job = jobs.remove(jobId);
             if (job != null) {
                 job.cancelled.set(true);
+                // Promise rejection is the ONE cancel signal (the web layer
+                // filters "cancelled" there). No 'failed' event — it used to
+                // double-fire the error handler and pop a scary error sheet on
+                // a deliberate user cancel.
                 try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
                 DowniDownloadService.finishJob(getContext(), jobId, false);
-                JSObject progress = new JSObject();
-                progress.put("jobId", jobId);
-                progress.put("failed", true);
-                progress.put("error", "Download cancelled.");
-                notifyListeners("onProgress", progress);
             }
         } else {
             for (DownloadJob job : jobs.values()) {
@@ -1040,6 +1014,7 @@ public class DowniEnginePlugin extends Plugin {
             notifyListeners("onProgress", saving);
 
             String destination;
+            long totalBytes = 0;
             if (file.optBoolean("merge", false)) {
                 // True 1080p: separate video + audio streams muxed on-device.
                 DowniDownloadService.updateJob(getContext(), job.id, "Merging video + audio…", 96);
@@ -1053,6 +1028,7 @@ public class DowniEnginePlugin extends Plugin {
                 File audioPart = new File(file.getString("audio_path"));
                 File merged = new File(videoPart.getParentFile(), file.getString("title") + "-merged.mp4");
                 if (Mp4Merger.merge(videoPart, audioPart, merged)) {
+                    totalBytes = merged.length();
                     destination = copyToGallery(merged, file.getString("title"), "mp4");
                 } else {
                     try { videoPart.delete(); } catch (Exception ignored) {}
@@ -1062,7 +1038,9 @@ public class DowniEnginePlugin extends Plugin {
                 try { videoPart.delete(); } catch (Exception ignored) {}
                 try { audioPart.delete(); } catch (Exception ignored) {}
             } else {
-                destination = copyToGallery(new File(file.getString("path")), file.getString("title"), file.getString("ext"));
+                File downloaded = new File(file.getString("path"));
+                totalBytes = downloaded.exists() ? downloaded.length() : file.optLong("filesize", 0);
+                destination = copyToGallery(downloaded, file.getString("title"), file.getString("ext"));
             }
             if (job.cancelled.get()) return;
 
@@ -1074,19 +1052,19 @@ public class DowniEnginePlugin extends Plugin {
             progress.put("complete", true);
             progress.put("title", file.optString("title", "Video"));
             progress.put("destination", destination);
+            progress.put("totalBytes", totalBytes); // feeds the lifetime "data grabbed" stat (A3)
             notifyListeners("onProgress", progress);
 
             DowniDownloadService.finishJob(getContext(), job.id, true);
             try { job.call.resolve(progress); } catch (Exception ignored) {}
         } catch (Exception error) {
             if (!job.cancelled.get()) {
-                JSObject progress = new JSObject();
-                progress.put("jobId", job.id);
-                progress.put("failed", true);
-                String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
-                progress.put("error", friendlyError(detail));
-                notifyListeners("onProgress", progress);
+                // Single failure channel (A2): the promise rejection alone carries
+                // the failure. A notifyListeners("failed") here used to ALSO fire,
+                // so the web layer showed the error twice and raced its own retry
+                // bookkeeping. The .catch handler knows this job's url/formatId.
                 DowniDownloadService.finishJob(getContext(), job.id, false);
+                String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
                 try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
             }
         } finally {
@@ -1111,6 +1089,13 @@ public class DowniEnginePlugin extends Plugin {
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
                 PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url);
                 JSONObject info = new JSONObject(response.toString());
+                // The engine can answer with a soft error (e.g. TikTok throttling)
+                // instead of formats — surface that message, not an empty Inspector.
+                String pyError = info.optString("error", "");
+                if (!pyError.isEmpty()) {
+                    call.reject(pyError);
+                    return;
+                }
                 JSObject result = new JSObject();
                 result.put("title", info.optString("title", "Video"));
                 result.put("uploader", info.optString("uploader", ""));
@@ -1210,6 +1195,31 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * DowniDrop history handoff (v3.1.1): the headless service records every
+     * completed background grab into SharedPreferences; the web layer drains
+     * the batch on launch and merges it into its localStorage Queue history.
+     */
+    @PluginMethod
+    public void drainDropHistory(PluginCall call) {
+        try {
+            String json;
+            // The headless service appends on its own thread while the WebView may
+            // drain at the same moment — serialize so a completion is never lost
+            // between read and remove (C6).
+            synchronized (DowniDownloadService.DROP_HISTORY_LOCK) {
+                android.content.SharedPreferences prefs = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+                json = prefs.getString("pendingDropHistory", "[]");
+                prefs.edit().remove("pendingDropHistory").commit();
+            }
+            JSObject result = new JSObject();
+            result.put("items", new JSONArray(json));
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Drop history unavailable", e);
+        }
+    }
+
     @PluginMethod
     public void requestMediaPermission(PluginCall call) {
         String alias = Build.VERSION.SDK_INT >= 33 ? "mediaModern" : "mediaLegacy";
@@ -1260,7 +1270,9 @@ public class DowniEnginePlugin extends Plugin {
 
     private String copyToGallery(File source, String title, String extension) {
         if (source == null || !source.exists()) {
-            return "Downloaded file missing";
+            // Returning the words "Downloaded file missing" as the DESTINATION made
+            // a failed save look like a success (C9) — fail loudly instead.
+            throw new IllegalStateException("Downloaded file went missing before it could be saved.");
         }
         String displayName = nextGalleryName(title, extension, source);
         String ext = (extension == null || extension.trim().isEmpty()) ? "mp4" : extension.toLowerCase(Locale.US);
@@ -1293,6 +1305,7 @@ public class DowniEnginePlugin extends Plugin {
         }
 
         // Method 1: MediaStore
+        Uri pendingRow = null;
         try {
             ContentValues values = new ContentValues();
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
@@ -1307,6 +1320,7 @@ public class DowniEnginePlugin extends Plugin {
 
             Uri collection = mime.startsWith("audio/") ? MediaStore.Audio.Media.EXTERNAL_CONTENT_URI : MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
             Uri destination = getContext().getContentResolver().insert(collection, values);
+            pendingRow = destination;
             if (destination != null) {
                 try (InputStream input = new FileInputStream(source); OutputStream output = getContext().getContentResolver().openOutputStream(destination)) {
                     if (output != null) {
@@ -1323,6 +1337,11 @@ public class DowniEnginePlugin extends Plugin {
             }
         } catch (Exception ignored) {
             saved = false;
+            // A row left with IS_PENDING=1 becomes a grey "ghost" video in gallery
+            // apps (C3) — remove it when the copy blew up mid-write.
+            if (pendingRow != null) {
+                try { getContext().getContentResolver().delete(pendingRow, null, null); } catch (Exception ignored2) {}
+            }
         }
 
         // Method 2: Public Media Directory
@@ -1401,7 +1420,13 @@ public class DowniEnginePlugin extends Plugin {
         if (lower.contains("private") || lower.contains("login") || lower.contains("sign in")) return "This video needs an account or is private. Try a public link.";
         if (lower.contains("requested format is not available")) return "That quality is not available for this link. Try Best Available or a lower quality.";
         if (lower.contains("unsupported") || lower.contains("no video formats")) return "This public link is not supported yet. Try another public video link.";
-        return "Download failed: " + detail;
+        // TikTok throttling: give the user the actionable answer, not a stack trace
+        if (lower.contains("tiktok") && (lower.contains("throttle") || lower.contains("rate") || lower.contains("wait"))) {
+            return "TikTok throttled that grab. Wait a few seconds, then retry.";
+        }
+        // Strip yt-dlp's "please report this issue" boilerplate (C11 parity with the service)
+        String cleaned = detail.replaceAll("(?i)\\s*please report this issue.*", "").trim();
+        return "Download failed: " + cleaned;
     }
 
     private String safeFileName(String requested, Uri uri) {

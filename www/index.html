@@ -879,6 +879,12 @@
     let lastFailedUrl = '';
     let lastFailedFormat = 'best';
     let currentRawError = '';
+    let toastTimer = null;
+    // Cancel taps that arrive before native assigns a real jobId (B1): remember
+    // the tempId and kill the native job the moment its id reaches us.
+    const cancelledPending = new Set();
+    // Double-tap guard (C8): the same URL cannot start twice within 1.5s.
+    const recentGrabs = new Map();
 
     const activeJobs = new Map();
     let completedCount = 0;
@@ -971,7 +977,10 @@
       const line = document.getElementById('toastLine');
       if (line) { line.classList.remove('run'); void line.offsetWidth; line.classList.add('run'); }
       if (type === 'success') { icon.classList.remove('pulse-ok'); void icon.offsetWidth; icon.classList.add('pulse-ok'); }
-      setTimeout(hideToast, 3500);
+      // One dismiss timer at a time — a quick follow-up toast used to inherit
+      // the previous toast's timer and vanish almost instantly (B4).
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(hideToast, 3500);
     }
     function hideToast() {
       const toast = document.getElementById('appToast');
@@ -1042,9 +1051,11 @@
         } else if (navigator.clipboard?.readText) {
           text = await navigator.clipboard.readText();
         }
-        if (text && /^https?:\/\//i.test(text.trim())) {
-          const clean = extractUrl(text);
-          if (clean && clean !== detectedClipboardUrl) {
+        // extractUrl finds the link ANYWHERE in the copied text — share sheets
+        // love "Check this out! https://…" — and strips tracking junk (B5).
+        const clean = extractUrl(text);
+        if (clean) {
+          if (clean !== detectedClipboardUrl) {
             detectedClipboardUrl = clean;
             document.getElementById('clipboardUrlText').innerText = clean;
             document.getElementById('clipboardBanner')?.classList.remove('hidden');
@@ -1238,6 +1249,8 @@
     // ---- Playlist batch mode ----
     let playlistPending = [];
     let playlistTotal = 0;
+    // Bumped on cancel/new batch — stale pump timers check it before firing (A4).
+    let playlistGen = 0;
 
     function checkPlaylist(url, platform) {
       const banner = document.getElementById('playlistBanner');
@@ -1412,8 +1425,12 @@
 
     // ================= Parallel download pipeline =================
     function initiateDownload(url, formatId) {
-      lastFailedUrl = url;
-      lastFailedFormat = formatId;
+      // Double-tap guard (C8): an identical URL launched in the last 1.5s means
+      // the user tapped twice — one job, not two. (Cancel paths delete the entry
+      // so Undo/Retry always work.)
+      const lastTry = recentGrabs.get(url) || 0;
+      if (Date.now() - lastTry < 1500) return;
+      recentGrabs.set(url, Date.now());
 
       const engine = getEngine();
       let label = 'Media';
@@ -1465,11 +1482,14 @@
     function handleProgressEvent(p) {
       if (!p || !p.jobId) return;
       if (p.failed) {
+        // Dead path since A2 (native now rejects the promise as the single
+        // failure channel) — but keep it correct as a safety net: use THIS
+        // job's url/formatId, never a shared lastFailed* (A5).
         const job = activeJobs.get(p.jobId);
         activeJobs.delete(p.jobId);
         renderJobCards();
         updateQueueBadge();
-        onDownloadError(p.error || 'The download was interrupted.', lastFailedUrl, lastFailedFormat);
+        onDownloadError(p.error || 'The download was interrupted.', (job && job.url) || '', (job && job.formatId) || 'best');
         return;
       }
       let job = activeJobs.get(p.jobId);
@@ -1548,6 +1568,10 @@
     function onDownloadError(errStr, url, formatId) {
       triggerHaptic('heavy');
       currentRawError = errStr;
+      // A5: record the actual failed job so Retry re-grabs IT (previously these
+      // were never assigned, so Retry silently did nothing or grabbed the wrong
+      // URL when several jobs were in flight).
+      if (url) { lastFailedUrl = url; lastFailedFormat = formatId || 'best'; }
       let friendly = "The media stream could not be downloaded. The video may be private, restricted, or the connection dropped.";
       const lower = (errStr || "").toLowerCase();
 
@@ -1654,6 +1678,12 @@
       const engine = getEngine();
       engine?.cancelDownload?.();
       activeJobs.clear();
+      cancelledPending.clear();
+      // A4: also drop any queued playlist batch — otherwise the next pumpPlaylist
+      // (fired by the in-flight job's error/complete) resurrected grabs the user
+      // just cancelled ("ghost" downloads after cancel-all).
+      playlistPending = [];
+      playlistTotal = 0;
       renderJobCards();
       updateQueueBadge();
       showToast('All cancelled', 'Every download was stopped.', 'info');
@@ -2798,6 +2828,38 @@
       updateLastGrabChip();
     }
 
+    // DowniDrop history handoff (v3.1.1): instant background grabs complete in
+    // the headless service with no WebView alive, so they never reached this
+    // history. The service queues them natively; drain + merge them on boot.
+    async function mergeDropHistory() {
+      const engine = getEngine();
+      if (!engine?.drainDropHistory) return;
+      try {
+        const res = await engine.drainDropHistory();
+        const items = Array.isArray(res?.items) ? res.items : [];
+        if (items.length === 0) return;
+        const known = new Set(downloadsHistory.map(i => String(i.id)));
+        let added = 0;
+        items.forEach(it => {
+          if (!it || !it.id || known.has(String(it.id))) return;
+          downloadsHistory.unshift({
+            id: String(it.id),
+            title: it.title || 'Video',
+            destination: it.destination || '',
+            date: it.ts ? new Date(Number(it.ts)).toLocaleDateString() : new Date().toLocaleDateString(),
+            url: it.url || ''
+          });
+          added++;
+        });
+        if (added > 0) {
+          completedCount = downloadsHistory.length;
+          saveHistory();
+          renderQueueTab();
+          updateLastGrabChip();
+        }
+      } catch (e) {}
+    }
+
     // ================= Sheet drag-to-dismiss =================
     function setupSheetDrag() {
       document.querySelectorAll('[data-drag-dismiss]').forEach(grabber => {
@@ -2922,6 +2984,7 @@
     window.addEventListener('DOMContentLoaded', () => {
       initTheme();
       loadHistory();
+      mergeDropHistory();
       setupSheetDrag();
       refreshSaveLocationLabel();
       applyAccent();
