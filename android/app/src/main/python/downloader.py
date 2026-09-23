@@ -154,9 +154,15 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
     try:
         video_opts = dict(base)
         video_opts['format'] = (
+            # H.264 ONLY. MediaMuxer cannot mux VP9/AV1 into mp4 on-device —
+            # the old bare 'bestvideo[height<=H]' fallback shipped VP9 and the
+            # merge died with "Unsupported mime 'video/x-vnd.on2.vp9'" (B15,
+            # v3.1.4). The height cap stays a preference: when nothing fits at
+            # or under the lane, take the best H.264 at ANY height — never a
+            # wrong-codec stream.
             'bestvideo[ext=mp4][vcodec^=avc1][height<=%d]/'
-            'bestvideo[ext=mp4][vcodec^=avc1][height<=%d]/'
-            'bestvideo[height<=%d]' % (max_height, max_height, max_height)
+            'bestvideo[vcodec^=avc1][height<=%d]/'
+            'bestvideo[ext=mp4][vcodec^=avc1]' % (max_height, max_height)
         )
         video_opts['progress_hooks'] = [_scaled_hook(progress_listener, 0.0, 0.7)] if progress_listener else []
         with YoutubeDL(video_opts) as ydl:
@@ -735,7 +741,7 @@ def download(url, target_dir, format_id='best', progress_listener=None):
         if split:
             return json.dumps(split)
         raise RuntimeError(
-            'Could not fetch this video with audio in that quality — pick another quality.'
+            'This video has no H.264 stream DOWNI can save with audio.'
         )
 
 

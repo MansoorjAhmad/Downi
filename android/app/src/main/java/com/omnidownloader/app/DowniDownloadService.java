@@ -197,8 +197,27 @@ public class DowniDownloadService extends Service {
                 }
             };
 
-            PyObject response = Python.getInstance().getModule("downloader")
-                .callAttr("download", cleanUrl, workDir.getAbsolutePath(), formatId, listener);
+            PyObject response;
+            try {
+                response = Python.getInstance().getModule("downloader")
+                    .callAttr("download", cleanUrl, workDir.getAbsolutePath(), formatId, listener);
+            } catch (Exception firstError) {
+                // Quality memory is a PREFERENCE, never a hard gate. A remembered lane
+                // ('1080' etc.) can miss on videos whose formats carry no height metadata
+                // or exceed the cap — DowniDrop must then grab the best available instead
+                // of aborting (owner rule: it picks automatically). Cancels ("Download
+                // cancelled.") and network errors must NOT trigger the retry.
+                String m = String.valueOf(firstError.getMessage()).toLowerCase(Locale.US);
+                boolean qualityMiss = m.contains("requested format is not available")
+                    || m.contains("in that quality");
+                if (qualityMiss && !"best".equalsIgnoreCase(formatId)) {
+                    showJobStatus(jobId, "DowniDrop: that quality isn't here — grabbing best available…", 2);
+                    response = Python.getInstance().getModule("downloader")
+                        .callAttr("download", cleanUrl, workDir.getAbsolutePath(), "best", listener);
+                } else {
+                    throw firstError;
+                }
+            }
 
             if (cancelled != null && cancelled.get()) {
                 NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
