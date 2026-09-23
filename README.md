@@ -1,10 +1,29 @@
-# DOWNI V3.0.4 ⚡
+# DOWNI V3.1.0 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
 
 ---
+
+## 🆕 What's New in V3.1.0
+
+### DowniDrop 2.0 — instant again ⚡
+
+Share a link from any app and DOWNI **grabs it in the background immediately** — you
+never leave TikTok, YouTube or Instagram. A toast confirms the start, a silent progress
+notification rides along (with a Cancel button), and a celebration lands when it's
+saved to your Vault. It remembers your favorite quality per platform, works even when
+the app was fully closed, and saves to your custom folder if you chose one. Prefer to
+pick quality every time? **Settings → DowniDrop → Ask quality first** brings back the
+Inspector flow.
+
+### The Vault, silky at last
+
+The Vault grid no longer rebuilds itself on every interaction. Cards are created once
+and only ever **moved, added or removed** — searches, selection mode, refreshes and
+finished downloads update in place. No flicker, no lost scroll position, and a new
+download fades in as a single card while everything else stays perfectly still.
 
 ## 🆕 What's New in V3.0.4
 

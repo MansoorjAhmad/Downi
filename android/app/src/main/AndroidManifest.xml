@@ -24,14 +24,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- DowniDrop: shared links land in the Inspector, not a silent background download -->
+        </activity>
+
+        <!-- DowniDrop 2.0: shared links land in the invisible DropActivity (v2.6.4
+             pattern, restored). Instant mode grabs in the background without leaving
+             the platform app; "Ask quality" mode forwards to MainActivity's Inspector. -->
+        <activity
+            android:name=".DropActivity"
+            android:theme="@style/AppTheme.ShareReceiver"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/*" />
             </intent-filter>
-
         </activity>
 
         <service

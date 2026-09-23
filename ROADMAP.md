@@ -10,7 +10,12 @@ Shipped in v3.0.0:
 - Engine: TRUE 1080p via native MediaMuxer merge, concurrent fragment downloads (3, test-gated), engine warm-up
 - Playlist batch: flat-extract up to 25 entries, Grab-all banner, sequential queue
 
+Shipped in v3.1.0 ("The Polish Release"):
+- DowniDrop 2.0: invisible DropActivity (v2.6.4 pattern restored), instant background grabs, self-starting engine (no app warm-up assumed), per-platform quality memory headless, Cancel action, rich saved/failed notifications, Settings toggle (Instant / Ask quality)
+- Vault keyed-DOM reconciliation: cards are moved/added/removed, never rebuilt — blink fixed at the root; in-place selection; no-op refresh detection; 200ms search debounce; single-card new-arrival animation
+
 Deferred / next candidates:
+- Vault Phase 2 polish (shimmer skeletons, content-visibility, press-scale) — parked for v3.2; deliberately cut from v3.1.0 so the paint-timing fix ships isolated
 - Pause + resume (needs .part support - a deep change to the proven core; requires the full matrix)
 - TikTok photo-post saving (needs a multi-file save contract)
 - Web: direct-to-CDN downloads where CORS allows (skip the proxy)

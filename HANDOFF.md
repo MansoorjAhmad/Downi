@@ -21,7 +21,7 @@ _Last updated: 2026-09-22 (after v3.0.2 / web v2.1.1). Read this first in a fres
 | Local path | `C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app` | `C:\Users\Manso\Documents\Codex\downi-web` |
 | Remote | github.com/MansoorjAhmad/Downi | github.com/MansoorjAhmad/downi-web |
 | Live channel | GitHub Releases → in-app updater | getdowni.vercel.app (auto-deploy on push) |
-| Current version | **v3.0.4** (versionCode 44), Vault scoped to DOWNI-only + blink-free | **v2.1.1** (`WEB_VERSION` in index.html) |
+| Current version | **v3.1.0** (versionCode 45), "Polish Release": DowniDrop 2.0 instant background grabs + Vault blink fixed at the root | **v2.1.1** (`WEB_VERSION` in index.html) |
 | Tests | `.github/workflows/test.yml` (engine smoke + debug build, every push) | none yet (manual) |
 | Release trigger | `git push origin vX.Y.Z` → `.github/workflows/release.yml` builds + publishes | `git push origin main` → Vercel |
 
@@ -50,7 +50,7 @@ Old companion desktop app (`desktop-app/`, `dist/`, `work/`) is **abandoned** �
 - **True 1080p**: `downloader.py::_download_split` (H.264 video-only + M4A) → **`Mp4Merger`** (MediaMuxer, PTS-interleaved, 8 MB buffer; VP9 needs API 29+, AV1 API 34+).
 - **Vault**: MediaStore query (needs runtime media permission, asked on first Vault open) + SAF custom-folder files via `listCustomFiles`.
 - **Save paths**: MediaStore `Movies/` `Music/` (or chosen SAF folder) — the custom folder is honored by the in-app path and DowniDrop.
-- **Share intents**: `ACTION_SEND` + `ACTION_PROCESS_TEXT` → MainActivity → Inspector (`getSharedUrl` consumes the intent; warm start via `onShareReceived`).
+- **Share intents (DowniDrop 2.0, v3.1.0)**: `ACTION_SEND` + `ACTION_PROCESS_TEXT` → **DropActivity** (invisible, translucent, noHistory). Instant mode (default): toast + `DowniDownloadService.startShared()` — the service **self-starts Python** (`Python.isStarted()` → `Python.start()`, v2.6.4 pattern; never assume MainActivity warm-up) and saves via the ported gallery path (Movies/DOWNI + Music/DOWNI or custom SAF folder). "Ask quality" mode: forwards to MainActivity → Inspector (`getSharedUrl` consumes the intent; warm start via `onShareReceived`). Toggle + per-platform quality memory live in localStorage, mirrored to `downi_settings` prefs via `syncDropSettings`.
 - **Updater**: GitHub `releases/latest` → `.apk` asset → download w/ progress → package installer (pre-checks "unknown apps").
 - **Build guard**: `android/app/build.gradle` `preBuild` fails the build if `assets/public/index.html` ≠ `www/index.html`.
 
@@ -118,6 +118,9 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 
 ## 7. Work queue (prioritized)
 
+**P0 — DONE (v3.1.0 shipped 2026-09-23)**
+- [x] v3.1.0 (versionCode 45) "The Polish Release": DowniDrop 2.0 (instant background grabs restored, v2.6.4 invisible-grabber pattern + self-starting engine + Settings toggle) and Vault Phase 1 keyed-DOM fix. v3.0.4 (commit 8347585) folded in. Plan: `V3.1_PLAN.md`. Device matrix incl. cold-start share run on the vivo V2058.
+
 **P0 — DONE (v3.0.3 shipped 2026-09-22)**
 - [x] v3.0.3 (versionCode 43) released: all 8 fixes device-verified by the owner on the vivo V2058; tag `v3.0.3` pushed, CI green, signed `DOWNI-v3.0.3.apk` (37.9 MB) live on GitHub Releases → in-app updater feed active.
 - Remaining DEVICE_TEST.md cells (playlist Grab-all, custom save folder, cancel/app-kill regression) were covered by the owner's blanket "all the things are working" — formally re-check only if a bug report comes in.
@@ -140,6 +143,7 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 3. Vault scoping — **done in v3.0.4**: only DOWNI downloads, never the whole gallery.
 4. Brand/identity — **frozen**. No rebrands, no redesign pivots; polish the current experience only.
 5. Priority order — APK Vault perfection first (v3.0.4), then full focus on the web app (users reporting issues).
+6. DowniDrop (locked 2026-09-23) — **instant background grab is the default again** (v2.6.4 pattern restored); "Ask quality" is opt-in via Settings. Vault Phase 2 polish (shimmer, content-visibility, press-scale) **parked for v3.2** — never ship new paint-timing code in the same release as the paint-timing bug fix.
 
 ---
 

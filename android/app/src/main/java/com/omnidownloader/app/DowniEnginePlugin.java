@@ -1193,6 +1193,23 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve(result);
     }
 
+    /**
+     * DowniDrop 2.0 settings bridge: the web layer (localStorage) owns the share-behavior
+     * toggle and the per-platform quality memory, but DropActivity and the headless
+     * service path are native-only — so the values are mirrored into SharedPreferences.
+     */
+    @PluginMethod
+    public void syncDropSettings(PluginCall call) {
+        String mode = call.getString("mode", "instant");
+        String qualities = call.getString("qualities", "");
+        getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
+            .edit()
+            .putString("dropMode", "ask".equals(mode) ? "ask" : "instant")
+            .putString("dropQualities", qualities == null ? "" : qualities)
+            .apply();
+        call.resolve();
+    }
+
     @PluginMethod
     public void requestMediaPermission(PluginCall call) {
         String alias = Build.VERSION.SDK_INT >= 33 ? "mediaModern" : "mediaLegacy";

@@ -442,7 +442,7 @@
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-[12px] font-extrabold text-white">DowniDrop</p>
-            <p class="text-[10px] mt-0.5" style="color:var(--muted)">In any app: Share → DOWNI — the Inspector opens with your link</p>
+            <p class="text-[10px] mt-0.5" style="color:var(--muted)">In any app: Share → DOWNI — grabs instantly in the background (or "Ask quality" in Settings)</p>
           </div>
         </div>
 
@@ -617,6 +617,14 @@
               <p class="text-[10px] mt-0.5" style="color:var(--muted)">Banner when a video link is copied</p>
             </div>
             <input type="checkbox" id="chkClipboard" checked onchange="toggleClipboardDetect(this.checked)" class="w-5 h-5">
+          </div>
+          <div class="py-3 border-t border-white/5">
+            <p class="text-[12px] font-bold text-zinc-200">DowniDrop</p>
+            <p class="text-[10px] mt-0.5" style="color:var(--muted)">What Share → DOWNI does in other apps</p>
+            <div class="flex gap-2 mt-2.5">
+              <button id="dropModeInstant" onclick="setDropMode('instant')" class="chip on flex-1 py-2 text-[10px] font-bold text-center">⚡ Instant grab</button>
+              <button id="dropModeAsk" onclick="setDropMode('ask')" class="chip flex-1 py-2 text-[10px] font-bold text-center">Ask quality first</button>
+            </div>
           </div>
         </div>
 
@@ -864,8 +872,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.0.4';
-    let installedVersionCode = 44;
+    let installedVersion = '3.1.0';
+    let installedVersionCode = 45;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -1375,6 +1383,7 @@
       triggerHaptic('light');
       selectedInspectorQuality = fmtId;
       try { storeSet('q_' + (currentInspectorPlatform || 'any'), fmtId); } catch (e) {}
+      syncDropSettings(); // keep the headless DowniDrop path's quality memory in sync
       document.querySelectorAll('.quality-card').forEach(el => {
         el.classList.remove('on');
         const badge = el.querySelector('.qx');
@@ -1803,7 +1812,7 @@
         } catch (e) {}
       }
       if (engine?.listMedia) {
-        if (grid && vaultItems.length === 0) grid.innerHTML = '<div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div>';
+        if (grid && vaultItems.length === 0) { vaultCardRegistry.clear(); grid.innerHTML = '<div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div>'; }
         Promise.all([
           engine.listMedia().then(res => {
             const videos = (res.videos || []).map(v => ({ ...v, kind: 'video' }));
@@ -1816,7 +1825,14 @@
           // MediaStore items above — hide those duplicates.
           const seen = new Set(media.map(m => (m.name || '').toLowerCase() + ':' + m.size));
           const customOnly = custom.filter(f => !seen.has((f.name || '').toLowerCase() + ':' + f.size));
-          vaultItems = [...media, ...customOnly.map(f => ({ ...f, kind: 'custom', dateModified: Math.floor((f.modified || 0) / 1000) }))];
+          const merged = [...media, ...customOnly.map(f => ({ ...f, kind: 'custom', dateModified: Math.floor((f.modified || 0) / 1000) }))];
+          // No-op refresh detection (v3.1.0): when nothing actually changed (same
+          // items, same sizes, same dates) skip the render entirely — post-download,
+          // rescan and tab-reopen refreshes then never touch the grid at all.
+          const signature = merged.map(i => vaultKeyOf(i) + ':' + (i.size || 0) + ':' + (i.dateModified || 0)).join('|');
+          if (signature === lastVaultSignature) { updateVaultStats(); return; }
+          lastVaultSignature = signature;
+          vaultItems = merged;
           updateVaultStats();
           renderVaultGrid();
         });
@@ -1839,9 +1855,14 @@
       return sorted;
     }
 
+    // 200ms debounce — a render per keystroke used to hammer the grid mid-typing.
+    let vaultSearchTimer = null;
     function onVaultSearch(value) {
-      vaultSearch = value || '';
-      renderVaultGrid();
+      clearTimeout(vaultSearchTimer);
+      vaultSearchTimer = setTimeout(() => {
+        vaultSearch = value || '';
+        renderVaultGrid();
+      }, 200);
     }
     function onVaultSort(value) {
       vaultSort = value || 'new';
@@ -1874,9 +1895,33 @@
       return item.kind === 'custom' ? 'c:' + item.uri : ((item.isVideo ? 'v' : 'a') + item.id);
     }
     function toggleVaultSelection(key) {
+      const wasSelecting = vaultSelection.size > 0;
       if (vaultSelection.has(key)) vaultSelection.delete(key); else vaultSelection.add(key);
       updateVaultSelectionBar();
-      renderVaultGrid();
+      const isSelecting = vaultSelection.size > 0;
+      if (wasSelecting !== isSelecting) {
+        // Entering/leaving selection mode changes card STRUCTURE (dots, action
+        // buttons) — rebuild, reusing decoded thumbnails (still no blink).
+        renderVaultGrid();
+      } else {
+        // One card toggled inside selection mode — flip it in place, no re-render.
+        updateVaultCardSelection(key);
+      }
+    }
+
+    function updateVaultCardSelection(key) {
+      const el = vaultCardRegistry.get(key);
+      if (!el) { renderVaultGrid(); return; }
+      const selected = vaultSelection.has(key);
+      el.classList.toggle('card-accent', selected);
+      const dot = el.querySelector('[data-sel-dot]');
+      if (dot) {
+        dot.style.background = selected ? 'var(--accent)' : 'rgba(0,0,0,.55)';
+        dot.style.border = selected ? 'none' : '1.5px solid rgba(255,255,255,.5)';
+        dot.style.color = selected ? '#04121C' : 'transparent';
+      }
+      const img = el.querySelector('img');
+      if (img && vaultLayout !== 'list') img.classList.toggle('opacity-60', selected);
     }
     function clearVaultSelection() {
       vaultSelection.clear();
@@ -1959,11 +2004,54 @@
       grid.addEventListener('touchcancel', cancel);
     }
 
-    // The entrance animation (stagger/fade-in) plays ONCE, on the first populated
-    // render. Every later refresh (download finished, delete, tab re-open) updates
-    // the grid silently — replaying all card animations each time was the
-    // "blinking" users kept reporting.
+    // ================= Vault keyed-DOM rendering (v3.1.0) =================
+    // Root-cause fix for the Vault "blink". The old renderer rebuilt EVERY card
+    // with grid.innerHTML = items.map(...) on every interaction (search keystroke,
+    // selection toggle, sort, filter, delete, download complete). Each rebuild
+    // destroyed the <img> nodes, so the browser re-decoded every thumbnail → the
+    // visible flash. (v3.0.4 only stripped the entrance animation — the rebuild
+    // itself was untouched.) v3.1.0 keeps cards alive in a registry keyed by
+    // vaultKeyOf() and reconciles the grid: add / remove / move only, never
+    // destroy-and-recreate. Structural rebuilds (layout or selection-mode changes)
+    // MOVE the already-decoded <img> node into the new card — moving a node never
+    // triggers a re-decode, so those stay blink-free too.
     let vaultGridHasAnimated = false;
+    const vaultCardRegistry = new Map(); // vaultKey → card element
+    let lastVaultSignature = null;       // content signature → no-op refreshes
+    let lastVaultMode = '';              // layout|selecting → structural rebuilds
+
+    // Build one card element from the existing HTML generators (design unchanged).
+    function buildVaultCard(item, selecting, oldEl, animate) {
+      const key = vaultKeyOf(item);
+      const selected = vaultSelection.has(key);
+      const html = vaultLayout === 'list' ? vaultRowHtml(item, key, selected, selecting)
+        : item.kind === 'custom' ? customCardHtml(item, key, selected, selecting)
+        : vaultCardHtml(item, key, selected, selecting);
+      const tpl = document.createElement('template');
+      tpl.innerHTML = html.trim();
+      const el = tpl.content.firstElementChild;
+      if (!el) return document.createElement('div');
+      if (oldEl) {
+        const oldImg = oldEl.querySelector('img');
+        if (oldImg) {
+          oldImg.classList.remove('fade-in');
+          const newImg = el.querySelector('img');
+          if (newImg) {
+            newImg.replaceWith(oldImg);
+          } else {
+            const holder = el.querySelector('.aspect-square') || el.querySelector('.w-14');
+            if (holder) {
+              const ph = holder.querySelector('.text-center');
+              if (ph) ph.remove();
+              holder.prepend(oldImg);
+            }
+          }
+          oldImg.classList.toggle('opacity-60', selecting && selected && vaultLayout !== 'list');
+        }
+      }
+      if (!animate) el.classList.remove('fade-in');
+      return el;
+    }
 
     function renderVaultGrid() {
       const grid = document.getElementById('vaultMediaGrid');
@@ -1973,6 +2061,7 @@
 
       const items = filteredVaultItems();
       if (items.length === 0) {
+        vaultCardRegistry.clear();
         const engine = getEngine();
         if (!engine?.listMedia && downloadsHistory.length > 0) {
           grid.innerHTML = downloadsHistory.slice(0, 6).map(item => `
@@ -2003,21 +2092,42 @@
 
       const firstRender = !vaultGridHasAnimated;
       grid.className = (vaultLayout === 'list' ? 'space-y-2.5' : 'grid grid-cols-2 gap-3') + (firstRender ? ' stagger' : '');
+      if (firstRender) vaultGridHasAnimated = true;
       const selecting = vaultSelection.size > 0;
-      grid.innerHTML = items.map(item => {
-        const key = vaultKeyOf(item);
-        const selected = vaultSelection.has(key);
-        if (vaultLayout === 'list') return vaultRowHtml(item, key, selected, selecting);
-        if (item.kind === 'custom') return customCardHtml(item, key, selected, selecting);
-        return vaultCardHtml(item, key, selected, selecting);
-      }).join('');
-      if (firstRender) {
-        vaultGridHasAnimated = true;
-      } else {
-        // Silent refresh: strip entrance animations before the next paint so no
-        // card replays its fade (the residual Vault "blink").
-        grid.querySelectorAll('.fade-in').forEach(el => el.classList.remove('fade-in'));
+
+      // Structural rebuild only when the layout or selection MODE changed.
+      const mode = vaultLayout + '|' + (selecting ? 'sel' : 'plain');
+      const structureChanged = mode !== lastVaultMode;
+      lastVaultMode = mode;
+
+      // Drop leftover non-card children (empty states, skeletons).
+      Array.from(grid.children).forEach(c => { if (!c.hasAttribute('data-vault-key')) c.remove(); });
+
+      // Remove cards whose item is gone (delete / filter / search).
+      const newKeys = new Set(items.map(vaultKeyOf));
+      for (const [key, el] of vaultCardRegistry) {
+        if (!newKeys.has(key)) { el.remove(); vaultCardRegistry.delete(key); }
       }
+
+      // Create missing cards, rebuild on structure change (reusing decoded
+      // thumbnails), then move every card to its sorted position. Existing cards
+      // are MOVED, never destroyed — no re-decode, no blink, scroll preserved.
+      items.forEach((item, index) => {
+        const key = vaultKeyOf(item);
+        const oldEl = vaultCardRegistry.get(key);
+        let el = oldEl;
+        if (!el || structureChanged) {
+          // A genuinely NEW card (download just finished) gets the fade-in all to
+          // itself; everything else renders silently.
+          const isNewArrival = !el && !firstRender && !structureChanged;
+          el = buildVaultCard(item, selecting, oldEl, firstRender || isNewArrival);
+          vaultCardRegistry.set(key, el);
+          // Structure rebuild: swap the old card out of the DOM (its decoded
+          // thumbnail was already moved into the new card inside buildVaultCard).
+          if (oldEl && oldEl.parentNode === grid) oldEl.replaceWith(el);
+        }
+        if (grid.children[index] !== el) grid.insertBefore(el, grid.children[index] || null);
+      });
 
       items.forEach(item => {
         if (item.kind === 'custom') return;
@@ -2066,7 +2176,7 @@
     }
 
     function selectionDot(selected) {
-      return `<span class="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black" style="${selected ? 'background:var(--accent);color:#04121C' : 'background:rgba(0,0,0,.55);border:1.5px solid rgba(255,255,255,.5);color:transparent'}">✓</span>`;
+      return `<span data-sel-dot class="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black" style="${selected ? 'background:var(--accent);color:#04121C' : 'background:rgba(0,0,0,.55);border:1.5px solid rgba(255,255,255,.5);color:transparent'}">✓</span>`;
     }
 
     function vaultCardHtml(item, key, selected, selecting) {
@@ -2604,6 +2714,46 @@
     }
     function toggleClipboardDetect(enabled) { storeSet('clipboard_detect', enabled ? '1' : '0'); }
 
+    // ================= DowniDrop 2.0 settings (v3.1.0) =================
+    // The web layer owns the toggle + per-platform quality memory (localStorage);
+    // DropActivity and the headless service are native-only, so every change is
+    // mirrored into SharedPreferences via DowniEngine.syncDropSettings.
+    function setDropMode(mode) {
+      const m = mode === 'ask' ? 'ask' : 'instant';
+      storeSet('drop_mode', m);
+      document.getElementById('dropModeInstant')?.classList.toggle('on', m === 'instant');
+      document.getElementById('dropModeAsk')?.classList.toggle('on', m === 'ask');
+      syncDropSettings();
+      showToast('DowniDrop', m === 'instant' ? 'Shares grab instantly in the background.' : 'Shares open the Inspector for quality choice.', 'success');
+    }
+
+    function collectQualityMemory() {
+      const out = {};
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('downi_q_')) out[k.slice(8)] = localStorage.getItem(k);
+        }
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('omni_q_')) {
+            const platform = k.slice(7);
+            if (!(platform in out)) out[platform] = localStorage.getItem(k);
+          }
+        }
+      } catch (e) {}
+      return out;
+    }
+
+    function syncDropSettings() {
+      const engine = getEngine();
+      if (!engine?.syncDropSettings) return;
+      engine.syncDropSettings({
+        mode: storeGet('drop_mode') === 'ask' ? 'ask' : 'instant',
+        qualities: JSON.stringify(collectQualityMemory())
+      }).catch(() => {});
+    }
+
 
     // ================= Utils =================
     function extractUrl(text) {
@@ -2784,6 +2934,13 @@
       // checked regardless of the saved setting (B6).
       const chkClip = document.getElementById('chkClipboard');
       if (chkClip) chkClip.checked = storeGet('clipboard_detect') !== '0';
+
+      // DowniDrop 2.0: restore the toggle and mirror settings + quality memory to
+      // the native side (DropActivity reads them without a WebView).
+      const dropMode = storeGet('drop_mode') === 'ask' ? 'ask' : 'instant';
+      document.getElementById('dropModeInstant')?.classList.toggle('on', dropMode === 'instant');
+      document.getElementById('dropModeAsk')?.classList.toggle('on', dropMode === 'ask');
+      syncDropSettings();
 
       const pv = document.getElementById('playerVideo');
       if (pv) {

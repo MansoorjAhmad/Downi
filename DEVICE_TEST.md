@@ -38,3 +38,24 @@ For each ✅: file exists in Vault, size > 0 KB, plays with audio, correct forma
 - ☐ 3 parallel downloads + 4th queued → queue caps politely
 
 > Sign and date here when green: ______________
+
+## 3. v3.1.0 matrix (The Polish Release — MANDATORY)
+
+| # | Test | Check |
+|---|---|---|
+| 1 | **Cold-start DowniDrop** — force-stop DOWNI (Settings → Apps → DOWNI → Force stop), then share a TikTok link → DOWNI | ☐ toast appears instantly, app does NOT open, progress notification appears, file lands in Vault |
+| 2 | Warm-share instant grab (app open in background) | ☐ same result, no Inspector |
+| 3 | Rapid double-share | ☐ both files download (queued), both completion notifications, no overwrite |
+| 4 | Cancel button on DowniDrop progress notification | ☐ download stops, no file in Vault, notification clears |
+| 5 | Failure path — share an invalid/private link | ☐ failure notification with honest reason; tap → Inspector opens with the link |
+| 6 | **Settings → DowniDrop → "Ask quality first"**, then share | ☐ Inspector opens with quality picker (v3.0 behavior); switch back to Instant and confirm |
+| 7 | Quality memory — pick 720p for TikTok in Inspector once, then instant-share a TikTok link | ☐ grabs at 720p |
+| 8 | Custom save folder set → instant DowniDrop share | ☐ file lands in the custom folder, appears in Vault |
+| 9 | **Vault blink test** — open Vault, watch: downloads finishing, Rescan, tab switches | ☐ zero flicker; scroll position kept |
+| 10 | Vault search — type quickly | ☐ grid updates once after pause (200ms), no per-keystroke flash |
+| 11 | Vault long-press selection — enter, toggle 3 cards, exit | ☐ cards flip in place, no grid rebuild flash |
+| 12 | New arrival — finish a download while Vault is open | ☐ only the new card fades in |
+| 13 | Vault still shows only DOWNI downloads (v3.0.4 fold-in) | ☐ camera clips etc. stay out |
+
+Device: vivo V2058, USB only.
+
