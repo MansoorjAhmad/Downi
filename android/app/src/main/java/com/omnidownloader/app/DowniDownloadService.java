@@ -752,6 +752,8 @@ public class DowniDownloadService extends Service {
 
     private PendingIntent openAppIntent() {
         Intent open = new Intent(this, MainActivity.class);
+        // v3.1.1 (defect N7): tapping a grab notification lands on the Queue, where the job lives.
+        open.putExtra("openQueue", true);
         return PendingIntent.getActivity(this, 0, open,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }

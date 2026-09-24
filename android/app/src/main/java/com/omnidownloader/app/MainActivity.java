@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
         SplashScreen.installSplashScreen(this);
         registerPlugin(DowniEnginePlugin.class);
         super.onCreate(savedInstanceState);
+        handleOpenQueue(getIntent());
 
         // The https://localhost page loads Vault media from the loopback
         // player server (http://127.0.0.1) — allow that mixed content pair.
@@ -40,6 +41,7 @@ public class MainActivity extends BridgeActivity {
     public void onNewIntent(android.content.Intent intent) {
         setIntent(intent);
         super.onNewIntent(intent);
+        handleOpenQueue(intent);
         String action = intent.getAction();
         String sharedUrl = null;
         if (android.content.Intent.ACTION_SEND.equals(action)) {
@@ -58,5 +60,18 @@ public class MainActivity extends BridgeActivity {
             // consumes it there). Consuming on the fly silently loses warm shares.
             getBridge().triggerJSEvent("onShareReceived", "window", payload);
         }
+    }
+
+    /**
+     * v3.1.1 (defect N7): a tap on a grab notification carries openQueue=true — park it in
+     * SharedPreferences so the web layer can consume it (cold start AND warm resume alike).
+     */
+    private void handleOpenQueue(android.content.Intent intent) {
+        try {
+            if (intent != null && intent.getBooleanExtra("openQueue", false)) {
+                getSharedPreferences("downi_settings", MODE_PRIVATE)
+                    .edit().putBoolean("openQueuePending", true).apply();
+            }
+        } catch (Exception ignored) {}
     }
 }

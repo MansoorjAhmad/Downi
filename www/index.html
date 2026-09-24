@@ -399,6 +399,16 @@
           </div>
         </div>
 
+        <!-- Notification-permission hint (v3.1.1, defect N6): hidden unless notifications are off -->
+        <div id="notifHintCard" class="hidden card p-4 space-y-2.5 fade-in" style="border-color:rgba(251,113,133,.35)">
+          <p class="text-[12px] font-extrabold text-white">Notifications are off</p>
+          <p class="text-[11px] leading-relaxed" style="color:var(--muted)">Grabs still run, but you get no progress and no "Saved" alert. Turn them on to watch every grab.</p>
+          <div class="flex items-center gap-3 pt-0.5">
+            <button onclick="fixNotificationHint()" class="btn px-3 h-9 text-[11px] font-extrabold text-white">Turn on</button>
+            <button onclick="dismissNotificationHint()" class="text-[11px] font-bold" style="color:var(--muted)">Not now</button>
+          </div>
+        </div>
+
       </div>
 
       <!-- ================= TAB 2: QUEUE ================= -->
@@ -862,6 +872,38 @@
     }
     function triggerHaptic(style) {
       try { window.Capacitor?.Plugins?.Haptics?.impact?.({ style: (style || 'light').toUpperCase() }); } catch (e) {}
+    }
+
+    // ================= Notification tap + permission honesty (v3.1.1 N6/N7) =================
+    async function consumeOpenQueueRequest() {
+      const engine = getEngine();
+      if (!engine?.consumeOpenQueueFlag) return;
+      try {
+        const res = await engine.consumeOpenQueueFlag();
+        if (res && res.open) switchTab('queue');
+      } catch (e) {}
+    }
+    async function checkNotificationHint() {
+      const card = document.getElementById('notifHintCard');
+      if (!card) return;
+      let dismissed = false;
+      try { dismissed = storeGet('notif_hint_dismissed') === '1'; } catch (e) {}
+      if (dismissed) { card.classList.add('hidden'); return; }
+      const engine = getEngine();
+      if (!engine?.notificationStatus) { card.classList.add('hidden'); return; }
+      try {
+        const res = await engine.notificationStatus();
+        card.classList.toggle('hidden', !!(res && res.enabled));
+      } catch (e) { card.classList.add('hidden'); }
+    }
+    function dismissNotificationHint() {
+      try { storeSet('notif_hint_dismissed', '1'); } catch (e) {}
+      document.getElementById('notifHintCard')?.classList.add('hidden');
+    }
+    async function fixNotificationHint() {
+      const engine = getEngine();
+      try { await engine?.requestNotificationPermission?.(); } catch (e) {}
+      checkNotificationHint();
     }
 
     // ================= Navigation =================
@@ -2911,6 +2953,8 @@
       loadHistory();
       setupSheetDrag();
       refreshSaveLocationLabel();
+      consumeOpenQueueRequest();   // v3.1.1: notification tap → Queue (N7)
+      checkNotificationHint();     // v3.1.1: warn once if notifications are off (N6)
       applyAccent();
       applyAmoled();
       setupVaultLongPress();
@@ -2956,6 +3000,7 @@
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) checkClipboard();
         syncBgPolling(); // v3.1.1: background grabs are polled only while the app is visible
+        consumeOpenQueueRequest();
       });
       syncBgPolling();
 

@@ -1239,6 +1239,34 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve();
     }
 
+    /** v3.1.1 (defect N7): true exactly once after the user tapped a grab notification. */
+    @PluginMethod
+    public void consumeOpenQueueFlag(PluginCall call) {
+        JSObject result = new JSObject();
+        boolean open = false;
+        try {
+            android.content.SharedPreferences prefs = getContext()
+                .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+            open = prefs.getBoolean("openQueuePending", false);
+            if (open) prefs.edit().putBoolean("openQueuePending", false).apply();
+        } catch (Exception ignored) {}
+        result.put("open", open);
+        call.resolve(result);
+    }
+
+    /** v3.1.1 (defect N6): lets the web warn once when notifications are switched off. */
+    @PluginMethod
+    public void notificationStatus(PluginCall call) {
+        JSObject result = new JSObject();
+        boolean enabled = true;
+        try {
+            enabled = androidx.core.app.NotificationManagerCompat.from(getContext()).areNotificationsEnabled();
+        } catch (Exception ignored) {}
+        result.put("enabled", enabled);
+        result.put("canPrompt", Build.VERSION.SDK_INT >= 33);
+        call.resolve(result);
+    }
+
     @PluginMethod
     public void requestMediaPermission(PluginCall call) {
         String alias = Build.VERSION.SDK_INT >= 33 ? "mediaModern" : "mediaLegacy";
