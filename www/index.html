@@ -1575,7 +1575,7 @@
     function jobCardHtml(id, job) {
       const pct = Math.round(job.percent);
       return `
-        <div class="card ${job.done ? '' : 'card-accent'} p-4 space-y-2.5 fade-in" data-job="${id}" data-done="${job.done ? 1 : 0}" ${job.done ? 'style="border-color:rgba(52,211,153,.4)"' : ''}>
+        <div class="card ${job.done ? '' : 'card-accent'} p-4 space-y-2.5 fade-in" data-job="${id}" data-done="${job.done ? 1 : 0}" data-failed="${job.failed ? 1 : 0}" ${job.done ? 'style="border-color:rgba(52,211,153,.4)"' : ''}>
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 min-w-0">
               <span class="jring">${job.done
@@ -1592,7 +1592,7 @@
               <span class="jspark">${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}</span>
               <span class="jspeed text-emerald-300 font-bold">${job.speed ? escapeHtml(job.speed) : ''}</span>
               <span class="jeta text-accent">${job.eta ? escapeHtml(job.eta) : ''}</span>
-              ${job.done ? '' : `<button onclick="cancelOneDownload('${id}')" class="tap44 font-sans font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
+              ${(job.done || job.failed) ? '' : `<button onclick="cancelOneDownload('${id}')" class="tap44 font-sans font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
             </div>
           </div>
         </div>
@@ -1620,7 +1620,8 @@
         container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
         const needRebuild = ids.length !== Object.keys(frames).length || ids.some(id => {
           const f = frames[id];
-          return !f || (f.dataset.done === '1') !== !!jobs.get(id).done;
+          return !f || (f.dataset.done === '1') !== !!jobs.get(id).done
+            || (f.dataset.failed === '1') !== !!jobs.get(id).failed;
         });
         if (needRebuild) {
           container.innerHTML = ids.map(id => jobCardHtml(id, jobs.get(id))).join('');
@@ -1629,7 +1630,7 @@
         ids.forEach(id => {
           const job = jobs.get(id);
           const card = frames[id];
-          if (!card || job.done) return;
+          if (!card || job.done || job.failed) return;
           const pct = Math.round(job.percent);
           const pctEl = card.querySelector('.jpct'); if (pctEl) pctEl.textContent = pct + '%';
           const barEl = card.querySelector('.jbar > div'); if (barEl) barEl.style.width = Math.max(2, job.percent) + '%';
@@ -1710,14 +1711,18 @@
         if (state === 'canceled') { if (bgJobs.delete(j.id)) changed = true; return; }
         alive.add(j.id);
         const prev = bgJobs.get(j.id);
-        const job = prev || { label: 'DowniDrop' + (j.platform ? ' · ' + j.platform : ''), url: j.url || '', formatId: 'best', background: true, status: 'Grabbing…', percent: 0, size: '', speed: '', eta: '', done: false, speedSeries: [] };
+        const job = prev || { label: 'DowniDrop' + (j.platform ? ' · ' + j.platform : ''), url: j.url || '', formatId: 'best', background: true, status: 'Grabbing…', percent: 0, size: '', speed: '', eta: '', done: false, failed: false, speedSeries: [] };
         const pct = state === 'done' ? 100 : Math.round(j.pct || 0);
         job.percent = pct;
         job.done = state === 'done';
-        job.status = state === 'failed' ? 'Failed' : 'Grabbing…';
-        job.size = j.total ? (fmtBgBytes(j.downloaded) + ' / ' + fmtBgBytes(j.total)) : (j.status || '');
-        job.speed = fmtBgSpeed(j.speed);
-        if (j.speed > 0) job.speedSeries = (job.speedSeries || []).concat(j.speed).slice(-24);
+        job.failed = state === 'failed';
+        job.status = job.failed ? 'Failed' : (job.done ? 'Saved to your Vault' : 'Grabbing…');
+        // N8: a finished card must never keep the last phase sentence ("Merging video + audio…")
+        // as its sub-line — show real byte totals when known, else the state copy. Phase text
+        // is only meaningful while the grab is still running.
+        job.size = j.total ? (fmtBgBytes(j.downloaded) + ' / ' + fmtBgBytes(j.total)) : (state === 'running' ? (j.status || '') : '');
+        job.speed = state === 'running' ? fmtBgSpeed(j.speed) : '';
+        if (j.speed > 0 && state === 'running') job.speedSeries = (job.speedSeries || []).concat(j.speed).slice(-24);
         bgJobs.set(j.id, job);
         changed = true;
         if (state === 'done' && !seenDropDone.has(j.id)) {

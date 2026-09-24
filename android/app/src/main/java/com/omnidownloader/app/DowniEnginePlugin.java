@@ -1229,9 +1229,29 @@ public class DowniEnginePlugin extends Plugin {
     public void getDropJobs(PluginCall call) {
         JSObject result = new JSObject();
         try {
-            String raw = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
-                .getString("dropLive", "[]");
-            result.put("jobs", new JSONArray(raw == null || raw.isEmpty() ? "[]" : raw));
+            android.content.SharedPreferences prefs = getContext()
+                .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+            String raw = prefs.getString("dropLive", "[]");
+            JSONArray list = new JSONArray(raw == null || raw.isEmpty() ? "[]" : raw);
+            // v3.1.1 (defect N8): re-apply the terminal-entry window here, because the service
+            // only writes this snapshot while a grab runs. Without this, a done/failed card stayed
+            // in Active downloads until the next grab happened (seen on device: a failed card from
+            // 12:47 and a done card still rendered at 13:05 with nothing live).
+            JSONArray kept = new JSONArray();
+            long now = System.currentTimeMillis();
+            boolean pruned = false;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject o = list.optJSONObject(i);
+                if (o == null) { pruned = true; continue; }
+                boolean running = "running".equals(o.optString("state"));
+                if (!running && now - o.optLong("ts", now) > DowniDownloadService.DROP_LIVE_TERMINAL_TTL_MS) {
+                    pruned = true;
+                    continue;
+                }
+                kept.put(o);
+            }
+            if (pruned) prefs.edit().putString("dropLive", kept.toString()).apply();
+            result.put("jobs", kept);
         } catch (Exception e) {
             result.put("jobs", new JSONArray());
         }

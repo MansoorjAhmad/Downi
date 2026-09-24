@@ -63,6 +63,11 @@ public class DowniDownloadService extends Service {
     private static final String CHANNEL_PROGRESS = "downi_progress";
     private static final String CHANNEL_ALERTS = "downi_alerts";
     private static final int FG_NOTIFICATION_ID = 4811;
+    /**
+     * v3.1.1 (defect N8): how long a finished/failed DowniDrop card stays in the app snapshot.
+     * Shared contract — DowniEnginePlugin.getDropJobs() prunes with the same window on read.
+     */
+    static final long DROP_LIVE_TERMINAL_TTL_MS = 20000L;
     private static volatile DowniDownloadService instance;
     private static volatile int completionSeq = 0;
 
@@ -656,7 +661,12 @@ public class DowniDownloadService extends Service {
     /**
      * v3.1.1 (defect N4): mirror DowniDrop jobs into `downi_settings/dropLive` so the app can show a
      * live card — and a just-finished one — even though the grab ran headless. Tiny JSON, written on
-     * the same 800 ms floor as the notifications, pruned to the last 8 entries / 60 s.
+     * the same 800 ms floor as the notifications, pruned to the last 8 entries.
+     *
+     * v3.1.1 (defect N8): a finished/failed card is a short celebration, not a permanent list entry —
+     * terminal entries expire after 20 s. The plugin's getDropJobs() re-applies this same window on
+     * every read, because nothing writes this snapshot once the last grab ends (stale cards used to
+     * linger in Active downloads until a new grab happened).
      */
     private void writeDropSnapshot(String jobId, String state, String title, String destination) {
         if (jobId == null || !jobId.startsWith("drop")) return;
@@ -694,7 +704,7 @@ public class DowniDownloadService extends Service {
                 JSONObject o = list.optJSONObject(i);
                 if (o == null) continue;
                 boolean running = "running".equals(o.optString("state"));
-                if (!running && now - o.optLong("ts", now) > 60000) continue;
+                if (!running && now - o.optLong("ts", now) > DROP_LIVE_TERMINAL_TTL_MS) continue;
                 kept.put(o);
             }
             JSONArray capped = new JSONArray();
