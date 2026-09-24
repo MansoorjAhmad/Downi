@@ -1014,8 +1014,10 @@ public class DowniEnginePlugin extends Plugin {
                     progress.put("etaFormatted", etaSeconds > 0 ? (etaSeconds + "s left") : "");
                     progress.put("status", "Downloading…");
                     notifyListeners("onProgress", progress);
-                    DowniDownloadService.updateJob(getContext(), job.id,
-                        progress.getString("sizeFormatted") + String.format(Locale.US, " (%.0f%%)", percent), (int) percent);
+                    // v3.1.1 (defects N1-N3): the notification row is fed the same numbers the app
+                    // shows — % · size/total · speed · ETA — via the service's shared formatter.
+                    DowniDownloadService.updateJobProgress(getContext(), job.id, (int) percent,
+                        downloadedBytes, totalBytes, speedBytesPerSec, etaSeconds);
                 }
 
                 @Override
@@ -1028,12 +1030,12 @@ public class DowniEnginePlugin extends Plugin {
             if (job.cancelled.get()) return;
 
             JSONObject file = new JSONObject(response.toString());
-            DowniDownloadService.updateJob(getContext(), job.id, "Saving to gallery…", 98);
+            DowniDownloadService.updateJob(getContext(), job.id, "Saving to your Vault…", 98);
 
             JSObject saving = new JSObject();
             saving.put("jobId", job.id);
             saving.put("percent", 98);
-            saving.put("status", "Saving to gallery…");
+            saving.put("status", "Saving to your Vault…");
             notifyListeners("onProgress", saving);
 
             String destination;

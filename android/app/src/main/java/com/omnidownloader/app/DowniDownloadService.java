@@ -14,6 +14,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.webkit.MimeTypeMap;
@@ -73,6 +74,25 @@ public class DowniDownloadService extends Service {
 
     // ---------- Public static API (called from DowniEnginePlugin / DropActivity) ----------
 
+    /** Latest numbers per live job — the single source of truth for every notification row. */
+    private static final Map<String, JobProgress> live = new ConcurrentHashMap<>();
+
+    /** Accent used to tint the notification header (matches the app's default cyan). */
+    private static final int ACCENT_COLOR = 0xFF22D3EE;
+
+    /** Everything a notification row needs to render one honest progress line. */
+    private static final class JobProgress {
+        volatile int percent;
+        volatile long downloaded;
+        volatile long total;
+        volatile double speedBps;
+        volatile long etaSec;
+        volatile String status;   // phase text (Queued / Merging… / Saving…) or null during transfer
+        volatile boolean numbers; // true once the engine reported real byte counts
+        volatile long lastPostMs;
+        volatile int lastPercent = -1;
+    }
+
     public static void startJob(Context context, String jobId, String status) {
         activeJobs.add(jobId);
         Intent intent = new Intent(context, DowniDownloadService.class);
@@ -82,9 +102,23 @@ public class DowniDownloadService extends Service {
         ContextCompat.startForegroundService(context, intent);
     }
 
+    /**
+     * Phase update with no byte numbers yet (Queued, Merging video + audio…, Saving to your Vault…).
+     * The notification shows the phase text and the given percent.
+     */
     public static void updateJob(Context context, String jobId, String status, int percent) {
         DowniDownloadService service = instance;
-        if (service != null) service.showJobStatus(jobId, status, percent);
+        if (service != null) service.applyPhase(jobId, status, percent);
+    }
+
+    /**
+     * Live transfer tick (v3.1.1, defects N1-N3): percent, bytes, per-second speed and ETA all
+     * reach the notification through one shared formatter — the same numbers the app shows.
+     */
+    public static void updateJobProgress(Context context, String jobId, int percent,
+                                         long downloaded, long total, double speedBps, long etaSec) {
+        DowniDownloadService service = instance;
+        if (service != null) service.applyProgress(jobId, percent, downloaded, total, speedBps, etaSec);
     }
 
 
@@ -130,7 +164,11 @@ public class DowniDownloadService extends Service {
             case "job_start": {
                 String jobId = intent.getStringExtra("jobId");
                 String status = intent.getStringExtra("status");
-                Notification n = buildJobNotification(jobId, status != null ? status : "Starting...", 0);
+                JobProgress start = live.computeIfAbsent(jobId, k -> new JobProgress());
+                start.status = status != null ? status : "Starting…";
+                start.numbers = false;
+                start.percent = 0;
+                Notification n = buildJobNotification(jobId, start);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(FG_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
                 } else {
@@ -141,8 +179,10 @@ public class DowniDownloadService extends Service {
             case "job_finish": {
                 String jobId = intent.getStringExtra("jobId");
                 boolean success = intent.getBooleanExtra("success", false);
+                live.remove(jobId);
                 NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
                 if (success) notifyCompletion();
+                refreshForegroundRow();
                 maybeStop();
                 break;
             }
@@ -151,7 +191,11 @@ public class DowniDownloadService extends Service {
                 String jobId = "drop" + System.currentTimeMillis();
                 activeJobs.add(jobId);
                 sharedJobs.put(jobId, new AtomicBoolean(false));
-                Notification n = buildJobNotification(jobId, "DowniDrop: starting…", 0);
+                JobProgress start = live.computeIfAbsent(jobId, k -> new JobProgress());
+                start.status = "Starting…";
+                start.numbers = false;
+                start.percent = 0;
+                Notification n = buildJobNotification(jobId, start);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(FG_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
                 } else {
@@ -180,7 +224,7 @@ public class DowniDownloadService extends Service {
 
             // Self-started engine — the v2.6.4 pattern. Do NOT assume MainActivity
             // warmed Python: on a cold share the whole process may have just started.
-            showJobStatus(jobId, "DowniDrop: warming up the engine…", 1);
+            applyPhase(jobId, "Warming up the engine…", 1);
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
 
             final AtomicBoolean cancelled = sharedJobs.get(jobId);
@@ -188,7 +232,8 @@ public class DowniDownloadService extends Service {
             DownloadProgressListener listener = new DownloadProgressListener() {
                 @Override
                 public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
-                    showJobStatus(jobId, "DowniDrop: grabbing…", (int) percent);
+                    // v3.1.1 (defect N2): the row carries real numbers — % · size/total · speed · ETA.
+                    applyProgress(jobId, (int) percent, downloadedBytes, totalBytes, speedBytesPerSec, etaSeconds);
                 }
                 @Override
                 public boolean isCancelled() {
@@ -200,6 +245,7 @@ public class DowniDownloadService extends Service {
                 .callAttr("download", cleanUrl, workDir.getAbsolutePath(), formatId, listener);
 
             if (cancelled != null && cancelled.get()) {
+                live.remove(jobId);
                 NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
                 return;
             }
@@ -207,9 +253,9 @@ public class DowniDownloadService extends Service {
             JSONObject file = new JSONObject(response.toString());
             String title = file.optString("title", "Video");
             String destination;
-            showJobStatus(jobId, "DowniDrop: saving to gallery…", 98);
+            applyPhase(jobId, "Saving to your Vault…", 98);
             if (file.optBoolean("merge", false)) {
-                showJobStatus(jobId, "DowniDrop: merging video + audio…", 96);
+                applyPhase(jobId, "Merging video + audio…", 96);
                 File videoPart = new File(file.getString("video_path"));
                 File audioPart = new File(file.getString("audio_path"));
                 File merged = new File(videoPart.getParentFile(), title + "-merged.mp4");
@@ -225,19 +271,23 @@ public class DowniDownloadService extends Service {
                 destination = saveToGallery(new File(file.getString("path")), title, file.getString("ext"));
             }
             if (cancelled != null && cancelled.get()) {
+                live.remove(jobId);
                 NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
                 return;
             }
 
+            live.remove(jobId);
             NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
             notifySharedCompletion(title, destination);
         } catch (Exception error) {
+            live.remove(jobId);
             NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
             String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
             notifySharedFailure(url, friendlyError(detail));
         } finally {
             sharedJobs.remove(jobId);
             activeJobs.remove(jobId);
+            live.remove(jobId);
             cleanDir(workDir);
             maybeStop();
         }
@@ -452,7 +502,8 @@ public class DowniDownloadService extends Service {
     private void notifyCompletion() {
         try {
             Notification n = new NotificationCompat.Builder(this, CHANNEL_ALERTS)
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setSmallIcon(R.drawable.ic_stat_downi_done)
+                .setColor(ACCENT_COLOR)
                 .setContentTitle("Saved to your Vault")
                 .setContentText("Grab complete - tap to open DOWNI.")
                 .setContentIntent(openAppIntent())
@@ -467,7 +518,8 @@ public class DowniDownloadService extends Service {
     private void notifySharedCompletion(String title, String destination) {
         try {
             Notification n = new NotificationCompat.Builder(this, CHANNEL_ALERTS)
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setSmallIcon(R.drawable.ic_stat_downi_done)
+                .setColor(ACCENT_COLOR)
                 .setContentTitle("Saved to your Vault")
                 .setContentText(title + " · " + destination)
                 .setContentIntent(openAppIntent())
@@ -488,7 +540,8 @@ public class DowniDownloadService extends Service {
             PendingIntent retry = PendingIntent.getActivity(this, (int) (System.currentTimeMillis() % 100000), open,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             Notification n = new NotificationCompat.Builder(this, CHANNEL_ALERTS)
-                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setSmallIcon(R.drawable.ic_stat_downi_alert)
+                .setColor(0xFFFB7185)
                 .setContentTitle("DowniDrop couldn't grab that")
                 .setContentText(reason)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(reason + " Tap to open it in the Inspector."))
@@ -501,26 +554,126 @@ public class DowniDownloadService extends Service {
     }
 
 
-    private void showJobStatus(String jobId, String status, int percent) {
+    // ---------- Job progress rows (v3.1.1: one formatter, one live row) ----------
+
+    /** Phase string from the engine (Queued / Merging… / Saving…) — no byte numbers yet. */
+    private void applyPhase(String jobId, String status, int percent) {
+        JobProgress p = live.computeIfAbsent(jobId, k -> new JobProgress());
+        p.status = status != null ? status : "Starting…";
+        p.numbers = false;
+        p.percent = Math.max(0, Math.min(100, percent));
+        postJobRow(jobId, true);
+    }
+
+    /** Live numbers tick from the engine listener — % · size/total · speed · ETA. */
+    private void applyProgress(String jobId, int percent, long downloaded, long total, double speedBps, long etaSec) {
+        JobProgress p = live.computeIfAbsent(jobId, k -> new JobProgress());
+        p.numbers = true;
+        p.status = null;
+        p.percent = Math.max(0, Math.min(100, percent));
+        p.downloaded = Math.max(0, downloaded);
+        p.total = Math.max(0, total);
+        p.speedBps = speedBps > 0 ? speedBps : 0;
+        p.etaSec = etaSec > 0 ? etaSec : 0;
+        postJobRow(jobId, false);
+    }
+
+    /**
+     * Post one job's row AND mirror the same content into the foreground row.
+     * Defect N1: the foreground row used to freeze at "Queued" / 0 % forever because every
+     * later update went to a different id. Update floor: a phase change posts immediately,
+     * otherwise at most one post per 800 ms (the engine ticks ~4x/s).
+     */
+    private void postJobRow(String jobId, boolean force) {
+        JobProgress p = live.get(jobId);
+        if (p == null) return;
+        long now = SystemClock.elapsedRealtime();
+        if (!force && p.lastPercent == p.percent && (now - p.lastPostMs) < 800) return;
+        p.lastPercent = p.percent;
+        p.lastPostMs = now;
         try {
-            NotificationManagerCompat.from(this).notify(
-                jobNotificationId(jobId), buildJobNotification(jobId, status, percent));
+            Notification n = buildJobNotification(jobId, p);
+            NotificationManagerCompat.from(this).notify(jobNotificationId(jobId), n);
+            NotificationManagerCompat.from(this).notify(FG_NOTIFICATION_ID, n);
         } catch (Exception ignored) {}
+    }
+
+    /** Point the foreground row at whatever is still live (called when a job ends). */
+    private void refreshForegroundRow() {
+        for (String id : live.keySet()) {
+            JobProgress p = live.get(id);
+            if (p == null) continue;
+            try {
+                NotificationManagerCompat.from(this).notify(FG_NOTIFICATION_ID, buildJobNotification(id, p));
+            } catch (Exception ignored) {}
+            return;
+        }
     }
 
     private int jobNotificationId(String jobId) {
         return FG_NOTIFICATION_ID + 1 + Math.abs((jobId != null ? jobId.hashCode() : 0) % 1000);
     }
 
-    private Notification buildJobNotification(String jobId, String status, int percent) {
+    /** Collapsed one-liner: "26% · 3.2 MB / 12.1 MB" — numbers whenever the engine has them. */
+    private static String progressLine(JobProgress p) {
+        if (p.numbers && p.total > 0) {
+            return p.percent + "% · " + bytesShort(p.downloaded) + " / " + bytesShort(p.total);
+        }
+        if (p.numbers && p.downloaded > 0) return p.percent + "% · " + bytesShort(p.downloaded);
+        if (p.status != null) return p.status;
+        return "Starting…";
+    }
+
+    /** Expanded line: "⚡ DowniDrop · 26% done · 3.2 MB / 12.1 MB · 2.4 MB/s · 32s left". */
+    private static String progressBigText(String jobId, JobProgress p) {
+        StringBuilder sb = new StringBuilder();
+        if (jobId != null && jobId.startsWith("drop")) sb.append("⚡ DowniDrop · ");
+        sb.append(p.percent).append("% done");
+        if (p.numbers && p.total > 0) {
+            sb.append(" · ").append(bytesShort(p.downloaded)).append(" / ").append(bytesShort(p.total));
+        } else if (p.numbers && p.downloaded > 0) {
+            sb.append(" · ").append(bytesShort(p.downloaded));
+        }
+        String speed = speedShort(p.speedBps);
+        if (!speed.isEmpty()) sb.append(" · ").append(speed);
+        if (p.etaSec > 0) sb.append(" · ").append(p.etaSec).append("s left");
+        return sb.toString();
+    }
+
+    /** 1024-based but labelled MB/s — the app's own formatBytes()/formatSpeed() convention (owner D3). */
+    private static String bytesShort(long bytes) {
+        if (bytes <= 0) return "0 MB";
+        double mb = bytes / (1024.0 * 1024.0);
+        if (mb >= 1024.0) return String.format(Locale.US, "%.2f GB", mb / 1024.0);
+        if (mb >= 100.0) return String.format(Locale.US, "%.0f MB", mb);
+        return String.format(Locale.US, "%.1f MB", mb);
+    }
+
+    private static String speedShort(double bytesPerSec) {
+        if (bytesPerSec <= 0) return "";
+        double mbPerSec = bytesPerSec / (1024.0 * 1024.0);
+        if (mbPerSec >= 1.0) return String.format(Locale.US, "%.1f MB/s", mbPerSec);
+        return String.format(Locale.US, "%.0f KB/s", bytesPerSec / 1024.0);
+    }
+
+    private Notification buildJobNotification(String jobId, JobProgress p) {
+        boolean determinate = p.percent > 0 || (p.numbers && p.total > 0);
+        String speed = speedShort(p.speedBps);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_PROGRESS)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(R.drawable.ic_stat_downi)
+            .setColor(ACCENT_COLOR)
             .setContentTitle("DOWNI is grabbing")
-            .setContentText(status)
-            .setProgress(100, percent, percent <= 0)
+            .setContentText(progressLine(p))
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(progressBigText(jobId, p)))
+            .setProgress(100, Math.max(0, Math.min(100, p.percent)), !determinate)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
+            .setShowWhen(false)
+            // Defect N5: without IMMEDIATE, Android 12+ may hold the FGS notification back ~10 s —
+            // short grabs then finished with no notification ever seen.
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(openAppIntent());
+        if (!speed.isEmpty()) builder.setSubText(speed);
         // DowniDrop jobs get a Cancel action (v2.6.4 parity) — in-app jobs already
         // have per-job cancel buttons in the Queue UI.
         if (jobId != null && jobId.startsWith("drop")) {
@@ -542,6 +695,7 @@ public class DowniDownloadService extends Service {
 
     private void maybeStop() {
         if (activeJobs.isEmpty()) {
+            live.clear();
             stopForeground(true);
             stopSelf();
         }
