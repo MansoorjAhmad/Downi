@@ -18,6 +18,7 @@ import android.os.IBinder;
 import android.os.SystemClock;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.webkit.MimeTypeMap;
 
 import androidx.core.app.NotificationCompat;
@@ -214,6 +215,7 @@ public class DowniDownloadService extends Service {
                 String jobId = intent.getStringExtra("jobId");
                 AtomicBoolean flag = sharedJobs.get(jobId);
                 if (flag != null) flag.set(true);
+                Log.i("DOWNI", "drop cancel requested " + jobId); // (D) logcat breadcrumb
                 break;
             }
         }
@@ -227,6 +229,7 @@ public class DowniDownloadService extends Service {
         try {
             if (url == null || url.trim().isEmpty()) throw new IllegalArgumentException("No link in that share.");
             final String cleanUrl = url.trim();
+            Log.i("DOWNI", "drop start " + jobId + " " + cleanUrl); // (D) logcat breadcrumb
 
             // Self-started engine — the v2.6.4 pattern. Do NOT assume MainActivity
             // warmed Python: on a cold share the whole process may have just started.
@@ -254,6 +257,7 @@ public class DowniDownloadService extends Service {
                 writeDropSnapshot(jobId, "canceled", null, null);
                 live.remove(jobId);
                 NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+                Log.i("DOWNI", "drop canceled " + jobId);
                 return;
             }
 
@@ -281,19 +285,34 @@ public class DowniDownloadService extends Service {
                 writeDropSnapshot(jobId, "canceled", null, null);
                 live.remove(jobId);
                 NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+                Log.i("DOWNI", "drop canceled " + jobId);
                 return;
             }
 
             writeDropSnapshot(jobId, "done", title, destination);
+            Log.i("DOWNI", "drop saved " + jobId + " -> " + destination); // (D) logcat breadcrumb
             live.remove(jobId);
             NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
             notifySharedCompletion(title, destination);
         } catch (Exception error) {
-            writeDropSnapshot(jobId, "failed", null, null);
+            String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
+            // The cancel flag lives in sharedJobs until finally runs, so it is still readable here.
+            AtomicBoolean flag = sharedJobs.get(jobId);
+            boolean userCanceled = (flag != null && flag.get()) || detail.toLowerCase(Locale.US).contains("cancel");
             live.remove(jobId);
             NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
-            String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
-            notifySharedFailure(url, friendlyError(detail));
+            if (userCanceled) {
+                // Cancel UX: the user asked for this stop — a neutral "Grab canceled"
+                // confirmation, never the red "couldn't grab that / Download failed: …
+                // cancelled" failure the user caused themselves.
+                writeDropSnapshot(jobId, "canceled", null, null);
+                notifySharedCanceled();
+                Log.i("DOWNI", "drop canceled " + jobId + " (user)"); // (D) logcat breadcrumb
+            } else {
+                writeDropSnapshot(jobId, "failed", null, null);
+                Log.i("DOWNI", "drop failed " + jobId + ": " + detail); // (D) logcat breadcrumb
+                notifySharedFailure(url, friendlyError(detail));
+            }
         } finally {
             sharedJobs.remove(jobId);
             activeJobs.remove(jobId);
@@ -500,6 +519,13 @@ public class DowniDownloadService extends Service {
 
     private String friendlyError(String detail) {
         String lower = detail.toLowerCase(Locale.US);
+        // v3.1.1 (G): plain, honest reasons for the two rawest engine texts.
+        if (lower.contains("url parsing") || lower.contains("unsupported url")) return "That link isn't a video.";
+        if (lower.contains("getaddrinfo") || lower.contains("name or service not known") || lower.contains("name resolution")
+                || lower.contains("no address associated") || lower.contains("transport") || lower.contains("connection refused")
+                || lower.contains("network is unreachable") || lower.contains("connectionreset") || lower.contains("connection reset")
+                || lower.contains("errno 7") || lower.contains("errno 101") || lower.contains("errno 111")) return "Can't reach the network — try again.";
+        if (lower.contains("cancel")) return "Grab canceled."; // Cancel UX: never scary
         if (lower.contains("certificate") || lower.contains("ssl")) return "Secure connection failed. Check your internet, then retry.";
         if (lower.contains("private") || lower.contains("login") || lower.contains("sign in")) return "This video needs an account or is private. Try a public link.";
         if (lower.contains("requested format is not available")) return "That quality is not available for this link. Try Best Available or a lower quality.";
@@ -564,6 +590,23 @@ public class DowniDownloadService extends Service {
         } catch (Exception ignored) {}
     }
 
+
+    /** User-initiated DowniDrop cancel (Cancel UX): a neutral "Grab canceled" alert —
+     *  never the red failure notification for a stop the user themselves requested. */
+    private void notifySharedCanceled() {
+        try {
+            Notification n = new NotificationCompat.Builder(this, CHANNEL_ALERTS)
+                .setSmallIcon(R.drawable.ic_stat_downi)
+                .setColor(ACCENT_COLOR)
+                .setContentTitle("Grab canceled")
+                .setContentText("Stopped before it saved — start it again any time.")
+                .setContentIntent(openAppIntent())
+                .setAutoCancel(true)
+                .build();
+            int id = FG_NOTIFICATION_ID + 1000 + (completionSeq++ % 4000);
+            NotificationManagerCompat.from(this).notify(id, n);
+        } catch (Exception ignored) {}
+    }
 
     // ---------- Job progress rows (v3.1.1: one formatter, one live row) ----------
 

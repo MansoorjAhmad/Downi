@@ -1546,6 +1546,10 @@
     }
 
     function onDownloadError(errStr, url, formatId) {
+      // Cancel UX: a user-initiated cancel is not a failure — the call-site already
+      // toasted it (B2). Never pop the scary error sheet for it (this also arrives via
+      // the plugin's failed-progress event on cancelDownload).
+      if ((errStr || '').toLowerCase().includes('cancel')) return;
       triggerHaptic('heavy');
       currentRawError = errStr;
       let friendly = "The media stream could not be downloaded. The video may be private, restricted, or the connection dropped.";

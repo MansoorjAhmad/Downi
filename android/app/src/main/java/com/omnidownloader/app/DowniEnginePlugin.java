@@ -18,6 +18,7 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.provider.DocumentsContract;
 import android.util.Base64;
+import android.util.Log;
 import android.webkit.MimeTypeMap;
 
 import com.getcapacitor.JSObject;
@@ -951,6 +952,7 @@ public class DowniEnginePlugin extends Plugin {
         String jobId = "dl" + System.currentTimeMillis() + (int) (Math.random() * 1000);
         DownloadJob job = new DownloadJob(jobId, call, rawUrl, call.getString("formatId", "best"));
         jobs.put(jobId, job);
+        Log.i("DOWNI", "job start " + jobId + " " + rawUrl); // (D) logcat breadcrumb
 
         JSObject started = new JSObject();
         started.put("jobId", jobId);
@@ -971,6 +973,7 @@ public class DowniEnginePlugin extends Plugin {
             DownloadJob job = jobs.remove(jobId);
             if (job != null) {
                 job.cancelled.set(true);
+                Log.i("DOWNI", "job cancel " + jobId); // (D) logcat breadcrumb
                 try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
                 DowniDownloadService.finishJob(getContext(), jobId, false);
                 JSObject progress = new JSObject();
@@ -982,6 +985,7 @@ public class DowniEnginePlugin extends Plugin {
         } else {
             for (DownloadJob job : jobs.values()) {
                 job.cancelled.set(true);
+                Log.i("DOWNI", "job cancel all " + job.id); // (D) logcat breadcrumb
                 try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
                 DowniDownloadService.finishJob(getContext(), job.id, false);
             }
@@ -1077,6 +1081,7 @@ public class DowniEnginePlugin extends Plugin {
 
             DowniDownloadService.finishJob(getContext(), job.id, true);
             try { job.call.resolve(progress); } catch (Exception ignored) {}
+            Log.i("DOWNI", "job saved " + job.id + " -> " + destination); // (D) logcat breadcrumb
         } catch (Exception error) {
             if (!job.cancelled.get()) {
                 JSObject progress = new JSObject();
@@ -1087,6 +1092,7 @@ public class DowniEnginePlugin extends Plugin {
                 notifyListeners("onProgress", progress);
                 DowniDownloadService.finishJob(getContext(), job.id, false);
                 try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
+                Log.i("DOWNI", "job failed " + job.id + ": " + detail); // (D) logcat breadcrumb
             }
         } finally {
             jobs.remove(job.id);
@@ -1110,6 +1116,12 @@ public class DowniEnginePlugin extends Plugin {
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
                 PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url);
                 JSONObject info = new JSONObject(response.toString());
+                // G2: a non-video link (tag page, dead resolve) carries neither duration nor
+                // thumbnail — reject honestly instead of opening the Inspector on "Video · 0:00".
+                if (info.optInt("duration", 0) <= 0 && info.optString("thumbnail", "").isEmpty()) {
+                    call.reject("That link isn't a video.");
+                    return;
+                }
                 JSObject result = new JSObject();
                 result.put("title", info.optString("title", "Video"));
                 result.put("uploader", info.optString("uploader", ""));
@@ -1454,6 +1466,13 @@ public class DowniEnginePlugin extends Plugin {
 
     private String friendlyError(String detail) {
         String lower = detail.toLowerCase(Locale.US);
+        // v3.1.1 (G): plain, honest reasons for the two rawest engine texts.
+        if (lower.contains("url parsing") || lower.contains("unsupported url")) return "That link isn't a video.";
+        if (lower.contains("getaddrinfo") || lower.contains("name or service not known") || lower.contains("name resolution")
+                || lower.contains("no address associated") || lower.contains("transport") || lower.contains("connection refused")
+                || lower.contains("network is unreachable") || lower.contains("connectionreset") || lower.contains("connection reset")
+                || lower.contains("errno 7") || lower.contains("errno 101") || lower.contains("errno 111")) return "Can't reach the network — try again.";
+        if (lower.contains("cancel")) return "Grab canceled."; // Cancel UX: never scary
         if (lower.contains("certificate") || lower.contains("ssl")) return "Secure connection failed. Check your internet, then retry.";
         if (lower.contains("private") || lower.contains("login") || lower.contains("sign in")) return "This video needs an account or is private. Try a public link.";
         if (lower.contains("requested format is not available")) return "That quality is not available for this link. Try Best Available or a lower quality.";
