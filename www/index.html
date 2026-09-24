@@ -827,6 +827,11 @@
     let currentRawError = '';
 
     const activeJobs = new Map();
+    // v3.1.1 (defect N4): background DowniDrop grabs, mirrored from native via getDropJobs().
+    // Keyed by the native job id ("drop…"); rendered with a "bg_" key prefix.
+    const bgJobs = new Map();
+    const seenDropDone = new Set();
+    let bgPollTimer = null;
     let completedCount = 0;
     let grabbedBytes = 0;
 
@@ -1478,7 +1483,7 @@
       saveHistory();
       updateLastGrabChip();
       pumpPlaylist();
-      setTimeout(() => { if (activeJobs.size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden'); }, 1200);
+      setTimeout(() => { if (mergedJobs().size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden'); }, 1200);
     }
 
     // Playlist batch: one failure must never kill the rest of the queue (B1) —
@@ -1523,7 +1528,7 @@
               <span class="jring">${job.done
                 ? '<span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 pop" style="background:rgba(52,211,153,.2);color:var(--ok)">✓</span>'
                 : ringSvg(job.percent)}</span>
-              <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} ${job.done ? '<span style="color:var(--ok)">Saved ✓</span>' : ''}</p>
+              <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} ${job.background ? '<span class="font-bold" style="color:var(--muted)">⚡ background</span> ' : ''}${job.done ? '<span style="color:var(--ok)">Saved ✓</span>' : ''}</p>
             </div>
             <span class="jpct text-[12px] font-mono font-bold ${job.done ? '' : 'text-accent'} flex-shrink-0" ${job.done ? 'style="color:var(--ok)"' : ''}>${pct}%</span>
           </div>
@@ -1543,51 +1548,60 @@
 
     function renderJobCards() {
       const wrap = document.getElementById('activeDownloadsWrap');
-      const container = document.getElementById('activeDownloads');
-      if (!wrap || !container) return;
-      if (activeJobs.size === 0) {
-        wrap.classList.add('hidden');
-        container.innerHTML = '';
-        return;
-      }
-      wrap.classList.remove('hidden');
+      const jobs = mergedJobs();
+      if (wrap) wrap.classList.toggle('hidden', jobs.size === 0);
 
       // Rebuild card frames only when the job set (or a job's done state) changes;
       // plain progress ticks update the numbers in place. Rebuilding the whole DOM
       // every ~250 ms replayed each card's fade-in and made the cards blink
       // (found on-device: "the downloading thing is blinking").
-      const ids = [...activeJobs.keys()];
-      const frames = {};
-      container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
-      const needRebuild = ids.length !== Object.keys(frames).length || ids.some(id => {
-        const f = frames[id];
-        return !f || (f.dataset.done === '1') !== !!activeJobs.get(id).done;
-      });
-      if (needRebuild) {
-        container.innerHTML = ids.map(id => jobCardHtml(id, activeJobs.get(id))).join('');
-        container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
-      }
-
+      // v3.1.1: the Queue tab's active section shares this painter, so one job looks the
+      // same wherever you see it (U9) and background grabs appear in both (N4).
+      const targets = [document.getElementById('activeDownloads'), document.getElementById('queueActiveContainer')].filter(Boolean);
       const RING_C = 2 * Math.PI * 9;
-      ids.forEach(id => {
-        const job = activeJobs.get(id);
-        const card = frames[id];
-        if (!card || job.done) return;
-        const pct = Math.round(job.percent);
-        const pctEl = card.querySelector('.jpct'); if (pctEl) pctEl.textContent = pct + '%';
-        const barEl = card.querySelector('.jbar > div'); if (barEl) barEl.style.width = Math.max(2, job.percent) + '%';
-        const ringEl = card.querySelector('.jringfg');
-        if (ringEl) ringEl.setAttribute('stroke-dashoffset', (RING_C - Math.min(100, Math.max(0, job.percent)) / 100 * RING_C).toFixed(1));
-        const stEl = card.querySelector('.jstatus'); if (stEl) stEl.textContent = job.size || job.status;
-        const spEl = card.querySelector('.jspeed'); if (spEl) spEl.textContent = job.speed || '';
-        const etaEl = card.querySelector('.jeta'); if (etaEl) etaEl.textContent = job.eta || '';
-        const sparkEl = card.querySelector('.jspark');
-        if (sparkEl) sparkEl.innerHTML = (job.speedSeries && job.speedSeries.length > 2) ? sparklineSvg(job.speedSeries) : '';
+      targets.forEach(container => {
+        if (jobs.size === 0) { container.innerHTML = ''; return; }
+        const ids = [...jobs.keys()];
+        const frames = {};
+        container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
+        const needRebuild = ids.length !== Object.keys(frames).length || ids.some(id => {
+          const f = frames[id];
+          return !f || (f.dataset.done === '1') !== !!jobs.get(id).done;
+        });
+        if (needRebuild) {
+          container.innerHTML = ids.map(id => jobCardHtml(id, jobs.get(id))).join('');
+          container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
+        }
+        ids.forEach(id => {
+          const job = jobs.get(id);
+          const card = frames[id];
+          if (!card || job.done) return;
+          const pct = Math.round(job.percent);
+          const pctEl = card.querySelector('.jpct'); if (pctEl) pctEl.textContent = pct + '%';
+          const barEl = card.querySelector('.jbar > div'); if (barEl) barEl.style.width = Math.max(2, job.percent) + '%';
+          const ringEl = card.querySelector('.jringfg');
+          if (ringEl) ringEl.setAttribute('stroke-dashoffset', (RING_C - Math.min(100, Math.max(0, job.percent)) / 100 * RING_C).toFixed(1));
+          const stEl = card.querySelector('.jstatus'); if (stEl) stEl.textContent = job.size || job.status;
+          const spEl = card.querySelector('.jspeed'); if (spEl) spEl.textContent = job.speed || '';
+          const etaEl = card.querySelector('.jeta'); if (etaEl) etaEl.textContent = job.eta || '';
+          const sparkEl = card.querySelector('.jspark');
+          if (sparkEl) sparkEl.innerHTML = (job.speedSeries && job.speedSeries.length > 2) ? sparklineSvg(job.speedSeries) : '';
+        });
       });
     }
 
     function cancelOneDownload(jobId) {
       const engine = getEngine();
+      if (jobId.startsWith('bg_')) {
+        // A background (DowniDrop) grab — cancel it in the service, keep the history clean.
+        const nativeId = bgNativeId(jobId);
+        bgJobs.delete(nativeId);
+        renderJobCards();
+        updateQueueBadge();
+        engine?.cancelDropJob?.({ jobId: nativeId });
+        showToast('Cancelled', 'Background grab stopped.', 'info');
+        return;
+      }
       const job = activeJobs.get(jobId);
       activeJobs.delete(jobId);
       renderJobCards();
@@ -1599,20 +1613,89 @@
     function cancelAllDownloads() {
       const engine = getEngine();
       engine?.cancelDownload?.();
+      bgJobs.forEach((_, nativeId) => engine?.cancelDropJob?.({ jobId: nativeId }));
+      bgJobs.clear();
       activeJobs.clear();
       renderJobCards();
       updateQueueBadge();
       showToast('All cancelled', 'Every download was stopped.', 'info');
     }
 
+    // ================= Background (DowniDrop) grabs — v3.1.1 defect N4 =================
+    function bgRenderKey(id) { return 'bg_' + id; }
+    function bgNativeId(renderKey) { return renderKey.startsWith('bg_') ? renderKey.slice(3) : renderKey; }
+    function mergedJobs() {
+      const merged = new Map(activeJobs);
+      bgJobs.forEach((job, id) => merged.set(bgRenderKey(id), job));
+      return merged;
+    }
+    function fmtBgSpeed(bps) {
+      if (!bps || bps <= 0) return '';
+      const mb = bps / (1024 * 1024);
+      return mb >= 1 ? mb.toFixed(1) + ' MB/s' : Math.round(bps / 1024) + ' KB/s';
+    }
+    function fmtBgBytes(bytes) {
+      if (!bytes || bytes <= 0) return '';
+      const mb = bytes / (1024 * 1024);
+      if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
+      return mb >= 100 ? Math.round(mb) + ' MB' : mb.toFixed(1) + ' MB';
+    }
+    async function syncBackgroundJobs() {
+      const engine = getEngine();
+      if (!engine?.getDropJobs) return;
+      let jobs = [];
+      try {
+        const res = await engine.getDropJobs();
+        jobs = (res && res.jobs) || [];
+      } catch (e) { return; }
+      const alive = new Set();
+      let changed = false;
+      jobs.forEach(j => {
+        if (!j || !j.id) return;
+        const state = j.state || 'running';
+        if (state === 'canceled') { if (bgJobs.delete(j.id)) changed = true; return; }
+        alive.add(j.id);
+        const prev = bgJobs.get(j.id);
+        const job = prev || { label: 'DowniDrop' + (j.platform ? ' · ' + j.platform : ''), url: j.url || '', formatId: 'best', background: true, status: 'Grabbing…', percent: 0, size: '', speed: '', eta: '', done: false, speedSeries: [] };
+        const pct = state === 'done' ? 100 : Math.round(j.pct || 0);
+        job.percent = pct;
+        job.done = state === 'done';
+        job.status = state === 'failed' ? 'Failed' : 'Grabbing…';
+        job.size = j.total ? (fmtBgBytes(j.downloaded) + ' / ' + fmtBgBytes(j.total)) : (j.status || '');
+        job.speed = fmtBgSpeed(j.speed);
+        if (j.speed > 0) job.speedSeries = (job.speedSeries || []).concat(j.speed).slice(-24);
+        bgJobs.set(j.id, job);
+        changed = true;
+        if (state === 'done' && !seenDropDone.has(j.id)) {
+          seenDropDone.add(j.id);
+          completedCount++;
+          if (j.total) grabbedBytes += j.total;
+          downloadsHistory.unshift({ id: 'drop_' + j.id, title: j.title || 'Shared video', destination: j.dest || 'Vault', date: new Date().toLocaleDateString(), url: j.url || '' });
+          saveHistory();
+          showToast('Saved ✓', (j.title || 'Shared video') + (j.dest ? ' · ' + j.dest : ''), 'success');
+          renderQueueTab();
+        }
+      });
+      [...bgJobs.keys()].forEach(id => { if (!alive.has(id)) { bgJobs.delete(id); changed = true; } });
+      if (changed) { renderJobCards(); updateQueueBadge(); }
+    }
+    function startBgPolling() {
+      if (bgPollTimer) return;
+      syncBackgroundJobs();
+      bgPollTimer = setInterval(syncBackgroundJobs, 1500);
+    }
+    function stopBgPolling() { if (bgPollTimer) { clearInterval(bgPollTimer); bgPollTimer = null; } }
+    function syncBgPolling() { if (document.visibilityState === 'visible') startBgPolling(); else stopBgPolling(); }
+
     function updateQueueBadge() {
       const badge = document.getElementById('queueBadge');
+      const jobs = mergedJobs();
       if (badge) {
-        if (activeJobs.size > 0) badge.classList.remove('hidden');
+        if (jobs.size > 0) badge.classList.remove('hidden');
         else badge.classList.add('hidden');
       }
       const statActive = document.getElementById('statActive');
-      if (statActive) statActive.innerText = String(activeJobs.size);
+      if (statActive) statActive.innerText = String(jobs.size);
       const statDone = document.getElementById('statDone');
       if (statDone) statDone.innerText = String(completedCount);
     }
@@ -1689,30 +1772,14 @@
 
     // ================= Queue tab =================
     function renderQueueTab() {
-      const activeC = document.getElementById('queueActiveContainer');
       const histC = document.getElementById('queueListContainer');
-      if (!activeC || !histC) return;
+      if (!histC) return;
+      // Active cards are painted by renderJobCards() for BOTH containers (one shape, U9) —
+      // that is also where background DowniDrop grabs show up (N4).
+      renderJobCards();
       updateQueueBadge();
       const statSize = document.getElementById('statSize');
       if (statSize) statSize.innerText = String(Math.round(grabbedBytes / (1024 * 1024)));
-
-      if (activeJobs.size === 0) {
-        activeC.innerHTML = '';
-      } else {
-        activeC.innerHTML = [...activeJobs.entries()].map(([id, job]) => `
-          <div class="card card-accent p-4 space-y-2.5 fade-in">
-            <div class="flex items-center justify-between">
-              <p class="text-[12px] font-extrabold text-white truncate">${escapeHtml(job.label)} <span class="font-normal" style="color:var(--muted)">— ${escapeHtml(job.status)}</span></p>
-              <span class="text-[12px] font-mono font-bold text-accent">${Math.round(job.percent)}%</span>
-            </div>
-            <div class="bar live"><div style="width:${Math.max(2, job.percent)}%"></div></div>
-            <div class="flex items-center justify-between text-[10px] font-mono" style="color:var(--muted)">
-              <span>${escapeHtml(job.size || '')}</span>
-              <button onclick="cancelOneDownload('${id}')" class="font-sans font-bold" style="color:var(--bad)">Cancel</button>
-            </div>
-          </div>
-        `).join('');
-      }
 
       if (downloadsHistory.length === 0) {
         histC.innerHTML = `<div class="card p-10 text-center">
@@ -2888,7 +2955,9 @@
       window.addEventListener('focus', () => checkClipboard());
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) checkClipboard();
+        syncBgPolling(); // v3.1.1: background grabs are polled only while the app is visible
       });
+      syncBgPolling();
 
       const engine = getEngine();
       if (engine?.getSharedUrl) {

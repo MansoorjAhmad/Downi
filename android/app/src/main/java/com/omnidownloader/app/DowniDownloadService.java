@@ -8,6 +8,7 @@ import android.app.Service;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.database.Cursor;
 import android.net.Uri;
@@ -27,6 +28,7 @@ import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
 import com.chaquo.python.android.AndroidPlatform;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -68,6 +70,9 @@ public class DowniDownloadService extends Service {
 
     /** Cancel flags for DowniDrop headless jobs, keyed by job id. */
     private static final Map<String, AtomicBoolean> sharedJobs = new ConcurrentHashMap<>();
+
+    /** Source url per DowniDrop job — the in-app snapshot needs it (v3.1.1, defect N4). */
+    private static final Map<String, String> dropUrls = new ConcurrentHashMap<>();
 
     /** Serial queue for DowniDrop grabs — rapid shares run one after another. */
     private ExecutorService shareExecutor;
@@ -191,6 +196,7 @@ public class DowniDownloadService extends Service {
                 String jobId = "drop" + System.currentTimeMillis();
                 activeJobs.add(jobId);
                 sharedJobs.put(jobId, new AtomicBoolean(false));
+                dropUrls.put(jobId, url == null ? "" : url);
                 JobProgress start = live.computeIfAbsent(jobId, k -> new JobProgress());
                 start.status = "Starting…";
                 start.numbers = false;
@@ -245,6 +251,7 @@ public class DowniDownloadService extends Service {
                 .callAttr("download", cleanUrl, workDir.getAbsolutePath(), formatId, listener);
 
             if (cancelled != null && cancelled.get()) {
+                writeDropSnapshot(jobId, "canceled", null, null);
                 live.remove(jobId);
                 NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
                 return;
@@ -271,15 +278,18 @@ public class DowniDownloadService extends Service {
                 destination = saveToGallery(new File(file.getString("path")), title, file.getString("ext"));
             }
             if (cancelled != null && cancelled.get()) {
+                writeDropSnapshot(jobId, "canceled", null, null);
                 live.remove(jobId);
                 NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
                 return;
             }
 
+            writeDropSnapshot(jobId, "done", title, destination);
             live.remove(jobId);
             NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
             notifySharedCompletion(title, destination);
         } catch (Exception error) {
+            writeDropSnapshot(jobId, "failed", null, null);
             live.remove(jobId);
             NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
             String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
@@ -288,6 +298,7 @@ public class DowniDownloadService extends Service {
             sharedJobs.remove(jobId);
             activeJobs.remove(jobId);
             live.remove(jobId);
+            dropUrls.remove(jobId);
             cleanDir(workDir);
             maybeStop();
         }
@@ -595,6 +606,58 @@ public class DowniDownloadService extends Service {
             Notification n = buildJobNotification(jobId, p);
             NotificationManagerCompat.from(this).notify(jobNotificationId(jobId), n);
             NotificationManagerCompat.from(this).notify(FG_NOTIFICATION_ID, n);
+        } catch (Exception ignored) {}
+        if (jobId != null && jobId.startsWith("drop")) writeDropSnapshot(jobId, "running", null, null);
+    }
+
+    /**
+     * v3.1.1 (defect N4): mirror DowniDrop jobs into `downi_settings/dropLive` so the app can show a
+     * live card — and a just-finished one — even though the grab ran headless. Tiny JSON, written on
+     * the same 800 ms floor as the notifications, pruned to the last 8 entries / 60 s.
+     */
+    private void writeDropSnapshot(String jobId, String state, String title, String destination) {
+        if (jobId == null || !jobId.startsWith("drop")) return;
+        try {
+            JobProgress p = live.get(jobId);
+            SharedPreferences prefs = getSharedPreferences("downi_settings", MODE_PRIVATE);
+            String raw = prefs.getString("dropLive", "");
+            JSONArray list = (raw == null || raw.isEmpty()) ? new JSONArray() : new JSONArray(raw);
+            long now = System.currentTimeMillis();
+            JSONObject entry = null;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject o = list.optJSONObject(i);
+                if (o != null && jobId.equals(o.optString("id"))) { entry = o; break; }
+            }
+            if (entry == null) {
+                entry = new JSONObject();
+                entry.put("id", jobId);
+                list.put(entry);
+            }
+            String url = dropUrls.get(jobId);
+            entry.put("url", url == null ? "" : url);
+            entry.put("platform", platformKeyFor(url));
+            entry.put("pct", p != null ? Math.max(0, Math.min(100, p.percent)) : 0);
+            entry.put("downloaded", p != null ? p.downloaded : 0);
+            entry.put("total", p != null ? p.total : 0);
+            entry.put("speed", p != null ? p.speedBps : 0);
+            entry.put("status", p != null && p.status != null ? p.status : "");
+            entry.put("state", state);
+            if (title != null) entry.put("title", title);
+            if (destination != null) entry.put("dest", destination);
+            entry.put("ts", now);
+
+            JSONArray kept = new JSONArray();
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject o = list.optJSONObject(i);
+                if (o == null) continue;
+                boolean running = "running".equals(o.optString("state"));
+                if (!running && now - o.optLong("ts", now) > 60000) continue;
+                kept.put(o);
+            }
+            JSONArray capped = new JSONArray();
+            int start = Math.max(0, kept.length() - 8);
+            for (int i = start; i < kept.length(); i++) capped.put(kept.optJSONObject(i));
+            prefs.edit().putString("dropLive", capped.toString()).apply();
         } catch (Exception ignored) {}
     }
 

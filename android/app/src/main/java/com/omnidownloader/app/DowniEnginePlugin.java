@@ -1209,6 +1209,36 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * v3.1.1 (defect N4): background DowniDrop jobs are headless, so the app reads this snapshot to
+     * show them as live cards in Active downloads / Queue. Written by DowniDownloadService.
+     */
+    @PluginMethod
+    public void getDropJobs(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            String raw = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
+                .getString("dropLive", "[]");
+            result.put("jobs", new JSONArray(raw == null || raw.isEmpty() ? "[]" : raw));
+        } catch (Exception e) {
+            result.put("jobs", new JSONArray());
+        }
+        call.resolve(result);
+    }
+
+    /** Cancel a background grab from inside the app — routes to the service's shared_cancel action. */
+    @PluginMethod
+    public void cancelDropJob(PluginCall call) {
+        String jobId = call.getString("jobId");
+        if (jobId != null && !jobId.trim().isEmpty()) {
+            Intent intent = new Intent(getContext(), DowniDownloadService.class);
+            intent.setAction("shared_cancel");
+            intent.putExtra("jobId", jobId);
+            try { getContext().startService(intent); } catch (Exception ignored) {}
+        }
+        call.resolve();
+    }
+
     @PluginMethod
     public void requestMediaPermission(PluginCall call) {
         String alias = Build.VERSION.SDK_INT >= 33 ? "mediaModern" : "mediaLegacy";
