@@ -1276,6 +1276,9 @@ public class DowniEnginePlugin extends Plugin {
             }
             if (pruned) prefs.edit().putString("dropLive", kept.toString()).apply();
             result.put("jobs", kept);
+            // DowniDrop self-diagnosis: the last headless failure (raw engine text included),
+            // written by DowniDownloadService — readable in the app, no adb needed.
+            result.put("lastError", prefs.getString("dropLastError", ""));
         } catch (Exception e) {
             result.put("jobs", new JSONArray());
         }

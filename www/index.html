@@ -1764,7 +1764,7 @@
         // N8: a finished card must never keep the last phase sentence ("Merging video + audio…")
         // as its sub-line — show real byte totals when known, else the state copy. Phase text
         // is only meaningful while the grab is still running.
-        job.size = j.total ? (fmtBgBytes(j.downloaded) + ' / ' + fmtBgBytes(j.total)) : (state === 'running' ? (j.status || '') : '');
+        job.size = j.total ? (fmtBgBytes(j.downloaded) + ' / ' + fmtBgBytes(j.total)) : (state === 'running' ? (j.status || '') : (state === 'failed' && j.error ? j.error : ''));
         job.speed = state === 'running' ? fmtBgSpeed(j.speed) : '';
         if (j.speed > 0 && state === 'running') job.speedSeries = (job.speedSeries || []).concat(j.speed).slice(-24);
         bgJobs.set(j.id, job);

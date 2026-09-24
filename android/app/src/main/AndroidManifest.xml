@@ -27,13 +27,19 @@
         </activity>
 
         <!-- DowniDrop 2.0: shared links land in the invisible DropActivity (v2.6.4
-             pattern, restored). Instant mode grabs in the background without leaving
-             the platform app; "Ask quality" mode forwards to MainActivity's Inspector. -->
+             pattern, restored). Shares ALWAYS grab instantly in the background — the
+             Instant/Ask-quality toggle was retired in v3.1.1 (owner ruling 2026-09-24).
+             taskAffinity="" keeps DropActivity out of DOWNI's own task: without it, a
+             warm share (app sitting in recents) dragged DOWNI's whole task — MainActivity
+             included — to the front, so the user "left" the platform app. Cold shares
+             never showed it because the throwaway task simply died with the activity.
+             (Warm-share redirect bug, reported on device 2026-09-24.) -->
         <activity
             android:name=".DropActivity"
             android:theme="@style/AppTheme.ShareReceiver"
             android:excludeFromRecents="true"
             android:noHistory="true"
+            android:taskAffinity=""
             android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>

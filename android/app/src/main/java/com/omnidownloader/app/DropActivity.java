@@ -31,7 +31,11 @@ public class DropActivity extends Activity {
             Toast.makeText(this, "⚡ DowniDrop: grabbing in background…", Toast.LENGTH_SHORT).show();
             DowniDownloadService.startShared(this, url);
         }
-        finish();
+        // Warm-share redirect fix: this activity lives in its own throwaway task
+        // (taskAffinity="" in the manifest), and removing that task on the way out
+        // returns the user to the app they shared from — every time. Plain finish()
+        // used to drop a warm share onto MainActivity (the user "left" the platform app).
+        finishAndRemoveTask();
     }
 
     private String extractSharedText(Intent intent) {

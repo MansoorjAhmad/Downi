@@ -457,9 +457,24 @@ public class DowniDownloadService extends Service {
                 notifySharedCanceled();
                 Log.i("DOWNI", "drop canceled " + jobId + " (user)"); // (D) logcat breadcrumb
             } else {
-                writeDropSnapshot(jobId, "failed", null, null);
+                String friendly = friendlyError(detail);
+                // DowniDrop self-diagnosis (09-24 "fails twice, third works" report): the
+                // failed card carries the plain reason into the app, and the RAW engine
+                // text is parked in dropLastError so getDropJobs() can hand it back —
+                // no adb needed to name the culprit.
+                writeDropSnapshot(jobId, "failed", null, null, 0, friendly);
+                try {
+                    getSharedPreferences("downi_settings", MODE_PRIVATE).edit()
+                        .putString("dropLastError", new JSONObject()
+                            .put("id", jobId)
+                            .put("url", url == null ? "" : url)
+                            .put("friendly", friendly)
+                            .put("raw", detail)
+                            .put("ts", System.currentTimeMillis()).toString())
+                        .apply();
+                } catch (Exception ignored) {}
                 Log.i("DOWNI", "drop failed " + jobId + ": " + detail); // (D) logcat breadcrumb
-                notifySharedFailure(url, friendlyError(detail));
+                notifySharedFailure(url, friendly);
             }
         } finally {
             sharedJobs.remove(jobId);
@@ -814,15 +829,20 @@ public class DowniDownloadService extends Service {
      * linger in Active downloads until a new grab happened).
      */
     private void writeDropSnapshot(String jobId, String state, String title, String destination) {
-        writeDropSnapshot(jobId, state, title, destination, 0);
+        writeDropSnapshot(jobId, state, title, destination, 0, null);
+    }
+
+    private void writeDropSnapshot(String jobId, String state, String title, String destination, long finalBytes) {
+        writeDropSnapshot(jobId, state, title, destination, finalBytes, null);
     }
 
     /**
      * v3.1.1 (defect N9): the terminal variant — `finalBytes` is the true size of the file that
      * landed (merged output included). When it is > 0 it overrides whatever the last progress tick
      * reported, so the app can add an honest "MB grabbed" number for a headless grab.
+     * `error` (failures only) carries the plain reason onto the in-app failed card.
      */
-    private void writeDropSnapshot(String jobId, String state, String title, String destination, long finalBytes) {
+    private void writeDropSnapshot(String jobId, String state, String title, String destination, long finalBytes, String error) {
         if (jobId == null || !jobId.startsWith("drop")) return;
         try {
             JobProgress p = live.get(jobId);
@@ -858,6 +878,7 @@ public class DowniDownloadService extends Service {
             entry.put("state", state);
             if (title != null) entry.put("title", title);
             if (destination != null) entry.put("dest", destination);
+            if (error != null && !error.isEmpty()) entry.put("error", error);
             entry.put("ts", now);
 
             JSONArray kept = new JSONArray();
