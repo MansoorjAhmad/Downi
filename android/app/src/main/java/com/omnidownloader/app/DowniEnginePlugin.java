@@ -454,8 +454,8 @@ public class DowniEnginePlugin extends Plugin {
         } catch (Exception e) {
             // Defect C (v3.1.1): THIS SPOT MUST MATCH build.gradle versionCode/versionName —
             // it is one of the three version spots bumped at release (see MISSION §J).
-            result.put("versionName", "3.1.0");
-            result.put("versionCode", 45L);
+            result.put("versionName", "3.1.1");
+            result.put("versionCode", 46L);
             call.resolve(result);
         }
     }
