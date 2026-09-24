@@ -3,7 +3,7 @@ package com.omnidownloader.app;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.graphics.Bitmap;
-import android.graphics.HardwareBuffer;
+import android.hardware.HardwareBuffer;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -98,19 +98,7 @@ public class FetchSpikeService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
 
-        // Screenshot capability (API 34) declared programmatically — the same approach
-        // the CTS test uses (AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT).
-        if (Build.VERSION.SDK_INT >= 34) {
-            try {
-                AccessibilityServiceInfo info = getServiceInfo();
-                info.capability |= AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT;
-                setServiceInfo(info);
-                log("CAPABILITY CAN_TAKE_SCREENSHOT declared");
-            } catch (Throwable t) {
-                log("CAPABILITY_FAIL " + t);
-            }
-        }
-
+        // Screenshot capability is declared in XML (android:canTakeScreenshot, API 34).
         File dir = spikeDir();
         dir.mkdirs();
         handoffEnabled = readHandoffGate(dir);
@@ -320,7 +308,7 @@ public class FetchSpikeService extends AccessibilityService {
         shotCount++;
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, mainExec, new TakeScreenshotCallback() {
-                @Override public void onScreenshot(ScreenshotResult result) {
+                @Override public void onSuccess(ScreenshotResult result) {
                     saveShot(result, shotCount);
                 }
                 @Override public void onFailure(int error) {
@@ -441,7 +429,7 @@ public class FetchSpikeService extends AccessibilityService {
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         log("SERVICE_DESTROY");
         closing = true;
         outbox.offer(POISON);
