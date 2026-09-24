@@ -9,7 +9,7 @@
 
 ## A — Who We Are & What This Is
 
-- **Project:** DOWNI (formerly "Omni Downloader") — an Android video downloader app + companion web app.
+- **Project:** DOWNI (formerly "Omni Downloader") — an Android video downloader app. (The web companion shipped 2026-09-24 and is **frozen — out of the active plan**; repo stays at `github.com/MansoorjAhmad/downi-web`.)
 - **Repo:** `github.com/MansoorjAhmad/Downi`, branch `main`.
 - **Owner/tester:** Mansoor — tests every build himself on a **vivo V2058** (physical device, USB cable; adb-over-WiFi is unreliable on it).
 - **Core values (locked owner decisions):**
@@ -21,7 +21,8 @@
 
 ## B — The Goal
 
-**Make the mobile app rock-solid, then give full focus to the web app.**
+**Make the mobile app rock-solid.** The web app shipped 2026-09-24 (full APK parity + native iOS
+downloads) and is **frozen — not part of this plan** (owner ruling).
 
 Not "add features" — *solid*. The owner's benchmark is the old v2.6.x DowniDrop: boring,
 deterministic, never surprised him. The current v3.x machinery is more powerful (1080p merge,
@@ -156,9 +157,9 @@ Two items were pulled **forward into the v3.1.1 stabilization pass** (owner ruli
    matrix clean in this same pass.** If instant mode is still shaky afterwards, the toggle stays for now
    and we revisit later.
 
-**Permanently out of scope** (owner ruling): Pause/Resume, TikTok photo posts. After v3.1.x is fast,
-stable and complete: **full focus on the web app** (users reporting issues there; web release procedure
-in HANDOFF.md).
+**Permanently out of scope** (owner ruling): Pause/Resume, TikTok photo posts. The web app is also
+**frozen — out of the active plan** (owner ruling 2026-09-24): shipped complete, lives on GitHub/Vercel,
+no planned work. Focus stays on the APK.
 
 ## L — How To Start a Fresh Chat (for the AI)
 

@@ -14,16 +14,20 @@ _Last updated: 2026-09-22 (after v3.0.2 / web v2.1.1). Read this first in a fres
 
 ---
 
-## 1. Projects at a glance
+## 1. Project at a glance
 
-| | Android (flagship) | Web (companion) |
-|---|---|---|
-| Local path | `C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app` | `C:\Users\Manso\Documents\Codex\downi-web` |
-| Remote | github.com/MansoorjAhmad/Downi | github.com/MansoorjAhmad/downi-web |
-| Live channel | GitHub Releases → in-app updater | getdowni.vercel.app (auto-deploy on push) |
-| Current version | **v3.1.0** (versionCode 45), "Polish Release": DowniDrop 2.0 instant background grabs + Vault blink fixed at the root | **v2.1.1** (`WEB_VERSION` in index.html) |
-| Tests | `.github/workflows/test.yml` (engine smoke + debug build, every push) | none yet (manual) |
-| Release trigger | `git push origin vX.Y.Z` → `.github/workflows/release.yml` builds + publishes | `git push origin main` → Vercel |
+| | Android (flagship) |
+|---|---|
+| Local path | `C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app` |
+| Remote | github.com/MansoorjAhmad/Downi |
+| Live channel | GitHub Releases → in-app updater |
+| Current version | **v3.1.0** (versionCode 45), "Polish Release": DowniDrop 2.0 instant background grabs + Vault blink fixed at the root |
+| Tests | `.github/workflows/test.yml` (engine smoke + debug build, every push) |
+| Release trigger | `git push origin vX.Y.Z` → `.github/workflows/release.yml` builds + publishes |
+
+**Web companion: shipped 2026-09-24, frozen, out of the active plan** (owner ruling). Repo stays at
+github.com/MansoorjAhmad/downi-web, live at getdowni.vercel.app (auto-deploy on push); local working
+copy removed. No planned work — only revisit if the owner asks.
 
 Old companion desktop app (`desktop-app/`, `dist/`, `work/`) is **abandoned** — ignore unless the user asks.
 
@@ -93,12 +97,6 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 4. `git tag -a vX.Y.Z -m "…"` → `git push origin vX.Y.Z` → CI publishes the signed APK.
 5. Confirm: `gh run list --repo MansoorjAhmad/Downi` → both workflows green; `gh release view vX.Y.Z`.
 
-**Web:**
-1. Bump `WEB_VERSION` in `index.html` **and** the health string in `api/info.py`.
-2. `git commit && git push origin main` → Vercel deploys (~1 min).
-3. Optional rollback anchor: `git tag -a web-vX.Y.Z` + push tags.
-4. Verify live: `GET /api/info?health=1` reports the new version.
-
 ---
 
 ## 6. Gotchas learned the hard way
@@ -144,7 +142,7 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 2. Analytics — **rejected permanently**. Zero tracking is a core value ("we provide value, we don't take their data").
 3. Vault scoping — **done in v3.0.4**: only DOWNI downloads, never the whole gallery.
 4. Brand/identity — **frozen**. No rebrands, no redesign pivots; polish the current experience only.
-5. Priority order — APK Vault perfection first (v3.0.4), then full focus on the web app (users reporting issues).
+5. Priority order — APK Vault perfection first (v3.0.4). Web app shipped 2026-09-24 and is **frozen — out of the active plan** (owner ruling 2026-09-24).
 6. DowniDrop (locked 2026-09-23) — **instant background grab is the default again** (v2.6.4 pattern restored); "Ask quality" is opt-in via Settings. Vault Phase 2 polish (shimmer, content-visibility, press-scale) **parked for v3.2** — never ship new paint-timing code in the same release as the paint-timing bug fix.
 
 ---
@@ -153,6 +151,5 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 
 - **Bundled UI freshness**: compare `www/index.html` size to `assets/public/index.html` inside the built APK zip — equal = good.
 - **Engine smoke (CI tier)**: `python ci/smoke_test.py` (TikTok fast-path must pass; YouTube/Instagram are datacenter-IP sensitive → warnings only).
-- **Web allow-list guard**: `python -c "import sys;sys.path.insert(0,'api');import info;print(info._url_allowed('https://evil.com/x'))"` → `False`; platform URLs and public HTTPS media links → `True`.
-- **Live checks**: `https://getdowni.vercel.app/api/info?health=1` (version), `/robots.txt`, `/sitemap.xml`, GitHub `releases/latest` (asset name/size).
+- **Live checks**: GitHub `releases/latest` (asset name/size).
 
