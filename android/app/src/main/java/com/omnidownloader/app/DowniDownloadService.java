@@ -826,10 +826,18 @@ public class DowniDownloadService extends Service {
             NotificationChannel progress = new NotificationChannel(
                 CHANNEL_PROGRESS, "DOWNI grabs", NotificationManager.IMPORTANCE_LOW);
             progress.setDescription("Live progress while videos download");
+            // v3.1.1 (U5): make the channel policy deliberate. A moving progress bar is not an
+            // unread notification — no badge, no vibration, silent. Completions are the badge-worthy
+            // ones (default sound/vibration from IMPORTANCE_DEFAULT). Note: Android locks a channel's
+            // sound/vibration/badge policy at creation, so this shapes new installs.
+            progress.setShowBadge(false);
+            progress.enableVibration(false);
+            progress.setSound(null, null);
             nm.createNotificationChannel(progress);
             NotificationChannel alerts = new NotificationChannel(
                 CHANNEL_ALERTS, "DOWNI completions", NotificationManager.IMPORTANCE_DEFAULT);
             alerts.setDescription("Finished grabs land here with a sound");
+            alerts.setShowBadge(true); // a real completion is worth an app-icon badge
             nm.createNotificationChannel(alerts);
         }
     }
