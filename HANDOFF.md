@@ -125,7 +125,8 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 - [x] v3.0.3 (versionCode 43) released: all 8 fixes device-verified by the owner on the vivo V2058; tag `v3.0.3` pushed, CI green, signed `DOWNI-v3.0.3.apk` (37.9 MB) live on GitHub Releases → in-app updater feed active.
 - Remaining DEVICE_TEST.md cells (playlist Grab-all, custom save folder, cancel/app-kill regression) were covered by the owner's blanket "all the things are working" — formally re-check only if a bug report comes in.
 
-**P1 — none.** (All four candidates are closed by locked owner rulings: Pause/resume + TikTok photo posts = *permanently out of scope*; web items = *frozen 2026-09-24*; Play Store track = *rejected permanently*. Nothing sits in deferred.)
+**P1 — v3.2 DOWNI Fetcher** — plan `V3.2_PLAN.md`; **Phase 0 detectability spike is the HARD GATE** (debug build only; no bubble/wiring/polish code until the spike reports its verdict).
+(Old candidates closed by locked owner rulings: Pause/resume + TikTok photo posts = *permanently out of scope*; web items = *frozen 2026-09-24*; Play Store track = *rejected permanently*. Nothing sits in deferred.)
 - [ ] ~~Pause + resume (needs `.part` support — deep change to the proven core; matrix required).~~ **Out of scope (locked).**
 - [ ] ~~TikTok photo-post saving (needs a multi-file save contract).~~ **Out of scope (locked).**
 - [ ] ~~Web: direct-to-CDN downloads where CORS allows (skip the proxy).~~ **Web frozen 2026-09-24.**

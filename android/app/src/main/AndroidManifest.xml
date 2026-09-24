@@ -55,6 +55,22 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
+        <!-- V3.2 Phase 0 detectability spike (owner-approved 2026-09-24): logs what
+             Instagram/TikTok expose on this device (files/fetch-spike/, local only).
+             Debug tool — no bubble, no auto-download, never part of a release build. -->
+        <service
+            android:name=".FetchSpikeService"
+            android:label="DOWNI Fetcher Spike"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.accessibility.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/fetch_spike_service" />
+        </service>
+
         <!-- Quick Settings tile: one tap into DOWNI's Grab screen -->
         <service
             android:name=".GrabTileService"
