@@ -1,10 +1,32 @@
-# DOWNI V3.1.0 ⚡
+# DOWNI V3.1.1 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
 
 ---
+
+## 🆕 What's New in V3.1.1
+
+### The Truth Release — what you see is what's happening
+
+- **Notifications tell the real story.** A download row now carries the same numbers as the app:
+  percent, downloaded / total size, live speed and time left — collapsed and expanded. One live row
+  per grab, posted instantly (no more Android 12+ delay), tinted with the DOWNI accent and a branded
+  icon.
+- **Background grabs are visible in the app.** A share → DOWNI grab shows up inside DOWNI too — a live
+  card in the Grab tab and the Queue with a working Cancel, a "Saved ✓" moment when it lands, one
+  deduped Queue-history row and a Vault that refreshes itself while you watch. Finished cards clear
+  out on their own after a few seconds.
+- **Honest words.** Raw engine errors become plain reasons ("That link isn't a video.", "Can't reach
+  the network — try again."), a non-video link is rejected at the Inspector, and a grab you cancelled
+  yourself says "Grab canceled" instead of a scary failure.
+- **Reachability polish.** Tapping any grab notification lands on the Queue; a one-time hint offers
+  notification permission only when it's actually switched off; job-card Cancel buttons get full
+  44 dp finger targets and the live numbers leave the 10 px floor.
+- **Dark only, on purpose.** The light theme is gone; AMOLED stays the default, and the status/nav
+  bars are dark by construction.
+
 
 ## 🆕 What's New in V3.1.0
 

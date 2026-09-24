@@ -875,6 +875,9 @@
     function storeDel(key) {
       try { localStorage.removeItem('downi_' + key); localStorage.removeItem('omni_' + key); } catch (e) {}
     }
+    // v3.1.1: one-time sweep of keys that no longer have any reader — the light theme was
+    // hard-deleted (owner ruling 2026-09-24), so a leftover preference would be dead weight.
+    try { localStorage.removeItem('downi_theme'); localStorage.removeItem('omni_theme'); } catch (e) {}
     function triggerHaptic(style) {
       try { window.Capacitor?.Plugins?.Haptics?.impact?.({ style: (style || 'light').toUpperCase() }); } catch (e) {}
     }
