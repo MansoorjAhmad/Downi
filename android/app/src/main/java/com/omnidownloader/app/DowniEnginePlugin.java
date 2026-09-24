@@ -451,8 +451,10 @@ public class DowniEnginePlugin extends Plugin {
             result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
-            result.put("versionName", "3.0.3");
-            result.put("versionCode", 43L);
+            // Defect C (v3.1.1): THIS SPOT MUST MATCH build.gradle versionCode/versionName —
+            // it is one of the three version spots bumped at release (see MISSION §J).
+            result.put("versionName", "3.1.0");
+            result.put("versionCode", 45L);
             call.resolve(result);
         }
     }
