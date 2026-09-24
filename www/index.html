@@ -135,6 +135,11 @@
     @keyframes breathe { 0%,100% { opacity:.55; transform: scale(.96);} 50% { opacity:1; transform: scale(1.05);} }
 
     .bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; position: relative; }
+    /* v3.1.1 (U6): ≥44dp tap target for icon/text controls that must keep their compact look.
+       The ::after overlay is invisible and centered on the control, so the row height never
+       changes (no layout shift) while the finger target grows to 44x44. */
+    .tap44 { position: relative; }
+    .tap44::after { content: ''; position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); }
     .bar > div {
       height: 100%;
       border-radius: 999px;
@@ -383,7 +388,7 @@
         <div id="activeDownloadsWrap" class="hidden space-y-3">
           <div class="flex items-center justify-between px-1">
             <h3 class="text-[13px] font-extrabold text-white">Active downloads</h3>
-            <button onclick="cancelAllDownloads()" class="text-[11px] font-bold" style="color:var(--bad)">Cancel all</button>
+            <button onclick="cancelAllDownloads()" class="tap44 text-[11px] font-bold" style="color:var(--bad)">Cancel all</button>
           </div>
           <div id="activeDownloads" class="space-y-3 stagger"></div>
         </div>
@@ -1575,13 +1580,13 @@
             <span class="jpct text-[12px] font-mono font-bold ${job.done ? '' : 'text-accent'} flex-shrink-0" ${job.done ? 'style="color:var(--ok)"' : ''}>${pct}%</span>
           </div>
           <div class="bar jbar ${job.done ? '' : 'live'}"><div style="width:${Math.max(2, job.percent)}%"></div></div>
-          <div class="flex items-center justify-between text-[10px] font-mono" style="color:var(--muted)">
+          <div class="flex items-center justify-between text-[11px] font-mono" style="color:var(--muted)">
             <span class="jstatus">${escapeHtml(job.size || job.status)}</span>
             <div class="flex items-center gap-3">
               <span class="jspark">${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}</span>
               <span class="jspeed text-emerald-300 font-bold">${job.speed ? escapeHtml(job.speed) : ''}</span>
               <span class="jeta text-accent">${job.eta ? escapeHtml(job.eta) : ''}</span>
-              ${job.done ? '' : `<button onclick="cancelOneDownload('${id}')" class="font-sans font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
+              ${job.done ? '' : `<button onclick="cancelOneDownload('${id}')" class="tap44 font-sans font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
             </div>
           </div>
         </div>
