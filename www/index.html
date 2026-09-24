@@ -400,7 +400,7 @@
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-[12px] font-extrabold text-white">DowniDrop</p>
-            <p class="text-[10px] mt-0.5" style="color:var(--muted)">In any app: Share → DOWNI — grabs instantly in the background (or "Ask quality" in Settings)</p>
+            <p class="text-[10px] mt-0.5" style="color:var(--muted)">In any app: Share → DOWNI — grabs instantly in the background</p>
           </div>
         </div>
 
@@ -581,10 +581,9 @@
           </div>
           <div class="py-3 border-t border-white/5">
             <p class="text-[12px] font-bold text-zinc-200">DowniDrop</p>
-            <p class="text-[10px] mt-0.5" style="color:var(--muted)">What Share → DOWNI does in other apps</p>
+            <p class="text-[10px] mt-0.5" style="color:var(--muted)">Share → DOWNI grabs instantly in the background — always</p>
             <div class="flex gap-2 mt-2.5">
-              <button id="dropModeInstant" onclick="setDropMode('instant')" class="chip on flex-1 py-2 text-[10px] font-bold text-center">⚡ Instant grab</button>
-              <button id="dropModeAsk" onclick="setDropMode('ask')" class="chip flex-1 py-2 text-[10px] font-bold text-center">Ask quality first</button>
+              <div class="chip on flex-1 py-2 text-[10px] font-bold text-center">⚡ Instant grab</div>
             </div>
           </div>
         </div>
@@ -2836,17 +2835,12 @@
     function toggleClipboardDetect(enabled) { storeSet('clipboard_detect', enabled ? '1' : '0'); }
 
     // ================= DowniDrop 2.0 settings (v3.1.0) =================
-    // The web layer owns the toggle + per-platform quality memory (localStorage);
-    // DropActivity and the headless service are native-only, so every change is
-    // mirrored into SharedPreferences via DowniEngine.syncDropSettings.
-    function setDropMode(mode) {
-      const m = mode === 'ask' ? 'ask' : 'instant';
-      storeSet('drop_mode', m);
-      document.getElementById('dropModeInstant')?.classList.toggle('on', m === 'instant');
-      document.getElementById('dropModeAsk')?.classList.toggle('on', m === 'ask');
-      syncDropSettings();
-      showToast('DowniDrop', m === 'instant' ? 'Shares grab instantly in the background.' : 'Shares open the Inspector for quality choice.', 'success');
-    }
+    // The web layer owns the per-platform quality memory (localStorage); DropActivity
+    // and the headless service are native-only, so it is mirrored into SharedPreferences
+    // via DowniEngine.syncDropSettings.
+    // v3.1.1 (owner ruling): the Instant / Ask-quality toggle is GONE — Share → DOWNI
+    // always grabs instantly in the background (the v2.6.4 promise). The Inspector stays
+    // for the in-app paste / Vortex flows, never for a share.
 
     function collectQualityMemory() {
       const out = {};
@@ -2870,7 +2864,6 @@
       const engine = getEngine();
       if (!engine?.syncDropSettings) return;
       engine.syncDropSettings({
-        mode: storeGet('drop_mode') === 'ask' ? 'ask' : 'instant',
         qualities: JSON.stringify(collectQualityMemory())
       }).catch(() => {});
     }
@@ -3032,11 +3025,10 @@
       const chkClip = document.getElementById('chkClipboard');
       if (chkClip) chkClip.checked = storeGet('clipboard_detect') !== '0';
 
-      // DowniDrop 2.0: restore the toggle and mirror settings + quality memory to
-      // the native side (DropActivity reads them without a WebView).
-      const dropMode = storeGet('drop_mode') === 'ask' ? 'ask' : 'instant';
-      document.getElementById('dropModeInstant')?.classList.toggle('on', dropMode === 'instant');
-      document.getElementById('dropModeAsk')?.classList.toggle('on', dropMode === 'ask');
+      // DowniDrop 2.0: mirror the per-platform quality memory to the native side
+      // (DropActivity reads it without a WebView). v3.1.1: the Instant/Ask toggle is
+      // gone — shares always grab instantly — so sweep its dead preference once.
+      storeDel('drop_mode');
       syncDropSettings();
 
       const pv = document.getElementById('playerVideo');

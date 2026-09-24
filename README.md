@@ -18,6 +18,9 @@ DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application eng
   card in the Grab tab and the Queue with a working Cancel, a "Saved ✓" moment when it lands, one
   deduped Queue-history row and a Vault that refreshes itself while you watch. Finished cards clear
   out on their own after a few seconds.
+- **Share → DOWNI is always instant now.** The "Ask quality first" toggle is gone — a share grabs
+  in the background immediately, every time (the Inspector remains for the in-app paste and Vortex
+  flows, so you can still pick a quality when you're in DOWNI itself).
 - **Honest words.** Raw engine errors become plain reasons ("That link isn't a video.", "Can't reach
   the network — try again."), a non-video link is rejected at the Inspector, and a grab you cancelled
   yourself says "Grab canceled" instead of a scary failure.

@@ -48,7 +48,7 @@ For each ✅: file exists in Vault, size > 0 KB, plays with audio, correct forma
 | 3 | Rapid double-share | ☐ both files download (queued), both completion notifications, no overwrite |
 | 4 | Cancel button on DowniDrop progress notification | ☐ download stops, no file in Vault, notification clears |
 | 5 | Failure path — share an invalid/private link | ☐ failure notification with honest reason; tap → Inspector opens with the link |
-| 6 | **Settings → DowniDrop → "Ask quality first"**, then share | ☐ Inspector opens with quality picker (v3.0 behavior); switch back to Instant and confirm |
+| 6 | **Settings → DowniDrop → "Ask quality first"**, then share | ☐ RETIRED in v3.1.1 (owner ruling 2026-09-24): the Instant/Ask toggle was deleted after the instant column passed this matrix — shares always grab instantly. Re-check cell: Settings → DowniDrop shows one static "⚡ Instant grab" chip; a share never opens the Inspector |
 | 7 | Quality memory — pick 720p for TikTok in Inspector once, then instant-share a TikTok link | ☐ grabs at 720p |
 | 8 | Custom save folder set → instant DowniDrop share | ☐ file lands in the custom folder, appears in Vault |
 | 9 | **Vault blink test** — open Vault, watch: downloads finishing, Rescan, tab switches | ☐ zero flicker; scroll position kept |

@@ -1205,18 +1205,18 @@ public class DowniEnginePlugin extends Plugin {
     }
 
     /**
-     * DowniDrop 2.0 settings bridge: the web layer (localStorage) owns the share-behavior
-     * toggle and the per-platform quality memory, but DropActivity and the headless
-     * service path are native-only — so the values are mirrored into SharedPreferences.
+     * DowniDrop settings bridge: the web layer (localStorage) owns the per-platform quality
+     * memory, but DropActivity and the headless service path are native-only — so the value
+     * is mirrored into SharedPreferences. v3.1.1 (owner ruling): the Instant / Ask-quality
+     * mode key is gone — shares always grab instantly, and this also sweeps the stale key.
      */
     @PluginMethod
     public void syncDropSettings(PluginCall call) {
-        String mode = call.getString("mode", "instant");
         String qualities = call.getString("qualities", "");
         getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
             .edit()
-            .putString("dropMode", "ask".equals(mode) ? "ask" : "instant")
             .putString("dropQualities", qualities == null ? "" : qualities)
+            .remove("dropMode")
             .apply();
         call.resolve();
     }

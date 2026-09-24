@@ -13,10 +13,9 @@ import java.util.regex.Pattern;
  * pattern that v3.0 removed when shares moved into the Inspector: translucent,
  * noHistory, excluded from recents — the user NEVER leaves the platform app.
  *
- * Mode comes from Settings (mirrored into downi_settings SharedPreferences by the
- * web layer via DowniEnginePlugin.syncDropSettings):
- *   - "instant" (default): toast + headless background grab via DowniDownloadService.
- *   - "ask": forward the share to MainActivity → the Inspector opens for quality choice.
+ * v3.1.1 (owner ruling 2026-09-24): shares are ALWAYS the instant background grab —
+ * the Instant / Ask-quality toggle was deleted after the instant column passed the
+ * full device matrix. The Inspector remains for the in-app paste / Vortex flows.
  */
 public class DropActivity extends Activity {
     private static final Pattern URL_PATTERN = Pattern.compile("https?://\\S+");
@@ -28,24 +27,11 @@ public class DropActivity extends Activity {
 
         if (url == null) {
             Toast.makeText(this, "DowniDrop: no link found in that share", Toast.LENGTH_SHORT).show();
-        } else if (isInstantMode()) {
+        } else {
             Toast.makeText(this, "⚡ DowniDrop: grabbing in background…", Toast.LENGTH_SHORT).show();
             DowniDownloadService.startShared(this, url);
-        } else {
-            // "Ask quality" — hand the share to the Inspector exactly as v3.0 did.
-            Intent forward = new Intent(this, MainActivity.class);
-            forward.setAction(Intent.ACTION_SEND);
-            forward.setType("text/plain");
-            forward.putExtra(Intent.EXTRA_TEXT, url);
-            forward.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(forward);
         }
         finish();
-    }
-
-    private boolean isInstantMode() {
-        String mode = getSharedPreferences("downi_settings", MODE_PRIVATE).getString("dropMode", "instant");
-        return !"ask".equals(mode);
     }
 
     private String extractSharedText(Intent intent) {
