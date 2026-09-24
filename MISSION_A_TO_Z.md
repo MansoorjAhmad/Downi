@@ -144,10 +144,21 @@ release as a paint-timing fix.
 
 ## K — What Comes After Solid (v3.2.0 "Power Release" — review-only until then)
 
-Plan preserved in backup branch as `V3.2_PLAN.md`: frontend polish, AMOLED-only mode,
-ask-quality-first removal, 13-item bug sweep, release gate. **Permanently out of scope**
-(owner ruling): Pause/Resume, TikTok photo posts. After v3.2.0: **full focus on the web app**
-(users reporting issues there; web release procedure in HANDOFF.md).
+**Owner ruling 2026-09-24 — the stale plan is deleted.** `V3.2_PLAN.md` existed only on
+`backup/pre-rollback-v3.1.4`; it was removed there in commit `f04af40` (pushed, `a4c995c..f04af40`) and it
+never existed on `main`. It assumed context that has since changed — if v3.2 planning ever restarts, it
+starts fresh. Git history still contains it in `0fd4001` (normal; no history rewrite on a frozen branch).
+
+Two items were pulled **forward into the v3.1.1 stabilization pass** (owner ruling, user demand):
+1. **Light theme removed entirely** — dark/AMOLED only, **AMOLED as the default**; hard-delete the code,
+   leave nothing dormant. This also retires defect F (light × AMOLED precedence bug becomes impossible).
+2. **"Ask quality first" removed from DowniDrop** — ⚠️ **only after instant mode passes the full device
+   matrix clean in this same pass.** If instant mode is still shaky afterwards, the toggle stays for now
+   and we revisit later.
+
+**Permanently out of scope** (owner ruling): Pause/Resume, TikTok photo posts. After v3.1.x is fast,
+stable and complete: **full focus on the web app** (users reporting issues there; web release procedure
+in HANDOFF.md).
 
 ## L — How To Start a Fresh Chat (for the AI)
 
