@@ -848,6 +848,9 @@
     let bgPollTimer = null;
     let completedCount = 0;
     let grabbedBytes = 0;
+    // v3.1.1 (defect N9): bytes of headless DowniDrop grabs, read from the service's own ledger.
+    // They usually finish with no WebView alive, so the app would otherwise never count them.
+    let dropBytes = 0;
 
     let vaultItems = [];
     let vaultFilter = 'all';
@@ -1527,6 +1530,7 @@
         title: title,
         destination: destination,
         date: new Date().toLocaleDateString(),
+        ts: Date.now(),
         // The job's own URL, not whatever happens to be in the input box (B4)
         url: url || currentInspectedUrl || document.getElementById('inputManualUrl').value.trim()
       });
@@ -1697,6 +1701,44 @@
       if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
       return mb >= 100 ? Math.round(mb) + ' MB' : mb.toFixed(1) + ' MB';
     }
+    /**
+     * v3.1.1 (defect N9): fold the service's ledger of headless DowniDrop grabs into the Queue
+     * dashboard. Idempotent by id — a grab the app did witness through the background snapshot is
+     * not counted twice. Called on boot and on every resume.
+     */
+    async function syncGrabLedger() {
+      const engine = getEngine();
+      if (!engine?.getGrabLedger) return;
+      let res = null;
+      try { res = await engine.getGrabLedger(); } catch (e) { return; }
+      if (!res) return;
+      dropBytes = Number(res.bytes || 0) || 0;
+      const rows = Array.isArray(res.history) ? res.history : [];
+      let added = false;
+      rows.forEach(r => {
+        if (!r || !r.id) return;
+        if (downloadsHistory.some(h => h.id === r.id)) return;
+        downloadsHistory.push({
+          id: r.id,
+          title: r.title || 'Shared video',
+          destination: r.dest || 'Vault',
+          date: new Date(Number(r.ts) || Date.now()).toLocaleDateString(),
+          url: r.url || '',
+          ts: Number(r.ts) || 0
+        });
+        added = true;
+      });
+      if (added) {
+        // Newest first: rows carrying a timestamp sort above the legacy ones (ts = 0), and
+        // Array.sort is stable, so equal keys keep the order they were already in.
+        downloadsHistory.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        completedCount = downloadsHistory.length;
+        saveHistory();
+      }
+      renderQueueTab();
+      updateQueueBadge();
+    }
+
     async function syncBackgroundJobs() {
       const engine = getEngine();
       if (!engine?.getDropJobs) return;
@@ -1730,12 +1772,21 @@
         if (state === 'done' && !seenDropDone.has(j.id)) {
           seenDropDone.add(j.id);
           completedCount++;
-          if (j.total) grabbedBytes += j.total;
-          downloadsHistory.unshift({ id: 'drop_' + j.id, title: j.title || 'Shared video', destination: j.dest || 'Vault', date: new Date().toLocaleDateString(), url: j.url || '' });
+          // N9: no byte bookkeeping here. The service keeps its own ledger for headless grabs
+          // (including the ones that finish while the app is shut) and syncGrabLedger() folds it
+          // in — adding here too would double-book the grab.
+          downloadsHistory.unshift({ id: 'drop_' + j.id, title: j.title || 'Shared video', destination: j.dest || 'Vault', date: new Date().toLocaleDateString(), url: j.url || '', ts: Date.now() });
           saveHistory();
           showToast('Saved ✓', (j.title || 'Shared video') + (j.dest ? ' · ' + j.dest : ''), 'success');
           renderQueueTab();
           refreshVaultSilently(); nudgeVaultAfterSave(); // VA: background grab finished → Vault update
+          // v3.1.1 (defect N13): read the service's ledger NOW, not at the next resume. The bytes
+          // of this grab are already in it, but the dashboard only re-read the ledger on boot /
+          // resume, so "COMPLETED 6 · 83 MB" sat on screen a grab behind (found live 09-24 while
+          // verifying N12: COMPLETED ticked up, MB GRABBED did not). syncGrabLedger() is idempotent
+          // by row id, so the row this branch just wrote is not counted twice. If the read somehow
+          // loses the race with the service's own ledger write, the next resume still catches it.
+          syncGrabLedger();
         }
       });
       [...bgJobs.keys()].forEach(id => { if (!alive.has(id)) { bgJobs.delete(id); changed = true; } });
@@ -1752,12 +1803,20 @@
     function updateQueueBadge() {
       const badge = document.getElementById('queueBadge');
       const jobs = mergedJobs();
+      // v3.1.1 (defect N12): the ACTIVE tile and the badge dot speak for what is RUNNING, not for
+      // what the Queue happens to be showing. A finished grab keeps its card through the 20 s
+      // terminal window (N8), but counting that card as active read "ACTIVE 1" and lit the Queue
+      // dot for a full 20 s after EVERY successful share — with the service already stopped and
+      // nothing downloading (found live on device 09-24; the same false-live claim as the N11
+      // ghost, only self-inflicted and routine). Cards still linger; the counters no longer lie.
+      let activeCount = 0;
+      jobs.forEach(j => { if (!j.done && !j.failed) activeCount++; });
       if (badge) {
-        if (jobs.size > 0) badge.classList.remove('hidden');
+        if (activeCount > 0) badge.classList.remove('hidden');
         else badge.classList.add('hidden');
       }
       const statActive = document.getElementById('statActive');
-      if (statActive) statActive.innerText = String(jobs.size);
+      if (statActive) statActive.innerText = String(activeCount);
       const statDone = document.getElementById('statDone');
       if (statDone) statDone.innerText = String(completedCount);
     }
@@ -1841,7 +1900,8 @@
       renderJobCards();
       updateQueueBadge();
       const statSize = document.getElementById('statSize');
-      if (statSize) statSize.innerText = String(Math.round(grabbedBytes / (1024 * 1024)));
+      // N9: in-app bytes + the service's headless-grab ledger — one honest number.
+      if (statSize) statSize.innerText = String(Math.round((grabbedBytes + dropBytes) / (1024 * 1024)));
 
       if (downloadsHistory.length === 0) {
         histC.innerHTML = `<div class="card p-10 text-center">
@@ -1866,6 +1926,10 @@
       downloadsHistory = [];
       completedCount = 0;
       grabbedBytes = 0;
+      // N9: the headless ledger lives natively — clear it in the same breath, otherwise
+      // "Clear history" would leave rows and MB grabbed behind.
+      dropBytes = 0;
+      try { getEngine()?.resetGrabLedger?.(); } catch (e) {}
       saveHistory();
       renderQueueTab();
       showToast('History cleared', 'All records removed.', 'info');
@@ -3010,6 +3074,7 @@
     // ================= Boot =================
     window.addEventListener('DOMContentLoaded', () => {
       loadHistory();
+      syncGrabLedger();            // v3.1.1: fold in headless grabs the app never saw (N9)
       setupSheetDrag();
       refreshSaveLocationLabel();
       consumeOpenQueueRequest();   // v3.1.1: notification tap → Queue (N7)
@@ -3058,6 +3123,7 @@
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) checkClipboard();
         syncBgPolling(); // v3.1.1: background grabs are polled only while the app is visible
+        if (!document.hidden) syncGrabLedger(); // N9: headless grabs recorded while we were away
         consumeOpenQueueRequest();
         if (!document.hidden && currentTab === 'vault') refreshVaultSilently(); // VA: resume lands on a fresh grid
         syncVaultLivePolling();

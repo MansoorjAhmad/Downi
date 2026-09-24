@@ -36,6 +36,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -87,6 +88,28 @@ public class DowniDownloadService extends Service {
 
     /** Latest numbers per live job — the single source of truth for every notification row. */
     private static final Map<String, JobProgress> live = new ConcurrentHashMap<>();
+
+    /**
+     * v3.1.1 (defect N10): the job whose row currently occupies the foreground notification slot.
+     * A grab must show exactly ONE row — the device pass showed "DOWNI is grabbing 54% · 59.9 MB /
+     * 77.2 MB" twice, because every tick wrote the same content to the job's own id *and* mirrored
+     * it into the foreground id. Now the owner writes to the foreground id, everyone else to their
+     * own id, and the slot is handed over when the owner finishes.
+     */
+    private String fgRowOwner = null;
+
+    /**
+     * v3.1.1 (defect N11): the grab ids the service is actually working on, or null when no service
+     * instance is alive at all. DowniEnginePlugin uses this to expire a "running" entry in the app
+     * snapshot whose grab no longer exists — killing the app mid-grab (device pass: force-stop while
+     * the card said "Warming up the engine…") froze that entry, so reopening DOWNI showed a live
+     * card *and* ACTIVE 1 for a grab that was gone. Terminal entries expire on age (defect N8);
+     * running entries must expire on liveness, and only the service can answer that.
+     */
+    static Set<String> liveJobIdsSnapshot() {
+        if (instance == null) return null;
+        return new HashSet<>(live.keySet());
+    }
 
     /** Accent used to tint the notification header (matches the app's default cyan). */
     private static final int ACCENT_COLOR = 0xFF22D3EE;
@@ -154,6 +177,77 @@ public class DowniDownloadService extends Service {
         ContextCompat.startForegroundService(context, intent);
     }
 
+    // ---------- DowniDrop ledger (v3.1.1, defect N9) ----------
+
+    /** Lifetime bytes of every headless grab this device saved. */
+    static final String DROP_BYTES_KEY = "dropBytesTotal";
+    /** Rows for the headless grabs themselves — the app may never have been open to see them. */
+    static final String DROP_HISTORY_KEY = "dropHistory";
+    /** A small honest ledger, not a database. */
+    private static final int DROP_HISTORY_MAX = 50;
+
+    /**
+     * v3.1.1 (defect N9): a DowniDrop grab usually finishes with no WebView alive, so the app's own
+     * "MB grabbed"/history accounting never witnessed it — the Queue dashboard of the Truth Release
+     * could read "6 completed · 0 MB". The service keeps its own ledger and the app reads it back
+     * on every resume (downi_settings is the shared channel the plugin already uses).
+     */
+    static void addGrabBytes(Context context, long bytes) {
+        if (bytes <= 0) return;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+            prefs.edit().putLong(DROP_BYTES_KEY, prefs.getLong(DROP_BYTES_KEY, 0L) + bytes).apply();
+        } catch (Exception ignored) {}
+    }
+
+    static long grabBytes(Context context) {
+        try {
+            return context.getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
+                .getLong(DROP_BYTES_KEY, 0L);
+        } catch (Exception e) { return 0L; }
+    }
+
+    static String grabHistoryJson(Context context) {
+        try {
+            String raw = context.getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
+                .getString(DROP_HISTORY_KEY, "[]");
+            return raw == null || raw.isEmpty() ? "[]" : raw;
+        } catch (Exception e) { return "[]"; }
+    }
+
+    static void resetGrabLedger(Context context) {
+        try {
+            context.getSharedPreferences("downi_settings", Context.MODE_PRIVATE).edit()
+                .putLong(DROP_BYTES_KEY, 0L).putString(DROP_HISTORY_KEY, "[]").apply();
+        } catch (Exception ignored) {}
+    }
+
+    /** One row per successful headless grab — newest first, deduped by job id. */
+    static void recordGrabHistory(Context context, String jobId, String title, String destination,
+                                  String url, long bytes) {
+        if (jobId == null || jobId.isEmpty()) return;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+            JSONArray list = new JSONArray(prefs.getString(DROP_HISTORY_KEY, "[]"));
+            String rowId = "drop_" + jobId;
+            JSONObject row = new JSONObject();
+            row.put("id", rowId);
+            row.put("title", title == null || title.isEmpty() ? "Shared video" : title);
+            row.put("dest", destination == null || destination.isEmpty() ? "Vault" : destination);
+            row.put("url", url == null ? "" : url);
+            row.put("bytes", Math.max(0L, bytes));
+            row.put("ts", System.currentTimeMillis());
+            JSONArray next = new JSONArray();
+            next.put(row);
+            for (int i = 0; i < list.length() && next.length() < DROP_HISTORY_MAX; i++) {
+                JSONObject o = list.optJSONObject(i);
+                if (o == null || rowId.equals(o.optString("id"))) continue;
+                next.put(o);
+            }
+            prefs.edit().putString(DROP_HISTORY_KEY, next.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
     // ---------- Service lifecycle ----------
 
     @Override public void onCreate() {
@@ -180,10 +274,35 @@ public class DowniDownloadService extends Service {
                 start.numbers = false;
                 start.percent = 0;
                 Notification n = buildJobNotification(jobId, start);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(FG_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                // N10: exactly one row per grab. The first live job owns the foreground slot; a
+                // second concurrent job gets its own row and the foreground row keeps showing the
+                // owner (re-posted here so a startForegroundService() call is always answered).
+                if (fgRowOwner == null || fgRowOwner.equals(jobId)) {
+                    fgRowOwner = jobId;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(FG_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                    } else {
+                        startForeground(FG_NOTIFICATION_ID, n);
+                    }
                 } else {
-                    startForeground(FG_NOTIFICATION_ID, n);
+                    JobProgress owner = live.get(fgRowOwner);
+                    if (owner == null) {
+                        // The recorded owner has no live numbers left — this job takes the slot over.
+                        fgRowOwner = jobId;
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startForeground(FG_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                        } else {
+                            startForeground(FG_NOTIFICATION_ID, n);
+                        }
+                    } else {
+                        try { NotificationManagerCompat.from(this).notify(jobNotificationId(jobId), n); } catch (Exception ignored) {}
+                        Notification ownerRow = buildJobNotification(fgRowOwner, owner);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            startForeground(FG_NOTIFICATION_ID, ownerRow, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                        } else {
+                            startForeground(FG_NOTIFICATION_ID, ownerRow);
+                        }
+                    }
                 }
                 break;
             }
@@ -191,9 +310,8 @@ public class DowniDownloadService extends Service {
                 String jobId = intent.getStringExtra("jobId");
                 boolean success = intent.getBooleanExtra("success", false);
                 live.remove(jobId);
-                NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+                releaseJobRow(jobId); // N10: drop this job's row and hand the slot to the next live one
                 if (success) notifyCompletion();
-                refreshForegroundRow();
                 maybeStop();
                 break;
             }
@@ -208,10 +326,23 @@ public class DowniDownloadService extends Service {
                 start.numbers = false;
                 start.percent = 0;
                 Notification n = buildJobNotification(jobId, start);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(FG_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                // N10: a share owns the foreground row only if no other grab holds it — a rapid
+                // burst then shows one row per grab instead of two copies of the newest one.
+                if (fgRowOwner == null || live.get(fgRowOwner) == null) {
+                    fgRowOwner = jobId;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(FG_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                    } else {
+                        startForeground(FG_NOTIFICATION_ID, n);
+                    }
                 } else {
-                    startForeground(FG_NOTIFICATION_ID, n);
+                    try { NotificationManagerCompat.from(this).notify(jobNotificationId(jobId), n); } catch (Exception ignored) {}
+                    Notification ownerRow = buildJobNotification(fgRowOwner, live.get(fgRowOwner));
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(FG_NOTIFICATION_ID, ownerRow, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                    } else {
+                        startForeground(FG_NOTIFICATION_ID, ownerRow);
+                    }
                 }
                 if (shareExecutor != null) shareExecutor.execute(() -> runSharedDownload(jobId, url));
                 break;
@@ -258,10 +389,11 @@ public class DowniDownloadService extends Service {
             PyObject response = Python.getInstance().getModule("downloader")
                 .callAttr("download", cleanUrl, workDir.getAbsolutePath(), formatId, listener);
 
+
             if (cancelled != null && cancelled.get()) {
                 writeDropSnapshot(jobId, "canceled", null, null);
                 live.remove(jobId);
-                NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+                releaseJobRow(jobId);
                 Log.i("DOWNI", "drop canceled " + jobId);
                 return;
             }
@@ -269,6 +401,10 @@ public class DowniDownloadService extends Service {
             JSONObject file = new JSONObject(response.toString());
             String title = file.optString("title", "Video");
             String destination;
+            // v3.1.1 (defect N9): carry the real size of the saved file into the done snapshot —
+            // the last live tick is a per-stream number (or 0 during a merge phase), so the app's
+            // "MB grabbed" counter had nothing honest to add for DowniDrop grabs.
+            long finalBytes = 0;
             applyPhase(jobId, "Saving to your Vault…", 98);
             if (file.optBoolean("merge", false)) {
                 applyPhase(jobId, "Merging video + audio…", 96);
@@ -280,24 +416,31 @@ public class DowniDownloadService extends Service {
                     try { audioPart.delete(); } catch (Exception ignored) {}
                     throw new IllegalStateException("Could not merge 1080p on this device. Try 720p HD or Best Available.");
                 }
+                finalBytes = merged.length();
                 destination = saveToGallery(merged, title, "mp4");
                 try { videoPart.delete(); } catch (Exception ignored) {}
                 try { audioPart.delete(); } catch (Exception ignored) {}
             } else {
-                destination = saveToGallery(new File(file.getString("path")), title, file.getString("ext"));
+                File single = new File(file.getString("path"));
+                finalBytes = single.length();
+                destination = saveToGallery(single, title, file.getString("ext"));
             }
             if (cancelled != null && cancelled.get()) {
                 writeDropSnapshot(jobId, "canceled", null, null);
                 live.remove(jobId);
-                NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+                releaseJobRow(jobId);
                 Log.i("DOWNI", "drop canceled " + jobId);
                 return;
             }
 
-            writeDropSnapshot(jobId, "done", title, destination);
+            writeDropSnapshot(jobId, "done", title, destination, finalBytes);
+            // N9: the durable half of the accounting — recorded by the service, so the app sees the
+            // grab even when it was closed the whole time.
+            addGrabBytes(this, finalBytes);
+            recordGrabHistory(this, jobId, title, destination, dropUrls.get(jobId), finalBytes);
             Log.i("DOWNI", "drop saved " + jobId + " -> " + destination); // (D) logcat breadcrumb
             live.remove(jobId);
-            NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+            releaseJobRow(jobId);
             notifySharedCompletion(title, destination);
         } catch (Exception error) {
             String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
@@ -305,7 +448,7 @@ public class DowniDownloadService extends Service {
             AtomicBoolean flag = sharedJobs.get(jobId);
             boolean userCanceled = (flag != null && flag.get()) || detail.toLowerCase(Locale.US).contains("cancel");
             live.remove(jobId);
-            NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+            releaseJobRow(jobId);
             if (userCanceled) {
                 // Cancel UX: the user asked for this stop — a neutral "Grab canceled"
                 // confirmation, never the red "couldn't grab that / Download failed: …
@@ -652,8 +795,10 @@ public class DowniDownloadService extends Service {
         p.lastPostMs = now;
         try {
             Notification n = buildJobNotification(jobId, p);
-            NotificationManagerCompat.from(this).notify(jobNotificationId(jobId), n);
-            NotificationManagerCompat.from(this).notify(FG_NOTIFICATION_ID, n);
+            // N10: one row per grab — the owner of the foreground slot writes there, every other
+            // job writes to its own id. Posting to both ids was what doubled the row on device.
+            int id = (jobId != null && jobId.equals(fgRowOwner)) ? FG_NOTIFICATION_ID : jobNotificationId(jobId);
+            NotificationManagerCompat.from(this).notify(id, n);
         } catch (Exception ignored) {}
         if (jobId != null && jobId.startsWith("drop")) writeDropSnapshot(jobId, "running", null, null);
     }
@@ -669,6 +814,15 @@ public class DowniDownloadService extends Service {
      * linger in Active downloads until a new grab happened).
      */
     private void writeDropSnapshot(String jobId, String state, String title, String destination) {
+        writeDropSnapshot(jobId, state, title, destination, 0);
+    }
+
+    /**
+     * v3.1.1 (defect N9): the terminal variant — `finalBytes` is the true size of the file that
+     * landed (merged output included). When it is > 0 it overrides whatever the last progress tick
+     * reported, so the app can add an honest "MB grabbed" number for a headless grab.
+     */
+    private void writeDropSnapshot(String jobId, String state, String title, String destination, long finalBytes) {
         if (jobId == null || !jobId.startsWith("drop")) return;
         try {
             JobProgress p = live.get(jobId);
@@ -690,8 +844,15 @@ public class DowniDownloadService extends Service {
             entry.put("url", url == null ? "" : url);
             entry.put("platform", platformKeyFor(url));
             entry.put("pct", p != null ? Math.max(0, Math.min(100, p.percent)) : 0);
-            entry.put("downloaded", p != null ? p.downloaded : 0);
-            entry.put("total", p != null ? p.total : 0);
+            if (finalBytes > 0) {
+                // N9: the real landed size wins over the last (per-stream) progress tick.
+                entry.put("downloaded", finalBytes);
+                entry.put("total", finalBytes);
+                entry.put("pct", 100);
+            } else {
+                entry.put("downloaded", p != null ? p.downloaded : 0);
+                entry.put("total", p != null ? p.total : 0);
+            }
             entry.put("speed", p != null ? p.speedBps : 0);
             entry.put("status", p != null && p.status != null ? p.status : "");
             entry.put("state", state);
@@ -714,16 +875,38 @@ public class DowniDownloadService extends Service {
         } catch (Exception ignored) {}
     }
 
-    /** Point the foreground row at whatever is still live (called when a job ends). */
-    private void refreshForegroundRow() {
-        for (String id : live.keySet()) {
-            JobProgress p = live.get(id);
-            if (p == null) continue;
-            try {
-                NotificationManagerCompat.from(this).notify(FG_NOTIFICATION_ID, buildJobNotification(id, p));
-            } catch (Exception ignored) {}
-            return;
-        }
+    /**
+     * v3.1.1 (defect N10): release one job's live row. If that job owned the foreground slot, the
+     * next live grab inherits it (the foreground row must never go stale), otherwise just drop the
+     * job's own row. Call this AFTER removing the job from {@link #live}.
+     */
+    private void releaseJobRow(String jobId) {
+        if (jobId == null) return;
+        try {
+            if (jobId.equals(fgRowOwner)) {
+                fgRowOwner = null;
+                String next = null;
+                for (String id : live.keySet()) { if (id != null) { next = id; break; } }
+                if (next == null) {
+                    NotificationManagerCompat.from(this).cancel(FG_NOTIFICATION_ID);
+                } else {
+                    adoptForegroundRow(next);
+                }
+            } else {
+                NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** Move `jobId`'s live row into the foreground slot and drop its temporary own-id row. */
+    private void adoptForegroundRow(String jobId) {
+        JobProgress p = live.get(jobId);
+        if (p == null) return;
+        try {
+            fgRowOwner = jobId;
+            NotificationManagerCompat.from(this).cancel(jobNotificationId(jobId));
+            NotificationManagerCompat.from(this).notify(FG_NOTIFICATION_ID, buildJobNotification(jobId, p));
+        } catch (Exception ignored) {}
     }
 
     private int jobNotificationId(String jobId) {
@@ -814,6 +997,7 @@ public class DowniDownloadService extends Service {
     private void maybeStop() {
         if (activeJobs.isEmpty()) {
             live.clear();
+            fgRowOwner = null; // N10: the foreground slot dies with the service
             stopForeground(true);
             stopSelf();
         }

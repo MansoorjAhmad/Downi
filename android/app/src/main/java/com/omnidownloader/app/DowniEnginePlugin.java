@@ -26,6 +26,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.Set;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import com.getcapacitor.PermissionState;
@@ -1043,6 +1044,11 @@ public class DowniEnginePlugin extends Plugin {
             notifyListeners("onProgress", saving);
 
             String destination;
+            // v3.1.1 (defect N9): the completion event must carry the real size of what landed.
+            // It used to post no totalBytes at all, so the web layer's "MB grabbed" counter
+            // (which only adds on the complete event) stayed at 0 forever — a lie on the
+            // Queue dashboard of a release called "The Truth Release".
+            long finalBytes = 0;
             if (file.optBoolean("merge", false)) {
                 // True 1080p: separate video + audio streams muxed on-device.
                 DowniDownloadService.updateJob(getContext(), job.id, "Merging video + audio…", 96);
@@ -1056,6 +1062,7 @@ public class DowniEnginePlugin extends Plugin {
                 File audioPart = new File(file.getString("audio_path"));
                 File merged = new File(videoPart.getParentFile(), file.getString("title") + "-merged.mp4");
                 if (Mp4Merger.merge(videoPart, audioPart, merged)) {
+                    finalBytes = merged.length();
                     destination = copyToGallery(merged, file.getString("title"), "mp4");
                 } else {
                     try { videoPart.delete(); } catch (Exception ignored) {}
@@ -1065,7 +1072,9 @@ public class DowniEnginePlugin extends Plugin {
                 try { videoPart.delete(); } catch (Exception ignored) {}
                 try { audioPart.delete(); } catch (Exception ignored) {}
             } else {
-                destination = copyToGallery(new File(file.getString("path")), file.getString("title"), file.getString("ext"));
+                File single = new File(file.getString("path"));
+                finalBytes = single.length();
+                destination = copyToGallery(single, file.getString("title"), file.getString("ext"));
             }
             if (job.cancelled.get()) return;
 
@@ -1077,6 +1086,10 @@ public class DowniEnginePlugin extends Plugin {
             progress.put("complete", true);
             progress.put("title", file.optString("title", "Video"));
             progress.put("destination", destination);
+            // N9: hand the web layer the size that actually landed so "MB grabbed" is real.
+            progress.put("totalBytes", finalBytes);
+            progress.put("downloadedBytes", finalBytes);
+            progress.put("sizeFormatted", formatBytes(finalBytes));
             notifyListeners("onProgress", progress);
 
             DowniDownloadService.finishJob(getContext(), job.id, true);
@@ -1237,6 +1250,12 @@ public class DowniEnginePlugin extends Plugin {
             // only writes this snapshot while a grab runs. Without this, a done/failed card stayed
             // in Active downloads until the next grab happened (seen on device: a failed card from
             // 12:47 and a done card still rendered at 13:05 with nothing live).
+            // v3.1.1 (defect N11): a "running" entry is only honest while the service still holds
+            // that grab. Force-stopping the app mid-grab froze the entry at state=running, so the
+            // app rendered a live card and counted ACTIVE 1 for a grab that no longer existed (no
+            // service, no notification row) — it never expired, because only terminal entries had
+            // a window (N8). Ask the service which grabs are real; null = no service alive at all.
+            Set<String> liveJobIds = DowniDownloadService.liveJobIdsSnapshot();
             JSONArray kept = new JSONArray();
             long now = System.currentTimeMillis();
             boolean pruned = false;
@@ -1244,7 +1263,12 @@ public class DowniEnginePlugin extends Plugin {
                 JSONObject o = list.optJSONObject(i);
                 if (o == null) { pruned = true; continue; }
                 boolean running = "running".equals(o.optString("state"));
-                if (!running && now - o.optLong("ts", now) > DowniDownloadService.DROP_LIVE_TERMINAL_TTL_MS) {
+                if (running) {
+                    if (liveJobIds == null || !liveJobIds.contains(o.optString("id"))) {
+                        pruned = true;
+                        continue;
+                    }
+                } else if (now - o.optLong("ts", now) > DowniDownloadService.DROP_LIVE_TERMINAL_TTL_MS) {
                     pruned = true;
                     continue;
                 }
@@ -1256,6 +1280,31 @@ public class DowniEnginePlugin extends Plugin {
             result.put("jobs", new JSONArray());
         }
         call.resolve(result);
+    }
+
+    /**
+     * v3.1.1 (defect N9): the service-side ledger of headless DowniDrop grabs — lifetime bytes plus
+     * the rows themselves. The Queue dashboard used to count only the grabs the WebView happened to
+     * be alive for, so a "6 completed · 0 MB" line was possible after a run of shares.
+     */
+    @PluginMethod
+    public void getGrabLedger(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            result.put("bytes", DowniDownloadService.grabBytes(getContext()));
+            result.put("history", new JSONArray(DowniDownloadService.grabHistoryJson(getContext())));
+        } catch (Exception e) {
+            result.put("bytes", 0);
+            result.put("history", new JSONArray());
+        }
+        call.resolve(result);
+    }
+
+    /** Clear-history also clears the headless ledger, so the dashboard resets as one unit. */
+    @PluginMethod
+    public void resetGrabLedger(PluginCall call) {
+        try { DowniDownloadService.resetGrabLedger(getContext()); } catch (Exception ignored) {}
+        call.resolve();
     }
 
     /** Cancel a background grab from inside the app — routes to the service's shared_cancel action. */
