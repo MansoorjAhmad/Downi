@@ -6,8 +6,8 @@
   <title>DOWNI — Grab any video. One tap.</title>
   <script src="assets/vendor/tailwind.js"></script>
   <link rel="icon" type="image/png" href="assets/icon.png">
-  <!-- Apply saved theme before first paint to avoid flash; default to system preference -->
-  <script>try{var t=localStorage.getItem('downi_theme')||localStorage.getItem('omni_theme');if(!t){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}if(t==='light')document.documentElement.dataset.theme='light';}catch(e){}</script>
+  <!-- v3.1.1: dark/AMOLED only (light theme removed). Apply AMOLED before first paint — it is the default. -->
+  <script>try{if((localStorage.getItem('downi_amoled')||localStorage.getItem('omni_amoled'))!=='0')document.documentElement.classList.add('amoled');}catch(e){}</script>
   <style>
     @font-face {
       font-family: 'Plus Jakarta Sans';
@@ -49,54 +49,7 @@
       border-color: rgba(var(--accent-rgb), .5) !important;
     }
 
-    :root[data-theme="light"] {
-      --bg: #F0F4F8;
-      --surface: #FFFFFF;
-      --surface-2: #E8EFF5;
-      --line: rgba(0, 0, 0, 0.08);
-      --accent: #0891B2;
-      --accent-2: #2563EB;
-      --accent-rgb: 8, 145, 178;
-      --accent-2-rgb: 37, 99, 235;
-      --ok: #059669;
-      --bad: #DC2626;
-      --muted: #64748B;
-    }
-
-    :root[data-theme="light"] body {
-      color: #1E293B;
-    }
-
-    :root[data-theme="light"] .text-white { color: #0F172A !important; }
-    :root[data-theme="light"] .text-zinc-200 { color: #1E293B !important; }
-    :root[data-theme="light"] .text-zinc-300 { color: #334155 !important; }
-    :root[data-theme="light"] .text-zinc-400 { color: #64748B !important; }
-    :root[data-theme="light"] .text-zinc-500 { color: #94A3B8 !important; }
-    :root[data-theme="light"] .card { background: var(--surface); border-color: var(--line); }
-    :root[data-theme="light"] .btn { background: var(--surface-2); color: #334155; }
-    :root[data-theme="light"] .dock { background: rgba(255,255,255,0.9); border: 1px solid var(--line); }
-    :root[data-theme="light"] .nav-item.on { background: var(--surface-2); color: var(--accent); }
-    :root[data-theme="light"] .chip { background: var(--surface-2); color: #334155; border-color: var(--line); }
-    :root[data-theme="light"] .chip.on { background: var(--accent); color: #fff; }
-    :root[data-theme="light"] input[type="text"],
-    :root[data-theme="light"] textarea,
-    :root[data-theme="light"] select { background: var(--surface-2); color: #1E293B; border-color: var(--line); }
-
-    /* Light-theme coverage for surfaces that previously stayed dark */
-    :root[data-theme="light"] header { background: rgba(240,244,248,.92) !important; }
-    :root[data-theme="light"] .card { box-shadow: 0 10px 30px rgba(15, 23, 42, .08); }
-    :root[data-theme="light"] .sheet { box-shadow: 0 -12px 60px rgba(15, 23, 42, .18); }
-    :root[data-theme="light"] .bar { background: rgba(15, 23, 42, .10); }
-    :root[data-theme="light"] .skel { background: linear-gradient(100deg, rgba(15,23,42,.06) 30%, rgba(15,23,42,.12) 50%, rgba(15,23,42,.06) 70%); background-size: 200% 100%; }
-    :root[data-theme="light"] .grabber { background: rgba(15, 23, 42, .18); }
-    :root[data-theme="light"] .vortex { background: radial-gradient(circle at 32% 30%, rgba(var(--accent-rgb),.10), rgba(255,255,255,.98) 65%); }
-    :root[data-theme="light"] .bg-black\/75 { background: rgba(15, 23, 42, .45) !important; }
-    :root[data-theme="light"] .bg-white\/5,
-    :root[data-theme="light"] .bg-white\/\[0\.03\],
-    :root[data-theme="light"] .bg-white\/\[0\.06\] { background: rgba(15, 23, 42, .05) !important; }
-    :root[data-theme="light"] .border-white\/5 { border-color: rgba(15, 23, 42, .07) !important; }
-    :root[data-theme="light"] .border-white\/10 { border-color: rgba(15, 23, 42, .10) !important; }
-    :root[data-theme="light"] .border-white\/15 { border-color: rgba(15, 23, 42, .14) !important; }
+    /* v3.1.1: light theme removed — dark/AMOLED only (AMOLED is the default). */
 
     * {
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -582,13 +535,6 @@
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">Appearance</p>
           <div class="flex items-center justify-between py-3 border-t border-white/5">
             <div>
-              <p class="text-[12px] font-bold text-zinc-200">Light theme</p>
-              <p class="text-[10px] mt-0.5" style="color:var(--muted)">Switch to a bright interface</p>
-            </div>
-            <input type="checkbox" id="chkLightTheme" onchange="applyTheme(this.checked ? 'light' : 'dark')" class="w-5 h-5">
-          </div>
-          <div class="flex items-center justify-between py-3 border-t border-white/5">
-            <div>
               <p class="text-[12px] font-bold text-zinc-200">Accent color</p>
               <p class="text-[10px] mt-0.5" style="color:var(--muted)">Pick your DOWNI glow</p>
             </div>
@@ -602,9 +548,9 @@
           <div class="flex items-center justify-between py-3 border-t border-white/5">
             <div>
               <p class="text-[12px] font-bold text-zinc-200">AMOLED black</p>
-              <p class="text-[10px] mt-0.5" style="color:var(--muted)">True black in dark mode</p>
+              <p class="text-[10px] mt-0.5" style="color:var(--muted)">True black — on by default</p>
             </div>
-            <input type="checkbox" id="chkAmoled" onchange="setAmoled(this.checked)" class="w-5 h-5">
+            <input type="checkbox" id="chkAmoled" checked onchange="setAmoled(this.checked)" class="w-5 h-5">
           </div>
         </div>
 
@@ -2830,40 +2776,15 @@
     }
 
     // ================= Theme =================
-    function applyTheme(theme) {
-      const root = document.documentElement;
-      if (theme === 'light') {
-        root.dataset.theme = 'light';
-        root.style.background = 'var(--bg)';
-      } else {
-        delete root.dataset.theme;
-        root.style.background = '';
-      }
-      const chk = document.getElementById('chkLightTheme');
-      if (chk) chk.checked = (theme === 'light');
-      applyAccent();
-      try { storeSet('theme', theme); } catch(e) {}
-      // Keep the Android status/navigation bars in the same shade (AMOLED-aware, B17).
-      try { getEngine()?.setNativeTheme?.({ dark: theme !== 'light', amoled: storeGet('amoled') === '1' }); } catch(e) {}
-    }
-
-    function initTheme() {
-      let saved = '';
-      try { saved = storeGet('theme') || ''; } catch(e) {}
-      if (!saved) {
-        // No explicit choice yet → follow the system preference.
-        try { saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; }
-        catch(e) { saved = 'dark'; }
-      }
-      applyTheme(saved);
-    }
+    // v3.1.1: light theme removed — DOWNI is dark/AMOLED only. The AMOLED pre-paint script in
+    // <head> applies the saved choice before first paint; applyAmoled() owns it from there.
 
     // ---- Accent colors + AMOLED + storage/cache utilities ----
     const ACCENTS = {
-      cyan:    { a: '#22D3EE', b: '#3B82F6', la: '#0891B2', lb: '#2563EB' },
-      violet:  { a: '#8B5CF6', b: '#6366F1', la: '#7C3AED', lb: '#4F46E5' },
-      emerald: { a: '#10B981', b: '#0EA5E9', la: '#059669', lb: '#0284C7' },
-      rose:    { a: '#FB7185', b: '#F59E0B', la: '#E11D48', lb: '#D97706' }
+      cyan:    { a: '#22D3EE', b: '#3B82F6' },
+      violet:  { a: '#8B5CF6', b: '#6366F1' },
+      emerald: { a: '#10B981', b: '#0EA5E9' },
+      rose:    { a: '#FB7185', b: '#F59E0B' }
     };
 
     function hexToRgbTriplet(hex) {
@@ -2875,8 +2796,7 @@
       let name = 'cyan';
       try { name = storeGet('accent') || 'cyan'; } catch (e) {}
       const c = ACCENTS[name] || ACCENTS.cyan;
-      const light = document.documentElement.dataset.theme === 'light';
-      const a = light ? c.la : c.a, b = light ? c.lb : c.b;
+      const a = c.a, b = c.b;
       const root = document.documentElement.style;
       root.setProperty('--accent', a);
       root.setProperty('--accent-2', b);
@@ -2891,13 +2811,14 @@
       showToast('Accent updated', 'Your DOWNI glow is now ' + name + '.', 'success');
     }
     function applyAmoled() {
-      let on = false;
-      try { on = storeGet('amoled') === '1'; } catch (e) {}
+      // v3.1.1: AMOLED is the default (only an explicit '0' turns it off); light theme is gone.
+      let on = true;
+      try { on = storeGet('amoled') !== '0'; } catch (e) {}
       document.documentElement.classList.toggle('amoled', on);
       const chk = document.getElementById('chkAmoled');
       if (chk) chk.checked = on;
       // True black has to reach the status/nav bars too, not just the page (B17).
-      try { getEngine()?.setNativeTheme?.({ dark: document.documentElement.dataset.theme !== 'light', amoled: on }); } catch (e) {}
+      try { getEngine()?.setNativeTheme?.({ amoled: on }); } catch (e) {}
     }
     function setAmoled(on) {
       try { storeSet('amoled', on ? '1' : '0'); } catch (e) {}
@@ -2920,7 +2841,6 @@
 
     // ================= Boot =================
     window.addEventListener('DOMContentLoaded', () => {
-      initTheme();
       loadHistory();
       setupSheetDrag();
       refreshSaveLocationLabel();

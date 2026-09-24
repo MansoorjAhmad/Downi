@@ -766,21 +766,16 @@ public class DowniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void setNativeTheme(PluginCall call) {
-        Boolean darkVal = call.getBoolean("dark", true);
-        final boolean dark = darkVal == null || darkVal;
-        Boolean amoledVal = call.getBoolean("amoled", false);
-        final boolean amoled = amoledVal != null && amoledVal;
+        // v3.1.1: dark/AMOLED only (light theme removed) — the system bars are always dark.
+        Boolean amoledVal = call.getBoolean("amoled", true);
+        final boolean amoled = amoledVal == null || amoledVal;
         getActivity().runOnUiThread(() -> {
             try {
                 android.view.Window window = getActivity().getWindow();
                 // AMOLED true-black must reach the system bars too, not just the page (B17).
-                window.setStatusBarColor(android.graphics.Color.parseColor(!dark ? "#F0F4F8" : (amoled ? "#000000" : "#060A13")));
-                window.setNavigationBarColor(android.graphics.Color.parseColor(!dark ? "#FFFFFF" : (amoled ? "#000000" : "#0D1421")));
-                android.view.View decor = window.getDecorView();
-                int flags = dark ? 0
-                    : android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                    | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-                decor.setSystemUiVisibility(flags);
+                window.setStatusBarColor(android.graphics.Color.parseColor(amoled ? "#000000" : "#060A13"));
+                window.setNavigationBarColor(android.graphics.Color.parseColor(amoled ? "#000000" : "#0D1421"));
+                window.getDecorView().setSystemUiVisibility(0);
             } catch (Exception ignored) {}
             call.resolve();
         });
