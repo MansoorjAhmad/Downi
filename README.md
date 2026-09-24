@@ -1,10 +1,24 @@
-# DOWNI V3.1.1 ⚡
+# DOWNI V3.1.2 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
 
 ---
+
+## 🆕 What's New in V3.1.2
+
+### The Stay-Put Release — a share never kidnaps you again
+
+- **Share → DOWNI keeps you where you are.** If DOWNI was sitting in your recent apps, sharing a
+  video used to yank you out of TikTok/YouTube/Instagram and drop you inside DOWNI. Now a warm
+  share behaves exactly like a cold one: a toast, a silent background grab — and you never leave
+  the app you were scrolling. (The invisible share receiver now lives in its own throwaway task
+  and removes it on the way out.)
+- **Failures explain themselves.** If a background grab ever fails, the failed card inside DOWNI
+  shows the plain-language reason, and the raw engine detail is kept for diagnosis — no PC, no
+  cable, no guessing.
+
 
 ## 🆕 What's New in V3.1.1
 
