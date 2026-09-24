@@ -125,17 +125,17 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 - [x] v3.0.3 (versionCode 43) released: all 8 fixes device-verified by the owner on the vivo V2058; tag `v3.0.3` pushed, CI green, signed `DOWNI-v3.0.3.apk` (37.9 MB) live on GitHub Releases → in-app updater feed active.
 - Remaining DEVICE_TEST.md cells (playlist Grab-all, custom save folder, cancel/app-kill regression) were covered by the owner's blanket "all the things are working" — formally re-check only if a bug report comes in.
 
-**P1 — deferred, already agreed (see `ROADMAP.md`)**
-- [ ] Pause + resume (needs `.part` support — deep change to the proven core; matrix required).
-- [ ] TikTok photo-post saving (needs a multi-file save contract).
-- [ ] Web: direct-to-CDN downloads where CORS allows (skip the proxy).
-- [ ] Play Store track: AAB build, targetSdk 35+, ProGuard rules, listing assets. (`/privacy` already exists on web for the listing requirement.)
+**P1 — none.** (All four candidates are closed by locked owner rulings: Pause/resume + TikTok photo posts = *permanently out of scope*; web items = *frozen 2026-09-24*; Play Store track = *rejected permanently*. Nothing sits in deferred.)
+- [ ] ~~Pause + resume (needs `.part` support — deep change to the proven core; matrix required).~~ **Out of scope (locked).**
+- [ ] ~~TikTok photo-post saving (needs a multi-file save contract).~~ **Out of scope (locked).**
+- [ ] ~~Web: direct-to-CDN downloads where CORS allows (skip the proxy).~~ **Web frozen 2026-09-24.**
+- [ ] ~~Play Store track: AAB build, targetSdk 35+, ProGuard rules, listing assets.~~ **Rejected permanently.**
 
 **P2 — candidate polish (not yet agreed with the user)**
 - [x] ~~Scope the Vault to DOWNI's own folder + tracked items~~ — **DONE in v3.0.4** (user-confirmed: Vault must show only DOWNI downloads).
-- [ ] Web: offline queue messaging, analytics (none today), per-release OG card refresh.
-- [ ] APK size budget: release ≈ 39.8 MB — inspect what the Chaquopy/yt-dlp payload could shave.
-- [ ] Unit tests for `Mp4Merger` interleave + `_safe_name` / `extractUrl` (CI covers only the smoke script today).
+- [ ] ~~Web: offline queue messaging, analytics (none today), per-release OG card refresh.~~ **Web frozen 2026-09-24.**
+- [ ] APK size budget: release ≈ 38 MB — inspect what the Chaquopy/yt-dlp payload could shave. (Only if the owner asks; no safe-shelf release without measured results.)
+- [ ] Unit tests for `Mp4Merger` interleave + `_safe_name` / `extractUrl` (CI covers only the smoke script today). **Ship only with the change they cover** — never as their own release (READ_THIS_BEFORE_UPGRADE §8).
 
 **Owner decisions (locked 2026-09-22)**
 1. Play Store track — **rejected permanently**. Sideload-only via GitHub Releases.
