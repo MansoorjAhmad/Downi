@@ -935,6 +935,7 @@
       if (tab === 'queue') renderQueueTab();
       if (tab === 'vault') refreshVault();
       if (tab === 'grab') renderJobCards();
+      syncVaultLivePolling();
     }
 
     // ================= Toast =================
@@ -1530,6 +1531,7 @@
       saveHistory();
       updateLastGrabChip();
       pumpPlaylist();
+      refreshVaultSilently(); nudgeVaultAfterSave(); syncVaultLivePolling(); // VA: the file just landed in the Vault
       setTimeout(() => { if (mergedJobs().size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden'); }, 1200);
     }
 
@@ -1596,6 +1598,7 @@
     function renderJobCards() {
       const wrap = document.getElementById('activeDownloadsWrap');
       const jobs = mergedJobs();
+      syncVaultLivePolling(); // VA: grabs starting/ending toggles the Vault live poll
       if (wrap) wrap.classList.toggle('hidden', jobs.size === 0);
 
       // Rebuild card frames only when the job set (or a job's done state) changes;
@@ -1721,6 +1724,7 @@
           saveHistory();
           showToast('Saved ✓', (j.title || 'Shared video') + (j.dest ? ' · ' + j.dest : ''), 'success');
           renderQueueTab();
+          refreshVaultSilently(); nudgeVaultAfterSave(); // VA: background grab finished → Vault update
         }
       });
       [...bgJobs.keys()].forEach(id => { if (!alive.has(id)) { bgJobs.delete(id); changed = true; } });
@@ -1900,6 +1904,51 @@
         vaultItems = [];
         renderVaultGrid();
       }
+    }
+
+    // ================= Vault live-refresh (v3.1.1, defect VA) =================
+    let vaultLiveTimer = null;
+    function refreshVaultSilently() {
+      // Quiet re-read of the file list: no permission prompt, no skeletons, no toast.
+      // refreshVault()'s signature no-op + renderVaultGrid()'s keyed reconciliation are
+      // reused as-is, so mounted cards (and their decoded thumbnails) stay put and only
+      // a genuinely new arrival animates — the grid never blinks or loses scroll.
+      if (currentTab !== 'vault' || document.hidden) return;
+      const engine = getEngine();
+      if (!engine?.listMedia) return;
+      Promise.all([
+        engine.listMedia().then(res => {
+          const videos = (res.videos || []).map(v => ({ ...v, kind: 'video' }));
+          const audios = (res.audios || []).map(a => ({ ...a, kind: 'audio' }));
+          return [...videos, ...audios];
+        }).catch(() => null),
+        engine.listCustomFiles ? engine.listCustomFiles().then(res => (res.files || [])).catch(() => null) : Promise.resolve([])
+      ]).then(([media, custom]) => {
+        if (!media || currentTab !== 'vault') return; // read failed → keep the grid as-is
+        const seen = new Set(media.map(m => (m.name || '').toLowerCase() + ':' + m.size));
+        const customOnly = (custom || []).filter(f => !seen.has((f.name || '').toLowerCase() + ':' + f.size));
+        const merged = [...media, ...customOnly.map(f => ({ ...f, kind: 'custom', dateModified: Math.floor((f.modified || 0) / 1000) }))];
+        const signature = merged.map(i => vaultKeyOf(i) + ':' + (i.size || 0) + ':' + (i.dateModified || 0)).join('|');
+        if (signature === lastVaultSignature) return; // nothing new → grid untouched
+        lastVaultSignature = signature;
+        vaultItems = merged;
+        updateVaultStats();
+        renderVaultGrid();
+      });
+    }
+    // 2 s poll — ONLY while the user is looking at the Vault AND a grab is live (VA).
+    function syncVaultLivePolling() {
+      const live = activeJobs.size > 0 || bgJobs.size > 0;
+      const shouldRun = currentTab === 'vault' && live && !document.hidden;
+      if (shouldRun && !vaultLiveTimer) vaultLiveTimer = setInterval(refreshVaultSilently, 2000);
+      else if (!shouldRun && vaultLiveTimer) { clearInterval(vaultLiveTimer); vaultLiveTimer = null; }
+    }
+    // MediaStore indexes a finished file a beat after DOWNI writes it — re-check twice
+    // after a save so the arrival still appears if the live poll has already stopped.
+    function nudgeVaultAfterSave() {
+      if (currentTab !== 'vault') return;
+      setTimeout(refreshVaultSilently, 2500);
+      setTimeout(refreshVaultSilently, 6000);
     }
 
     function filteredVaultItems() {
@@ -3006,6 +3055,8 @@
         if (!document.hidden) checkClipboard();
         syncBgPolling(); // v3.1.1: background grabs are polled only while the app is visible
         consumeOpenQueueRequest();
+        if (!document.hidden && currentTab === 'vault') refreshVaultSilently(); // VA: resume lands on a fresh grid
+        syncVaultLivePolling();
       });
       syncBgPolling();
 
