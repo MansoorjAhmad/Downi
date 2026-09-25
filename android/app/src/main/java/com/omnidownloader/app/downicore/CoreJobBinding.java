@@ -46,6 +46,8 @@ public final class CoreJobBinding {
 
     /** Terminal snapshot rows expire after this — mirrors DowniDownloadService's card TTL. */
     public static final long TERMINAL_TTL_MS = 20_000L;
+    /** How long a just-delivered URL may sit without a snapshot row before "job vanished". */
+    static final long START_GRACE_MS = 12_000L;
     /** Poll cadence — the service writes on an 800 ms floor, so this reads every write. */
     private static final long POLL_MS = 800L;
 
@@ -71,6 +73,8 @@ public final class CoreJobBinding {
     };
     private boolean polling;
     private String trackedUrl;
+    private long trackingStartedAt;
+    private long lastRowSeenAt;
 
     public CoreJobBinding(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -81,6 +85,8 @@ public final class CoreJobBinding {
     public synchronized void track(String url) {
         if (url == null || url.isEmpty()) return;
         trackedUrl = url;
+        trackingStartedAt = android.os.SystemClock.elapsedRealtime();
+        lastRowSeenAt = 0;
         if (!polling) {
             polling = true;
             main.post(poll);
@@ -108,11 +114,22 @@ public final class CoreJobBinding {
             url = trackedUrl;
         }
         if (url == null) return null;
+        long now = android.os.SystemClock.elapsedRealtime();
         JSONObject row = newestRowFor(url);
-        if (row == null) {
-            return new JobView(CoreStates.IDLE, 0f, true);   // job vanished from the snapshot
+        JobView v = row == null ? null : viewFor(row, System.currentTimeMillis());
+        if (v != null && v.terminal && lastRowSeenAt == 0 && now - trackingStartedAt < START_GRACE_MS) {
+            // A fossil from a previous job (same URL, already aged out) must not end a fresh
+            // track — the new job's own row lands a beat after startShared. Keep polling.
+            return null;
         }
-        return viewFor(row, System.currentTimeMillis());
+        if (v == null) {
+            // Race with the service: a just-delivered URL has no snapshot row yet. Keep polling
+            // through the start grace window before declaring the job gone.
+            if (lastRowSeenAt == 0 && now - trackingStartedAt < START_GRACE_MS) return null;
+            return new JobView(CoreStates.IDLE, 0f, true);
+        }
+        lastRowSeenAt = now;
+        return v;
     }
 
     private JSONObject newestRowFor(String url) {
