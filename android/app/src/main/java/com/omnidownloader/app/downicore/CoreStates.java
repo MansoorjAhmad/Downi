@@ -22,6 +22,8 @@ public final class CoreStates {
     public static final String WAKE = "wake";
     /** Settled "a video is here" look: brighter perimeter, mark at full presence. */
     public static final String DETECTED = "detected";
+    /** The tap fired and the resolver is working (sheet language: the rim orbit). Hold state. */
+    public static final String RESOLVING = "resolving";
     /** Finger down: 0.1 s compression inward (sheet 6). */
     public static final String PRESSED = "pressed";
     /** Finger moving: the Core follows the hand, no visual detune. */
@@ -43,7 +45,7 @@ public final class CoreStates {
 
     /** Every state the debug channel accepts, in the order the design sheet shows them. */
     public static final String[] ALL = {
-            IDLE, WAKE, DETECTED, PRESSED, DRAGGING, SNAPPED,
+            IDLE, WAKE, DETECTED, RESOLVING, PRESSED, DRAGGING, SNAPPED,
             PROGRESS, PAUSED, RESUMING, COMPLETING, COMPLETE, FAILED
     };
 

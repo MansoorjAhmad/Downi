@@ -107,13 +107,37 @@ public class CoreLookTest {
     }
 
     @Test public void stateVocabularyIsClosedAndHonest() {
-        assertEquals(12, CoreStates.ALL.length);
+        assertEquals(13, CoreStates.ALL.length);
         assertTrue(CoreStates.isKnown(CoreStates.DETECTED));
+        assertTrue(CoreStates.isKnown(CoreStates.RESOLVING));
         assertFalse("there is no 'armed' state — a video is either detected or it is not",
                 CoreStates.isKnown("armed"));
         assertTrue(CoreStates.isTransient(CoreStates.WAKE));
         assertFalse(CoreStates.isTransient(CoreStates.IDLE));
+        assertFalse("resolving is a hold state with its own visible progress (the orbit)",
+                CoreStates.isTransient(CoreStates.RESOLVING));
         assertTrue(CoreStates.showsProgress(CoreStates.PAUSED));
         assertFalse(CoreStates.showsProgress(CoreStates.IDLE));
+    }
+
+    @Test public void downloadingLendsLightToTheRing() {
+        // The energy law (§M-1): while a job runs, the mark dims and the perimeter speaks.
+        CoreLook.Look run = CoreLook.of(CoreStates.PROGRESS, 0f, 0.42f);
+        CoreLook.Look idle = CoreLook.of(CoreStates.IDLE, 0f, 0f);
+        assertTrue("downloading mark must be dimmed", run.mark < idle.mark);
+        assertEquals(0.42f, run.perimeter, EPS);
+    }
+
+    @Test public void completionReturnsTheLightToTheMark() {
+        CoreLook.Look start = CoreLook.of(CoreStates.COMPLETING, 0f, 1f);
+        CoreLook.Look end = CoreLook.of(CoreStates.COMPLETING, 1f, 1f);
+        assertTrue("the ring collapses inward during the pulse", end.perimeter < start.perimeter);
+        assertTrue("the mark blooms back to full", end.mark > start.mark);
+        assertEquals(1f, end.mark, EPS);
+    }
+
+    @Test public void pressingSinksTheMarkIntoTheGel() {
+        assertEquals(0f, CoreLook.of(CoreStates.IDLE, 0f, 0f).markSink, EPS);
+        assertEquals(1f, CoreLook.of(CoreStates.PRESSED, 1f, 0f).markSink, EPS);
     }
 }

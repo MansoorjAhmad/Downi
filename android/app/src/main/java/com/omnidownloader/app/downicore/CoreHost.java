@@ -77,7 +77,11 @@ public final class CoreHost extends View {
     private float animT = 0f;                        // 0..1 transition progress
     private ValueAnimator anim;
     private ValueAnimator flow;                      // DOWNLOADING energy flow (§25)
+    private ValueAnimator orbit;                     // RESOLVING rim orbit (§M-1)
     private float flowDeg;                           // the sheen's current rotation
+    private float orbitDeg;                          // the resolving light's position
+    private float markLagX, markLagY;                // interior slosh (gel physics, V-3)
+    private float squashX = 1f, squashY = 1f;        // edge-snap gel deformation (V-3)
     private boolean animCancelled;                   // a cancelled transition must never settle
 
     private Shader haloIdle, haloHot, haloErr, body, gloss, bounce, rim, rimErr, sweep;
@@ -166,10 +170,12 @@ public final class CoreHost extends View {
     /**
      * The DOWNLOADING energy flow (§25): the perimeter sheen slowly rotates and the halo breathes,
      * so the Core reads as an active process — "energy flows" — without a percent of distraction.
-     * Runs ONLY while a real job is in PROGRESS; idle never animates (K-A5).
+     * The RESOLVING rim orbit is its sibling: one light circles the rim at ~1.2 s per lap while
+     * the resolver works. Both run ONLY in their own state; idle never animates (K-A5).
      */
     private void updateFlow() {
         boolean shouldFlow = CoreStates.PROGRESS.equals(state);
+        boolean shouldOrbit = CoreStates.RESOLVING.equals(state);
         if (shouldFlow && flow == null) {
             flow = ValueAnimator.ofFloat(0f, 1f);
             flow.setDuration(8000L);
@@ -187,6 +193,23 @@ public final class CoreHost extends View {
             flow = null;
             flowDeg = 0f;
         }
+        if (shouldOrbit && orbit == null) {
+            orbit = ValueAnimator.ofFloat(0f, 1f);
+            orbit.setDuration(1200L);
+            orbit.setRepeatCount(ValueAnimator.INFINITE);
+            orbit.setRepeatMode(ValueAnimator.RESTART);
+            orbit.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override public void onAnimationUpdate(ValueAnimator a) {
+                    orbitDeg = 360f * (Float) a.getAnimatedValue();
+                    invalidate();
+                }
+            });
+            orbit.start();
+        } else if (!shouldOrbit && orbit != null) {
+            orbit.cancel();
+            orbit = null;
+            orbitDeg = 0f;
+        }
     }
 
     /** What a transient state becomes when its short animation ends — then nothing animates. */
@@ -202,7 +225,27 @@ public final class CoreHost extends View {
     @Override protected void onDetachedFromWindow() {
         if (anim != null) { anim.cancel(); anim = null; }
         if (flow != null) { flow.cancel(); flow = null; }
+        if (orbit != null) { orbit.cancel(); orbit = null; }
         super.onDetachedFromWindow();
+    }
+
+    /** Interior slosh (V-3): the mark trails the container during a drag, then springs home. */
+    public void setMarkLag(float lx, float ly) {
+        float max = 4f * dp;
+        float nx = Math.max(-max, Math.min(max, lx));
+        float ny = Math.max(-max, Math.min(max, ly));
+        if (Math.abs(nx - markLagX) < 0.15f && Math.abs(ny - markLagY) < 0.15f) return;
+        markLagX = nx;
+        markLagY = ny;
+        invalidate();
+    }
+
+    /** Gel squash (V-3): the body flattens against the edge it snaps to, then settles. */
+    public void setGelSquash(float sx, float sy) {
+        if (Math.abs(sx - squashX) < 0.003f && Math.abs(sy - squashY) < 0.003f) return;
+        squashX = sx;
+        squashY = sy;
+        invalidate();
     }
 
     // ---------- geometry + shaders (built once per size) ----------
@@ -274,7 +317,7 @@ public final class CoreHost extends View {
         CoreLook.Look L = CoreLook.of(state, animT, progress);
         int mood = L.error > 0.25f ? 2 : (L.detected > 0.4f ? 1 : 0);
         int save = c.save();
-        c.scale(L.scale, L.scale, cx, cy);
+        c.scale(L.scale * squashX, L.scale * squashY, cx, cy);   // gel squash rides on state scale
 
         // 1) ambient bloom (restrained; the halo breathes with the download flow)
         p.setStyle(Paint.Style.FILL);
@@ -325,9 +368,30 @@ public final class CoreHost extends View {
                 p.setStrokeWidth(2.6f * dp);
                 p.setStrokeCap(Paint.Cap.ROUND);
                 c.drawArc(inner, -90f, 360f * L.perimeter, false, p);
+                if (L.perimeter > 0.02f && L.perimeter < 0.999f) {
+                    // the comet head: the arc's leading edge is brighter than its tail —
+                    // direction and motion read from the same ring (§M-1).
+                    float head = -90f + 360f * L.perimeter;
+                    p.setShader(null);
+                    p.setColor(0xFFBDFBFF);
+                    p.setAlpha(255);
+                    p.setStrokeWidth(3.2f * dp);
+                    c.drawArc(inner, head - 6f, 12f, false, p);
+                }
                 p.setStrokeCap(Paint.Cap.BUTT);
                 p.setShader(null);
             }
+        }
+
+        // 5b) the RESOLVING orbit (§M-1): one light circling the rim while the resolver works
+        if (CoreStates.RESOLVING.equals(state)) {
+            p.setShader(null);
+            p.setColor(0xFFBDFBFF);
+            p.setAlpha(235);
+            p.setStrokeWidth(2.8f * dp);
+            p.setStrokeCap(Paint.Cap.ROUND);
+            c.drawArc(inner, orbitDeg - 5f, 10f, false, p);
+            p.setStrokeCap(Paint.Cap.BUTT);
         }
 
         p.setAlpha(255);
@@ -335,7 +399,11 @@ public final class CoreHost extends View {
             int s2 = c.save();
             c.clipPath(clip);
             float side = 2f * rIn * markScale;
-            markDst.set(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f);
+            float sink = 0.8f * dp * L.markSink;         // pressed into the gel (§M-1)
+            markDst.set(cx - side / 2f + markLagX,
+                    cy - side / 2f + markLagY + sink,
+                    cx + side / 2f + markLagX,
+                    cy + side / 2f + markLagY + sink);
             p.setAlpha(Math.round(255f * clamp01(L.mark)));
             c.drawBitmap(mark, null, markDst, p);
             p.setAlpha(255);

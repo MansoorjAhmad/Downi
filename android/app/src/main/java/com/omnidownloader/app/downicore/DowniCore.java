@@ -287,12 +287,17 @@ public final class DowniCore {
                             dragging = true;
                             next.setState(CoreStates.DRAGGING);
                         }
-                        if (dragging) moveTo(Math.round(downX + dx), Math.round(downY + dy));
+                        if (dragging) {
+                            moveTo(Math.round(downX + dx), Math.round(downY + dy));
+                            // interior slosh (V-3): the mark trails the container, gel-style
+                            next.setMarkLag(-dx * 0.06f, -dy * 0.06f);
+                        }
                         return true;
                     }
                     case MotionEvent.ACTION_UP:
                         listener.onCoreLog("CORE_TOUCH up dragging=" + dragging);
                         if (dragging) {
+                            next.setMarkLag(0f, 0f);            // the interior springs home
                             finishDrag();
                         } else {
                             next.setState(baseState);
@@ -302,6 +307,7 @@ public final class DowniCore {
                     case MotionEvent.ACTION_CANCEL:
                         listener.onCoreLog("CORE_TOUCH cancel dragging=" + dragging);
                         if (dragging) persistPosition();
+                        next.setMarkLag(0f, 0f);
                         next.setState(baseState);
                         return true;
                     default:
@@ -339,6 +345,9 @@ public final class DowniCore {
         final int targetY = nearY;
         final int fromX = lp.x;
         final int fromY = lp.y;
+        // Gel physics (V-3): the body flattens against the edge it meets — squash on the contact
+        // axis, slight bulge on the other — then settles back. No trace after the snap.
+        final boolean horizontalHit = (nearX != lp.x);
         view.setState(CoreStates.SNAPPED);
         edgeAnim = ValueAnimator.ofFloat(0f, 1f);
         edgeAnim.setDuration(CoreMotion.SNAP_MS);
@@ -347,10 +356,14 @@ public final class DowniCore {
                 float t = CoreMotion.easeInOut((Float) a.getAnimatedValue());
                 moveTo(Math.round(fromX + (targetX - fromX) * t),
                         Math.round(fromY + (targetY - fromY) * t));
+                float env = (float) Math.sin(Math.PI * t) * 0.10f;
+                if (horizontalHit) view.setGelSquash(1f - env, 1f + env * 0.5f);
+                else view.setGelSquash(1f + env * 0.5f, 1f - env);
             }
         });
         edgeAnim.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator a) {
+                view.setGelSquash(1f, 1f);
                 persistPosition();
                 view.setState(baseState);
                 listener.onCoreMoved(lp.x, lp.y);

@@ -25,11 +25,14 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
+import com.omnidownloader.app.downicore.CoreHaptics;
 import com.omnidownloader.app.downicore.CoreJobBinding;
 import com.omnidownloader.app.downicore.CoreStates;
 import com.omnidownloader.app.downicore.DowniCore;
+import com.omnidownloader.app.fetcher.AttentionLedger;
 import com.omnidownloader.app.fetcher.DeliveryGuard;
 import com.omnidownloader.app.fetcher.MediaUrl;
+import com.omnidownloader.app.fetcher.StrategyLedger;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -163,6 +166,68 @@ public class FetchSpikeService extends AccessibilityService {
     private static final long DUP_WINDOW_MS = 8_000;
     private final DeliveryGuard delivery = new DeliveryGuard(DUP_WINDOW_MS);
 
+    // ---------- The attention model + strategy self-awareness (next-level pass) ----------
+
+    /**
+     * What the user is looking at right now, with confidence. Fed from every tree dump; a READY
+     * candidate lets a Core tap resolve INSTANTLY on Instagram (no sheet, no flash) — the tap
+     * still authorizes everything. TikTok's tree is opaque, so its taps keep the copy-link chain.
+     */
+    private final AttentionLedger ledger = new AttentionLedger();
+
+    /** Per-platform/per-route success ledger — the resolver's self-awareness. */
+    private final StrategyLedger strategies = new StrategyLedger();
+
+    /** URL sightings from one tree walk: [url, visibleToUser]. Drained into the ledger per dump. */
+    private final java.util.ArrayList<String[]> urlSightings = new java.util.ArrayList<>();
+
+    /** Feed the ledger one walk's sightings; only true media pages on the passive-capable host. */
+    private void feedLedger() {
+        long now = SystemClock.elapsedRealtime();
+        ledger.beginDump(now);
+        for (String[] s : urlSightings) {
+            String url = s[0];
+            boolean visible = "1".equals(s[1]);
+            String why = MediaUrl.reason(url);
+            if (why == null && url.contains("instagram.")) ledger.offer(url, visible, now);
+        }
+        urlSightings.clear();
+    }
+
+    private static String platformOf(String url) {
+        String u = url == null ? "" : url.toLowerCase(Locale.US);
+        if (u.contains("instagram")) return "instagram";
+        if (u.contains("tiktok")) return "tiktok";
+        return "other";
+    }
+
+    /** Platform short name from the foreground session package (for records without a URL). */
+    private String sessionShort() {
+        String p = sessionPkg == null ? "" : sessionPkg;
+        if (p.contains("instagram")) return "instagram";
+        if (p.contains("musically") || p.contains("trill")) return "tiktok";
+        return "other";
+    }
+
+    private void recordStrategy(String route, boolean ok, String url) {
+        String platform = platformOf(url);
+        strategies.record(platform, route, ok, SystemClock.elapsedRealtime());
+        log("STRATEGY " + platform + " " + strategies.summary(platform, route));
+    }
+
+    // Screen-off discipline (§E2): nothing polls, dumps, or shows while the screen is dark.
+    private volatile boolean screenOn = true;
+    private final android.content.BroadcastReceiver screenReceiver = new android.content.BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                screenOn = false;
+                if (core != null) core.hide();
+            } else if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
+                screenOn = true;    // coreTick re-shows on the next tick over a target app
+            }
+        }
+    };
+
     // A rebind without onDestroy (this ROM wipes the a11y binding on its own) must not double-post
     // the polling loops — they run on the same looper for the life of the instance.
     private boolean pollersArmed;
@@ -208,6 +273,8 @@ public class FetchSpikeService extends AccessibilityService {
         String s;
         if (!CoreStates.IDLE.equals(jobState)) {
             s = jobState;                          // a real job is the loudest truth
+        } else if (chainRunning) {
+            s = CoreStates.RESOLVING;              // the tap fired; the resolver is working
         } else {
             s = videoDetected ? CoreStates.DETECTED : CoreStates.IDLE;
         }
@@ -228,7 +295,10 @@ public class FetchSpikeService extends AccessibilityService {
         lastDetectFlipAt = now;
         videoDetected = hasSignal;
         applyCoreState();
-        if (hasSignal && core != null) core.setState(CoreStates.WAKE);
+        if (hasSignal && core != null) {
+            core.setState(CoreStates.WAKE);
+            if (screenOn && core.isShown()) CoreHaptics.detected(this);
+        }
         log("CORE_DETECT detected=" + hasSignal);
     }
 
@@ -244,6 +314,7 @@ public class FetchSpikeService extends AccessibilityService {
         jobState = CoreStates.FAILED;
         jobProgress = 0f;
         applyCoreState();
+        if (screenOn && core != null && core.isShown()) CoreHaptics.failed(this);
         failedHold = new Runnable() {
             @Override public void run() {
                 if (CoreStates.FAILED.equals(jobState)) {   // never clobber a newer job/run
@@ -260,7 +331,7 @@ public class FetchSpikeService extends AccessibilityService {
     //   show | hide | list | size <48|56|64> | state <name> | progress <0-100> | mark <scale> | at <x> <y>
     private final Runnable corePoll = new Runnable() {
         @Override public void run() {
-            try { pollCoreCmd(); } catch (Throwable t) { log("CORE_POLL_ERR " + t); }
+            if (screenOn) { try { pollCoreCmd(); } catch (Throwable t) { log("CORE_POLL_ERR " + t); } }
             main.postDelayed(this, 800);
         }
     };
@@ -269,7 +340,7 @@ public class FetchSpikeService extends AccessibilityService {
     // event fires (service switched on while the platform is already open).
     private final Runnable coreTickPoll = new Runnable() {
         @Override public void run() {
-            try { coreTick(); } catch (Throwable t) { log("CORE_TICK_ERR " + t); }
+            if (screenOn) { try { coreTick(); } catch (Throwable t) { log("CORE_TICK_ERR " + t); } }
             main.postDelayed(this, 900);
         }
     };
@@ -277,7 +348,7 @@ public class FetchSpikeService extends AccessibilityService {
     // Polls for fetch-spike/chain.cmd — the spike's command channel (dry|click).
     private final Runnable chainPoll = new Runnable() {
         @Override public void run() {
-            try { pollChainCmd(); } catch (Throwable t) { log("CHAIN_POLL_ERR " + t); }
+            if (screenOn) { try { pollChainCmd(); } catch (Throwable t) { log("CHAIN_POLL_ERR " + t); } }
             main.postDelayed(this, 1500);
         }
     };
@@ -290,18 +361,20 @@ public class FetchSpikeService extends AccessibilityService {
      */
     private final Runnable heartbeat = new Runnable() {
         @Override public void run() {
-            try {
-                Runtime rt = Runtime.getRuntime();
-                long usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
-                long maxMb = rt.maxMemory() / (1024 * 1024);
-                log("HEARTBEAT uptime_s=" + ((SystemClock.elapsedRealtime() - connectedAt) / 1000)
-                        + " heap_mb=" + usedMb + "/" + maxMb
-                        + " session=" + (sessionPkg == null ? "-" : sessionPkg)
-                        + " dumps=" + dumpCount + " chain=" + chainRunning
-                        + " core=" + (core != null && core.isShown())
-                        + " fgs=" + fgsArmed + "/" + fgsTries);
-            } catch (Throwable t) {
-                log("HEARTBEAT_ERR " + t);
+            if (screenOn) {
+                try {
+                    Runtime rt = Runtime.getRuntime();
+                    long usedMb = (rt.totalMemory() - rt.freeMemory()) / (1024 * 1024);
+                    long maxMb = rt.maxMemory() / (1024 * 1024);
+                    log("HEARTBEAT uptime_s=" + ((SystemClock.elapsedRealtime() - connectedAt) / 1000)
+                            + " heap_mb=" + usedMb + "/" + maxMb
+                            + " session=" + (sessionPkg == null ? "-" : sessionPkg)
+                            + " dumps=" + dumpCount + " chain=" + chainRunning
+                            + " core=" + (core != null && core.isShown())
+                            + " fgs=" + fgsArmed + "/" + fgsTries);
+                } catch (Throwable t) {
+                    log("HEARTBEAT_ERR " + t);
+                }
             }
             main.postDelayed(this, HEARTBEAT_MS);
         }
@@ -349,10 +422,15 @@ public class FetchSpikeService extends AccessibilityService {
                 if (v == null || v.coreState == null) return;
                 // Progress re-applies (the number moved); an unchanged terminal view must not
                 // re-fire the completion animation every poll.
+                boolean wasComplete = CoreStates.COMPLETE.equals(jobState);
                 if (v.coreState.equals(jobState) && !CoreStates.PROGRESS.equals(v.coreState)) return;
                 jobState = v.coreState;
                 jobProgress = v.progress;
                 applyCoreState();
+                if (screenOn && core != null && core.isShown()) {
+                    if (CoreStates.COMPLETE.equals(jobState) && !wasComplete) CoreHaptics.complete(FetchSpikeService.this);
+                    if (CoreStates.FAILED.equals(jobState)) CoreHaptics.failed(FetchSpikeService.this);
+                }
                 int pct = Math.round(v.progress * 100f);
                 if (!v.coreState.equals(lastLoggedJobState) || pct != lastLoggedJobPct) {
                     lastLoggedJobState = v.coreState;
@@ -378,6 +456,17 @@ public class FetchSpikeService extends AccessibilityService {
             main.postDelayed(heartbeat, HEARTBEAT_MS);
         }
 
+        // Screen-off discipline: no polls, no dumps, no Core while the screen is dark.
+        try {
+            android.content.IntentFilter f = new android.content.IntentFilter();
+            f.addAction(Intent.ACTION_SCREEN_OFF);
+            f.addAction(Intent.ACTION_SCREEN_ON);
+            androidx.core.content.ContextCompat.registerReceiver(
+                    this, screenReceiver, f, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
+        } catch (Throwable t) {
+            log("SCREEN_RECEIVER_ERR " + t);
+        }
+
         // Anti-kill defence: without this the vendor power manager ends the whole feature.
         armForeground();
     }
@@ -386,6 +475,7 @@ public class FetchSpikeService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         try {
             if (event == null) return;
+            if (!screenOn) return;                       // screen-off discipline: zero work in the dark
             int type = event.getEventType();
             String pkg = event.getPackageName() != null ? event.getPackageName().toString() : null;
 
@@ -413,6 +503,7 @@ public class FetchSpikeService extends AccessibilityService {
                     log("STEP2_SCROLL pkg=" + sessionPkg + " from=" + event.getFromIndex()
                             + " to=" + event.getToIndex());
                 }
+                ledger.onScrollTransition();     // the feed paged: pre-scroll candidates are gone
                 scheduleSettleDump("scroll_settle");
             } else if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
                 maybeDump("content_changed");
@@ -467,6 +558,7 @@ public class FetchSpikeService extends AccessibilityService {
         dumpCount = sessionDumps = shotCount = step3Hits = 0;
         lastDumpBody = "";
         seenUrls.clear();
+        ledger.clear();                      // a new app context: attention resets
         log("SESSION_START pkg=" + pkg);
         maybeScreenshot("session_start");
     }
@@ -479,6 +571,7 @@ public class FetchSpikeService extends AccessibilityService {
         settleDump = null;
         sessionPkg = null;
         lastDumpBody = "";
+        ledger.clear();                      // leaving the platform: attention resets
     }
 
     // ---------- tree dumps (Q2 + Q3) ----------
@@ -507,11 +600,13 @@ public class FetchSpikeService extends AccessibilityService {
         StringBuilder corpus = new StringBuilder(16 * 1024);
         Counter c = new Counter();
         signals.clear();
+        urlSightings.clear();
         walk(root, 0, body, corpus, c);
 
         String bodyStr = body.toString();
         if (bodyStr.equals(lastDumpBody)) {
             log("DUMP reason=" + reason + " nodes=" + c.nodes + " identical_to_previous");
+            urlSightings.clear();
             return;                              // candidates unchanged as well
         }
         lastDumpBody = bodyStr;
@@ -520,6 +615,7 @@ public class FetchSpikeService extends AccessibilityService {
         log("DUMP_" + dumpCount + " reason=" + reason + " pkg=" + sessionPkg + " nodes=" + c.nodes);
         log(bodyStr);                            // full tree, one chunk
         extractAndVerdict(corpus.toString());
+        feedLedger();                            // attention: what is on screen right now
         updateDetection(!signals.isEmpty());     // Phase 0 P0-2: watching signals = a video is on screen
         if (sessionDumps == 4) maybeScreenshot("dump4");
     }
@@ -543,6 +639,17 @@ public class FetchSpikeService extends AccessibilityService {
         if (t != null) corpus.append(t).append('\n');
         if (d != null) corpus.append(d).append('\n');
         if (id != null) corpus.append(id).append('\n');
+
+        // URL sightings with visibility — the Attention Ledger's raw evidence.
+        String nodeText = (t == null ? "" : t.toString()) + " " + (d == null ? "" : d.toString());
+        if (nodeText.contains("http")) {
+            Matcher um = URL_P.matcher(nodeText);
+            while (um.find()) {
+                urlSightings.add(new String[]{um.group().replaceAll("[\\.,;:!?)\\]\"']+$", ""),
+                        node.isVisibleToUser() ? "1" : "0"});
+                if (urlSightings.size() >= 12) break;
+            }
+        }
 
         String sigSrc = id != null ? id : cls;
         if (!sigSrc.isEmpty() && SIGNAL_P.matcher(sigSrc).find()) signals.add(clip(sigSrc, 80));
@@ -652,11 +759,27 @@ public class FetchSpikeService extends AccessibilityService {
 
     /**
      * The owner's tap — the only thing that ever starts a download (ruling 2026-09-25 ~18:20).
-     * DOWNI resolves the link behind this tap and hands it to the existing engine.
+     * If the attention ledger holds a READY candidate (the video on screen was seen, visible,
+     * dwelled on, and the feed hasn't paged since), the tap resolves INSTANTLY — no share sheet,
+     * no flash. Otherwise the proven copy-link chain runs. TikTok never enters the ledger
+     * (its tree is opaque), so its taps always take the chain.
      */
     private void onCoreTap() {
         if (sessionPkg == null) { log("CORE_TAP_NO_SESSION open IG/TikTok first"); return; }
         if (chainRunning) { log("CORE_TAP_BUSY ignored"); return; }
+        AttentionLedger.Candidate cand = ledger.best(SystemClock.elapsedRealtime());
+        if (cand != null) {
+            log("CORE_TAP session=" + sessionPkg + " passive=1 confidence=READY url=" + clip(cand.url, 120));
+            try {
+                beginChainRun();
+                deliverByTap(cand.url, "ledger");
+            } catch (Throwable t) {
+                log("CHAIN_ERR " + t);
+                resolverFailed("passive_" + t.getClass().getSimpleName());
+            }
+            chainReset();
+            return;
+        }
         log("CORE_TAP session=" + sessionPkg);
         try { beginChainRun(); runChain(true); }
         catch (Throwable t) { log("CHAIN_ERR " + t); chainReset(); }
@@ -726,7 +849,16 @@ public class FetchSpikeService extends AccessibilityService {
      * be refused. So this path ignores the gate deliberately; the dump path keeps it.
      */
     private void deliverByTap(String url, String route) {
+        // Single-funnel validation: every route (clipboard, ledger tree, dump) passes the same
+        // media-page rule right before the pipeline — a non-media URL can never slip through.
+        String why = MediaUrl.reason(url);
+        if (why != null) {
+            log("CHAIN_URL_REJECTED route=" + route + " reason=" + why);
+            resolverFailed("rejected_" + why);
+            return;
+        }
         long now = SystemClock.elapsedRealtime();
+        String platform = platformOf(url);
         if (!delivery.allow(url, now)) {
             // A second tap on the same video seconds apart (clipboard still holding the link) used
             // to start a second identical engine job and save "Video (1).mp4" next to "Video.mp4".
@@ -756,6 +888,7 @@ public class FetchSpikeService extends AccessibilityService {
         try {
             DowniDownloadService.startShared(this, url);
             delivery.record(url, now);
+            recordStrategy(route, true, url);
             log("CHAIN_DELIVER_OK route=" + route + " tap=1 url=" + clip(url, 200));
             // The Core becomes the live visual representation of this job (master package §11).
             jobState = CoreStates.PROGRESS;
@@ -764,6 +897,7 @@ public class FetchSpikeService extends AccessibilityService {
             if (jobBinding != null) jobBinding.track(url);
         } catch (Throwable t) {
             log("CHAIN_DELIVER_FAIL route=" + route + " err=" + t);
+            recordStrategy(route, false, url);
             resolverFailed("deliver_" + t.getClass().getSimpleName());
         }
     }
@@ -924,7 +1058,25 @@ public class FetchSpikeService extends AccessibilityService {
         if (t == null) { log("CHAIN_NO_SHARE_CLICK"); resolverFailed("no_share_row"); chainReset(); return; }
         log("CHAIN_SHARE_CLICK text=" + clip(nodeText(t), 120)
                 + " route=" + clickNode(t));
-        postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 1300);
+        // Event-driven wait (§H2): poll for the share surface's own window instead of sleeping a
+        // fixed 1300 ms — the sheet opens in ~700 ms on this ROM, so step 2 starts sooner; the
+        // deadline fallback keeps OEM same-window sheets working.
+        postStep(new Runnable() { @Override public void run() { waitShareSurface(0); } }, 300);
+    }
+
+    private void waitShareSurface(final int attempt) {
+        if (!chainRunning) return;               // the run ended under us
+        if (shareSurfaceOpen()) {
+            log("CHAIN_SURFACE_OPEN after_ms=" + (300 + attempt * 250));
+            chainStep2();
+            return;
+        }
+        if (attempt >= 7) {
+            log("CHAIN_SURFACE_TIMEOUT fallback=scan");
+            chainStep2();                        // OEM same-window sheets: scan anyway
+            return;
+        }
+        postStep(new Runnable() { @Override public void run() { waitShareSurface(attempt + 1); } }, 250);
     }
 
     private void chainStep2() {
@@ -986,7 +1138,7 @@ public class FetchSpikeService extends AccessibilityService {
         chainClickedCopy = true;
         log("CHAIN_TARGET_CLICK which=copylink text=" + clip(nodeText(c), 120)
                 + " route=" + clickNode(c));
-        postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1600);
+        postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1200);
     }
 
     // ---------- deleted 2026-09-25 ~18:20 by owner ruling ----------
@@ -1151,6 +1303,8 @@ public class FetchSpikeService extends AccessibilityService {
                 return;
             }
             log("CHAIN_CLIPBOARD got=null text= tries=" + clipTries);
+            strategies.record(sessionShort(), "clipboard", false, SystemClock.elapsedRealtime());
+            log("STRATEGY " + sessionShort() + " " + strategies.summary(sessionShort(), "clipboard"));
             resolverFailed("clipboard_empty");
             return;
         }
@@ -1442,6 +1596,7 @@ public class FetchSpikeService extends AccessibilityService {
         main.removeCallbacks(corePoll);
         if (failedHold != null) { main.removeCallbacks(failedHold); failedHold = null; }
         if (jobBinding != null) { jobBinding.stop(); jobBinding = null; }
+        try { unregisterReceiver(screenReceiver); } catch (Throwable ignored) {}
         pollersArmed = false;               // a fresh bind after destroy must re-post the loops
         disarmForeground();
         if (core != null) core.destroy();

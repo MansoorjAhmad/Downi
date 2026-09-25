@@ -22,6 +22,7 @@ public final class CoreLook {
         public float track;      // alpha of the dim "not yet" track
         public float error;      // 0..1 rose error tint
         public float detected;   // 0..1 how awake the Core is
+        public float markSink;   // 0..1 how deep the mark sits pressed into the gel
         public boolean bars;     // PAUSED bars (two small bars — never text)
         public float barAlpha;
     }
@@ -60,13 +61,22 @@ public final class CoreLook {
             L.rim = 1.00f;
             L.track = 0.16f;
             L.perimeter = 0f;
+        } else if (CoreStates.RESOLVING.equals(state)) {
+            // §M-1: the tap fired; the resolver is working. The rim carries one orbiting light
+            // (the host draws it) — resolution has visible progress, never a frozen state.
+            L.detected = 1f;
+            L.halo = 0.55f;
+            L.rim = 1.00f;
+            L.mark = 1.00f;
+            L.track = 0.16f;
         } else if (CoreStates.PRESSED.equals(state)) {
-            // sheet 6 #2: compress inward in 0.1 s, brighter response.
+            // sheet 6 #2: compress inward in 0.1 s, brighter response; the mark sinks into the gel.
             L.detected = 1f;
             L.scale = 1f - 0.10f * e;
             L.halo = 0.45f + 0.25f * e;
             L.rim = 1.00f;
             L.mark = 1.00f;
+            L.markSink = e;
             L.track = 0.16f;
         } else if (CoreStates.DRAGGING.equals(state)) {
             L.detected = 1f;
@@ -82,11 +92,13 @@ public final class CoreLook {
             L.scale = 1f + 0.05f * pulse;
             L.track = 0.16f;
         } else if (CoreStates.PROGRESS.equals(state)) {
+            // §M-1 THE ENERGY LAW: the mark LENDS its light to the perimeter — the identity dims
+            // while the download lives, and the ring speaks for it. Returned at completion.
             L.detected = 1f;
             L.perimeter = p;
             L.track = 0.18f;
             L.rim = 1.00f;
-            L.mark = 1.00f;
+            L.mark = 0.60f;
             L.halo = 0.50f + 0.12f * p + 0.10f * pulse;
         } else if (CoreStates.PAUSED.equals(state)) {
             // sheet 4: "download paused — the energy freezes gently."
@@ -109,12 +121,13 @@ public final class CoreLook {
             L.bars = true;
             L.barAlpha = 0.90f * (1f - e);
         } else if (CoreStates.COMPLETING.equals(state)) {
-            // sheet 6 #8: a subtle confirmation pulse, then a calm return.
+            // sheet 6 #8 / §M-1: the light RETURNS to the mark — the ring collapses inward as the
+            // identity blooms back to full. A subtle confirmation, then a calm hold.
             L.detected = 1f;
-            L.perimeter = 1f;
+            L.perimeter = 1f - 0.65f * e;
             L.track = 0.06f;
             L.rim = 1.00f;
-            L.mark = 1.00f;
+            L.mark = 0.60f + 0.40f * e;
             L.halo = 0.50f + 0.35f * pulse;
             L.scale = 1f + 0.05f * pulse;
         } else if (CoreStates.COMPLETE.equals(state)) {

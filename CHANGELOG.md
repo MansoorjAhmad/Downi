@@ -163,6 +163,42 @@ attached over Instagram (`test_out/core_v3_showing.png`). The full fix for the k
 remains the user-side vivo exemption (Autostart allow + battery unrestricted + lock in Recents) —
 no code can reach that.
 
+**Wave 1 — the Attention Ledger + instant taps + living physics (2026-09-26, early hours).** The
+next-level pass from the product vision, executed:
+- **The Attention Ledger** (`fetcher/AttentionLedger`, pure + 8 JVM tests): the Fetcher now
+  maintains a confidence-scored model of what the user is looking at. A candidate becomes READY
+  only when it was visible on screen, dwelled ≥800 ms, survived without the feed paging (scroll
+  transitions demote everything pre-scroll), hasn't gone missing from consecutive dumps, and is
+  fresh. **Instagram taps are now INSTANT on READY candidates** — the URL is served from the
+  ledger (`route=ledger`), no share sheet, no flash, no clipboard dance. TikTok's tree is opaque
+  (61/61 clean dumps, measured), so TikTok taps keep the verified copy-link chain. Low-confidence
+  candidates are structurally unable to serve a download — the dangerous guess cannot happen.
+- **Strategy Ledger** (`fetcher/StrategyLedger`, 4 tests): per-platform/per-route success rates
+  over a rolling 20-attempt window, logged as `STRATEGY <platform> <route> NN% (n/N)` — the
+  resolver's self-awareness: when a platform update breaks a route, the log (and one day the
+  settings card) knows which route and since when.
+- **Event-driven resolver waits:** the chain now polls for the share surface's own window
+  (~250 ms cadence, deadline fallback for same-window OEM sheets) instead of sleeping a fixed
+  1300 ms — step 2 starts as soon as the sheet actually exists; the post-copy wait drops
+  1600→1200 ms under the retry loop's cover.
+- **RESOLVING state + the energy law (§M-1):** new Core state `resolving` (rim-orbit light,
+  resolution has visible progress); while a job downloads, **the mark lends its light to the
+  perimeter** (dims to 60%, the ring's comet-head leads the arc); at completion the ring
+  collapses inward and the mark blooms back to full. Pressing sinks the mark 0.8 dp into the
+  gel. Pure-table tests lock the law (mark dims, light returns, sink depth).
+- **Gel physics (V-3):** interior slosh — the mark trails the container during drags and springs
+  home on release; edge squash — the body flattens against the edge it snaps to and settles.
+  Drag-only/snap-only, so idle still draws nothing (K-A5 intact).
+- **Haptic voice** (`downicore/CoreHaptics`): detected = one soft tick, complete = quick double
+  tick, failed = low dull pulse. **The Core never makes sound** — it would compete with the
+  video's audio — and never vibrates while hidden or the screen is off.
+- **Screen-off discipline (§E2):** when the screen is dark: zero dumps, zero polls, zero
+  heartbeats, Core hidden — the Fetcher costs nothing at night and starves vivo's "excessive
+  power" trigger.
+Validated: **54 tests / 0 failures**; `:app:assembleDebug` BUILD SUCCESSFUL; installed
+prod-signed. On-device instant-tap verification pending (phone locked for the night — the ledger
+gates are JVM-proven; live proof lands with the next unlocked session).
+
 ## Unreleased — V3.3 (in progress)
 
 _(nothing yet)_
