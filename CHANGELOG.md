@@ -128,6 +128,28 @@ MANY STATES, ZERO UNINTENTIONAL DOWNLOADS) and the missing half of the feature i
 Validated: 39 tests / 0 failures; `:app:assembleDebug` BUILD SUCCESSFUL. Mark unchanged: the Core
 still wears the design-sheet-2 chevron, never the app logo.
 
+**The face rebuilt to the sheets — visual-identity pass (2026-09-25, night).** The owner's verdict
+on the first living-Core build was "it still looks the same" — correct: the MD's most *visible*
+layers were still the Phase-A simplification. Rebuilt to the master package:
+- **Material (§5):** deep obsidian body with real depth shading, a teal bounce light from below,
+  and a soft specular gloss top-left — premium from shape + proportion + material + lighting, not
+  effects.
+- **Silhouette (§6):** the body is now a softly lobed organic gel shape with fixed asymmetry —
+  never a "mathematically perfect generic circle".
+- **Size (§6/§19):** the visible pebble is 0.80 of its window (~50 px class at the 64 dp window —
+  inside the spec's 40–60 px read) while the touch target stays the full 48/56/64 dp window:
+  small visual footprint, comfortable interaction area. The mark scale re-solved for the smaller
+  disc: 0.63 → **0.65** (the fixed dp insets are a larger share; ±1.3% worst at 40 px, tests
+  updated to the new measured bake and dynamic neighbours).
+- **Idle/detected (§8/§9):** idle is almost dormant (dim halo/rim); DETECTED is unmistakable —
+  full bright gel rim + strong bloom, no text, the "Downi found something" read.
+- **Energy flow (§12/§20/§25):** while a real job is in PROGRESS the perimeter sheen slowly
+  rotates and the halo breathes — active process feel; the animator exists only during a download,
+  so idle cost stays zero (K-A5).
+Device-verified on the vivo V2058 over a live Reel: `test_out/core_v2_zoom.jpg` (DETECTED),
+`core_v2_dl_zoom.jpg` (downloading at ~27% with the arc at the perimeter's top), 39/39 tests green.
+The mark is still the design-sheet-2 chevron, byte-identical asset — never the app icon.
+
 ## Unreleased — V3.3 (in progress)
 
 _(nothing yet)_

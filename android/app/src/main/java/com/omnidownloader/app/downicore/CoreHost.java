@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RadialGradient;
@@ -19,38 +20,53 @@ import android.view.View;
 import com.omnidownloader.app.R;
 
 /**
- * V3.2 Downi Core — the face. One view, drawn in code (no layout XML), hosted by
- * {@link DowniCore}. The approved visual states and Phase B interaction share this view; the
- * service binds detection and job state around it.
+ * V3.2 Downi Core — the face (master package §4/§5/§6: identity + ambient perimeter + material).
  *
- * The mark is the **Core's own identity mark from design sheet 2** — the glossy teal
- * "folded ribbon chevron" — lifted pixel-exact out of the owner's sheet by
- * `tools/core_mark_from_sheet.py` (`R.drawable.downi_core_mark`, 512 px, transparent).
+ * Two layers, per the master package:
+ *   LAYER A  the sheet-2 identity mark, permanent, never the app icon;
+ *   LAYER B  an organic, slightly asymmetric energy perimeter over a glossy obsidian body —
+ *            NOT a "mathematically perfect generic circle".
  *
- * Owner ruling 2026-09-25 (correction): the Fetcher must NOT wear the app/launcher icon
- * (`downi_app_icon` = the speed-D). That asset stays the app's own identity (launcher,
- * splash, store) and is no longer drawn anywhere in the Core. The mark is never redrawn,
- * restyled or re-traced — the sheet's own pixels are what ships.
+ * Material (sheet 1/2/5): deep smoked-black body with real depth shading, a soft specular
+ * highlight top-left, a teal gel rim, and restrained bloom. Premium comes from shape +
+ * proportion + material + lighting + motion — never from gamer effects.
  *
- * Cost discipline (cell K-A5): a state draws itself once; only a short transition animates.
+ * Size (§6/§19): the visual pebble is drawn at {@link #VISUAL_IN_WINDOW} of its window, so the
+ * visible Core stays small (~50 px class at the 64 dp window) while the touch target stays the
+ * full window — small visual footprint, comfortable interaction area. The padding is part of the
+ * near-Core touch zone; it does not cover any extra app surface beyond what the Core already did.
+ *
+ * Motion (§20/§25): a state draws itself once; only transitions animate (idle cost stays zero —
+ * cell K-A5). The one continuous motion is the DOWNLOADING energy flow: a slow rotating sheen on
+ * the perimeter, running only while a real job is in PROGRESS and never while idle.
  */
 public final class CoreHost extends View {
 
-    /** Tile side as a fraction of the Core's inner disc diameter. Not hand-picked: it is the sheets'
-     *  own proportion, solved in {@link CoreLook#MARK_SCALE} from the measured 0.53 disc ratio (the
-     *  glyph fills 89% of its tile) and asserted by `CoreMarkSpecTest`. Gate-confirmed on the vivo
-     *  V2058: 0.476 of the disc read too small at 0.56, 0.531 matches sheet 3 at 0.63 (48/56/64 dp).
-     *  Still live-tunable by the owner at the gate (`mark <scale>` on the debug channel) — nothing
-     *  else depends on this number. */
+    /**
+     * Tile side as a fraction of the Core's inner disc diameter. Not hand-picked: it is the sheets'
+     * own proportion, solved in {@link CoreLook#MARK_SCALE} from the measured 0.53 disc ratio (the
+     * glyph fills 89% of its tile) and asserted by `CoreMarkSpecTest`. Still live-tunable by the
+     * owner at the gate (`mark <scale>` on the debug channel) — nothing else depends on this number.
+     */
     public static final float DEFAULT_MARK_SCALE = CoreLook.MARK_SCALE;
 
+    /**
+     * The visible Core as a fraction of its window. The rest of the window is transparent touch
+     * margin: the pebble reads small on screen while the finger target stays the full 48/56/64 dp.
+     */
+    public static final float VISUAL_IN_WINDOW = 0.80f;
+
+    /** How large the visual disc is relative to the window at draw time (for tests/tools). */
+    public static final float visualFractionOfWindow() { return VISUAL_IN_WINDOW; }
+
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF oval = new RectF();          // rim + halo
     private final RectF inner = new RectF();         // perimeter track
     private final RectF glass = new RectF();         // glass highlight arc
     private final RectF markDst = new RectF();       // mark destination
     private final RectF barL = new RectF(), barR = new RectF();
-    private final Path clip = new Path();
+    private final Path blob = new Path();            // the organic silhouette (LAYER B body)
+    private final Path clip = new Path();            // circular clip for the mark
+    private final Matrix flowMatrix = new Matrix();  // rotates the downloading sheen
     private final float dp;
 
     private final Bitmap mark;
@@ -60,10 +76,12 @@ public final class CoreHost extends View {
     private float progress = 0f;
     private float animT = 0f;                        // 0..1 transition progress
     private ValueAnimator anim;
+    private ValueAnimator flow;                      // DOWNLOADING energy flow (§25)
+    private float flowDeg;                           // the sheen's current rotation
     private boolean animCancelled;                   // a cancelled transition must never settle
 
-    private Shader haloIdle, haloHot, haloErr, disc, rim, rimErr, sweep;
-    private float cx, cy, r, rIn;
+    private Shader haloIdle, haloHot, haloErr, body, gloss, bounce, rim, rimErr, sweep;
+    private float cx, cy, r, blobMin, rIn;
 
     public CoreHost(Context c) {
         super(c);
@@ -103,6 +121,7 @@ public final class CoreHost extends View {
         if (s == null || !CoreStates.isKnown(s)) return;
         state = s;
         startTransition(durationOf(s));
+        updateFlow();
         invalidate();
     }
 
@@ -144,17 +163,45 @@ public final class CoreHost extends View {
         anim.start();
     }
 
+    /**
+     * The DOWNLOADING energy flow (§25): the perimeter sheen slowly rotates and the halo breathes,
+     * so the Core reads as an active process — "energy flows" — without a percent of distraction.
+     * Runs ONLY while a real job is in PROGRESS; idle never animates (K-A5).
+     */
+    private void updateFlow() {
+        boolean shouldFlow = CoreStates.PROGRESS.equals(state);
+        if (shouldFlow && flow == null) {
+            flow = ValueAnimator.ofFloat(0f, 1f);
+            flow.setDuration(8000L);
+            flow.setRepeatCount(ValueAnimator.INFINITE);
+            flow.setRepeatMode(ValueAnimator.RESTART);
+            flow.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override public void onAnimationUpdate(ValueAnimator a) {
+                    flowDeg = 360f * (Float) a.getAnimatedValue();
+                    invalidate();
+                }
+            });
+            flow.start();
+        } else if (!shouldFlow && flow != null) {
+            flow.cancel();
+            flow = null;
+            flowDeg = 0f;
+        }
+    }
+
     /** What a transient state becomes when its short animation ends — then nothing animates. */
     private void settle() {
         animT = 0f;
         if (CoreStates.WAKE.equals(state)) state = CoreStates.DETECTED;
         else if (CoreStates.RESUMING.equals(state)) state = CoreStates.PROGRESS;
         else if (CoreStates.COMPLETING.equals(state)) state = CoreStates.COMPLETE;
+        updateFlow();
         invalidate();                                  // the last frame of the transition
     }
 
     @Override protected void onDetachedFromWindow() {
         if (anim != null) { anim.cancel(); anim = null; }
+        if (flow != null) { flow.cancel(); flow = null; }
         super.onDetachedFromWindow();
     }
 
@@ -163,31 +210,59 @@ public final class CoreHost extends View {
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
         cx = w / 2f;
         cy = h / 2f;
-        float inset = 6 * dp;                          // room for the glow (DowniBubble recipe)
-        r = Math.min(w, h) / 2f - inset;
-        rIn = r - 1.2f * dp;
-        oval.set(cx - r, cy - r, cx + r, cy + r);
+        float inset = 6 * dp;                          // room for the glow
+        r = (Math.min(w, h) / 2f - inset) * VISUAL_IN_WINDOW;   // the visible pebble (§6: small)
+        rIn = r - 1.6f * dp;
         inner.set(cx - rIn, cy - rIn, cx + rIn, cy + rIn);
-        float gi = 2.4f * dp;
+        float gi = 2.6f * dp;
         glass.set(cx - r + gi, cy - r + gi, cx + r - gi, cy + r - gi);
 
-        haloIdle = new RadialGradient(cx, cy, r + inset,
-                new int[]{0x3322D3EE, 0x1222D3EE, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
-        haloHot = new RadialGradient(cx, cy, r + inset,
-                new int[]{0x6622D3EE, 0x1F22D3EE, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
-        haloErr = new RadialGradient(cx, cy, r + inset,
+        // The organic silhouette: a softly lobed body — never a mathematically perfect circle
+        // (§6). The lobes are subtle and FIXED (no idle morphing): shape is identity, not noise.
+        float a4 = 0.032f, a2 = 0.018f, p4 = 0.55f, p2 = 1.9f;
+        blob.reset();
+        final int N = 64;
+        float[] xs = new float[N];
+        float[] ys = new float[N];
+        for (int i = 0; i < N; i++) {
+            float th = (float) (Math.PI * 2 * i / N);
+            float rb = r * (1f + a4 * (float) Math.cos(4 * th + p4) + a2 * (float) Math.cos(2 * th + p2));
+            xs[i] = cx + rb * (float) Math.cos(th);
+            ys[i] = cy + rb * (float) Math.sin(th);
+        }
+        blob.moveTo((xs[N - 1] + xs[0]) / 2f, (ys[N - 1] + ys[0]) / 2f);
+        for (int i = 0; i < N; i++) {
+            float nx = xs[(i + 1) % N], ny = ys[(i + 1) % N];
+            blob.quadTo(xs[i], ys[i], (xs[i] + nx) / 2f, (ys[i] + ny) / 2f);
+        }
+        blob.close();
+        blobMin = r * (1f - a4 - a2);
+
+        haloIdle = new RadialGradient(cx, cy, r + inset + 2 * dp,
+                new int[]{0x2B22D3EE, 0x0F22D3EE, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
+        haloHot = new RadialGradient(cx, cy, r + inset + 2 * dp,
+                new int[]{0x7322D3EE, 0x2422D3EE, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
+        haloErr = new RadialGradient(cx, cy, r + inset + 2 * dp,
                 new int[]{0x55FB7185, 0x1AFB7185, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
-        disc = new RadialGradient(cx, cy - r * 0.3f, r * 1.3f,
-                new int[]{0xF21B2436, 0xF20C1322, 0xFA060A12}, new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP);
-        rim = new LinearGradient(cx - r, cy - r, cx + r, cy + r,
-                new int[]{0xFF9BE8FF, 0xFF22D3EE, 0xFF3B82F6, 0xFF9BE8FF}, null, Shader.TileMode.CLAMP);
+
+        // Deep obsidian body with real depth: darker toward the lower-right, a faint teal bounce
+        // light from below (volumetric read), and one soft specular gloss top-left (sheet 1/5).
+        body = new LinearGradient(cx - r, cy - r, cx + r, cy + r,
+                new int[]{0xFF1B2C48, 0xFF0B1322, 0xF9060B14}, new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP);
+        bounce = new RadialGradient(cx, cy + r * 0.62f, r * 1.05f,
+                new int[]{0x1A22D3EE, 0x00000000}, new float[]{0f, 1f}, Shader.TileMode.CLAMP);
+        gloss = new RadialGradient(cx - r * 0.34f, cy - r * 0.44f, r * 0.95f,
+                new int[]{0x3DFFFFFF, 0x14000000, 0x00000000}, new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP);
+
+        rim = new SweepGradient(cx, cy,
+                new int[]{0xFF9BE8FF, 0xFF22D3EE, 0xFF3B82F6, 0xFF2DD4BF, 0xFF9BE8FF}, null);
         rimErr = new LinearGradient(cx - r, cy - r, cx + r, cy + r,
                 new int[]{0xFFFFC4D0, 0xFFFB7185, 0xFFF43F5E, 0xFFFFC4D0}, null, Shader.TileMode.CLAMP);
         sweep = new SweepGradient(cx, cy,
                 new int[]{0xFF7DF9FF, 0xFF22D3EE, 0xFF3B82F6, 0xFF7DF9FF}, null);
 
         clip.reset();
-        clip.addCircle(cx, cy, rIn, Path.Direction.CW);
+        clip.addCircle(cx, cy, rIn - 0.6f * dp, Path.Direction.CW);
     }
 
     private static float clamp01(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }
@@ -201,45 +276,62 @@ public final class CoreHost extends View {
         int save = c.save();
         c.scale(L.scale, L.scale, cx, cy);
 
+        // 1) ambient bloom (restrained; the halo breathes with the download flow)
         p.setStyle(Paint.Style.FILL);
         p.setShader(mood == 2 ? haloErr : (mood == 1 ? haloHot : haloIdle));
-        p.setAlpha(Math.round(255f * clamp01(L.halo / 0.55f)));
-        c.drawCircle(cx, cy, r + 6 * dp, p);
+        float breath = 0.85f + 0.15f * (float) Math.sin(Math.toRadians(flowDeg));
+        p.setAlpha(Math.round(255f * clamp01(L.halo / 0.55f) * (CoreStates.PROGRESS.equals(state) ? breath : 1f)));
+        c.drawCircle(cx, cy, r + 8 * dp, p);
 
-        p.setShader(disc);
+        // 2) the organic body — deep obsidian with depth, bounce light and gloss (sheet 1/5)
         p.setAlpha(255);
-        c.drawCircle(cx, cy, r, p);
-
-        p.setStyle(Paint.Style.STROKE);                       // glass layer (sheet 4)
+        p.setShader(body);
+        c.drawPath(blob, p);
+        p.setShader(bounce);
+        c.drawPath(blob, p);
+        p.setShader(gloss);
+        c.drawPath(blob, p);
         p.setShader(null);
+
+        // 3) glass accent arc (sheet 4's glass layer)
+        p.setStyle(Paint.Style.STROKE);
         p.setColor(0x40EAF9FF);
         p.setStrokeWidth(1.1f * dp);
         c.drawArc(glass, 196f, 148f, false, p);
 
-        p.setShader(mood == 2 ? rimErr : rim);                // rim
-        p.setStrokeWidth(1.6f * dp);
+        // 4) the gel rim — the energy perimeter's home
+        p.setShader(mood == 2 ? rimErr : rim);
+        p.setStrokeWidth(2.2f * dp);
         p.setAlpha(Math.round(255f * clamp01(L.rim)));
-        c.drawCircle(cx, cy, r - 0.9f * dp, p);
+        c.drawPath(blob, p);
+        p.setShader(null);
 
-        if (L.track > 0.001f || L.perimeter > 0.001f) {       // energy perimeter = progress
-            p.setShader(null);
+        // 5) the energy perimeter IS the progress (sheet 4) — no percent text anywhere
+        if (L.track > 0.001f || L.perimeter > 0.001f) {
             p.setColor(0xFF22D3EE);
             p.setAlpha(Math.round(255f * L.track));
             p.setStrokeWidth(2.2f * dp);
             c.drawCircle(cx, cy, rIn, p);
             if (L.perimeter > 0.001f) {
+                if (flowDeg != 0f) {                     // the sheen flows while downloading
+                    flowMatrix.reset();
+                    flowMatrix.postRotate(flowDeg, cx, cy);
+                    sweep.setLocalMatrix(flowMatrix);
+                } else {
+                    sweep.setLocalMatrix(null);
+                }
                 p.setShader(sweep);
                 p.setAlpha(Math.round(255f * clamp01(0.65f + 0.35f * L.perimeter)));
                 p.setStrokeWidth(2.6f * dp);
                 p.setStrokeCap(Paint.Cap.ROUND);
                 c.drawArc(inner, -90f, 360f * L.perimeter, false, p);
                 p.setStrokeCap(Paint.Cap.BUTT);
+                p.setShader(null);
             }
         }
 
         p.setAlpha(255);
-        p.setShader(null);
-        if (mark != null && L.mark > 0.01f) {                 // the sheet-2 mark, clipped to the disc
+        if (mark != null && L.mark > 0.01f) {            // LAYER A: the sheet-2 mark, permanent
             int s2 = c.save();
             c.clipPath(clip);
             float side = 2f * rIn * markScale;
@@ -250,7 +342,7 @@ public final class CoreHost extends View {
             c.restoreToCount(s2);
         }
 
-        if (L.bars && L.barAlpha > 0.01f) {                   // PAUSED: bars, never text
+        if (L.bars && L.barAlpha > 0.01f) {              // PAUSED: bars, never text
             p.setColor(0xFFEAF9FF);
             p.setAlpha(Math.round(255f * clamp01(L.barAlpha)));
             float bw = 2.0f * dp, bh = 9.5f * dp, gap = 3.4f * dp, top = cy - bh / 2f;

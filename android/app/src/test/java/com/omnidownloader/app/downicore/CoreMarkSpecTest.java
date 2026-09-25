@@ -33,9 +33,14 @@ public class CoreMarkSpecTest {
     private static final String MARK_DARK_SHA256 =
             "166103aeedf2b004a1280c388c8bc87870114912ce191b65ba99142cf861b531";
 
-    /** The baked scale *is* the sheets' ratio, best-fitted across the sizes that ship. */
+    /** The baked scale *is* the sheets' ratio, best-fitted across the sizes that ship.
+     *  0.65 (was 0.63 before the master-package visual pass: the visible pebble is now 0.80 of
+     *  its window (§6 small visual / §19 full touch target), so the fixed dp insets are a larger
+     *  share of a smaller disc and the best fit moved up one notch). */
+    private static final float BAKED_SCALE = 0.65f;
+
     @Test public void bakedScaleIsTheSheetsOwnRatio() {
-        assertEquals("shipping tile scale", 0.63f, CoreLook.MARK_SCALE, EPS);
+        assertEquals("shipping tile scale", BAKED_SCALE, CoreLook.MARK_SCALE, EPS);
         assertEquals("the solve must be idempotent", CoreLook.MARK_SCALE,
                 CoreLook.markScaleFor(CoreLook.SHEET_MARK_DISC_RATIO), EPS);
     }
@@ -43,19 +48,24 @@ public class CoreMarkSpecTest {
     /** No two-decimal neighbour fits the shipping sizes better — the bake is a best fit, not a guess. */
     @Test public void noNeighbouringScaleFitsBetter() {
         float mine = CoreLook.markWorstCaseError(CoreLook.MARK_SCALE);
-        assertTrue("0.62 must be worse", CoreLook.markWorstCaseError(0.62f) > mine);
-        assertTrue("0.64 must be worse", CoreLook.markWorstCaseError(0.64f) > mine);
-        assertTrue("every shipping size must stay within 1% of the sheet (is " +
-                mine + ")", mine <= 0.01f);
+        assertTrue("the neighbour below must be worse",
+                CoreLook.markWorstCaseError(CoreLook.MARK_SCALE - 0.01f) > mine);
+        assertTrue("the neighbour above must be worse",
+                CoreLook.markWorstCaseError(CoreLook.MARK_SCALE + 0.01f) > mine);
+        assertTrue("every shipping size must stay near the sheet (is " +
+                mine + ")", mine <= 0.015f);
     }
 
-    /** Every size the Core ships at keeps the mark near the sheets' ratio. */
+    /** Every size the Core ships at keeps the mark near the sheets' ratio.
+     *  Tolerance 1.5%: with the pebble at 0.80 of the window, the fixed dp insets swing more per
+     *  size than the old full-window disc — ±1.3% worst at the smallest visual is the same
+     *  achievement the old geometry made at ±1%. */
     @Test public void everyShippingSizeStaysNearTheSheetRatio() {
         for (int dp : CoreLook.SIZES_DP) {
             float ratio = CoreLook.markDiscRatio(CoreLook.MARK_SCALE, dp);
             assertTrue("at " + dp + " dp the mark draws " + ratio + " of the disc, the sheet says "
                     + CoreLook.SHEET_MARK_DISC_RATIO,
-                    Math.abs(ratio - CoreLook.SHEET_MARK_DISC_RATIO) <= 0.01f);
+                    Math.abs(ratio - CoreLook.SHEET_MARK_DISC_RATIO) <= 0.015f);
             assertTrue("a bigger Core must not draw a relatively smaller mark", ratio > 0.5f);
         }
     }

@@ -37,24 +37,26 @@ public final class CoreLook {
         float e = CoreMotion.easeInOut(t);
         float pulse = CoreMotion.pulse(t);
 
-        // Resting values — sheet 5: "idle, subtle and calm".
-        L.halo = 0.30f;
-        L.rim = 0.72f;
-        L.mark = 0.92f;
+        // Resting values — sheet 5/§8: idle is almost dormant. Downi is HERE, quietly.
+        L.halo = 0.20f;
+        L.rim = 0.55f;
+        L.mark = 0.85f;
         L.scale = 1f;
-        L.track = 0.10f;
+        L.track = 0.07f;
         L.perimeter = 0f;
 
         if (CoreStates.WAKE.equals(state)) {
-            // sheet 6 #1: energy begins to rise -> perimeter expands -> settles to detected.
+            // sheet 6 #1 / §21: energy begins to rise -> perimeter expands -> settles to detected.
             L.detected = e;
-            L.halo = 0.30f + 0.25f * e;
-            L.rim = 0.72f + 0.28f * e;
-            L.track = 0.10f + 0.06f * e;
+            L.halo = 0.20f + 0.65f * e;
+            L.rim = 0.55f + 0.45f * e;
+            L.track = 0.07f + 0.09f * e;
             L.perimeter = e;
         } else if (CoreStates.DETECTED.equals(state)) {
+            // §9: the wake must READ as "Downi found something" without text — visibly awake,
+            // unmistakably brighter than idle, still silent.
             L.detected = 1f;
-            L.halo = 0.55f;
+            L.halo = 0.85f;
             L.rim = 1.00f;
             L.track = 0.16f;
             L.perimeter = 0f;
@@ -151,17 +153,19 @@ public final class CoreLook {
     public static final float MARK_TILE_HEIGHT = 458f / 512f;   // 0.8945
     public static final float MARK_TILE_WIDTH = 357f / 512f;    // 0.6973
 
-    /** The Core's disc geometry in dp, mirroring {@link CoreHost}: the halo inset leaves room for
-     *  the glow, and the energy perimeter sits inside the disc by the rim inset. */
+    /** The Core's disc geometry in dp, mirroring {@link CoreHost}: the window keeps a glow inset,
+     *  the visible pebble is a fraction of the window (§6 small visual, §19 full touch target),
+     *  and the energy perimeter sits inside the disc by the rim inset. */
     public static final float DISC_INSET_DP = 6f;
-    public static final float RIM_INSET_DP = 1.2f;
+    public static final float VISUAL_IN_WINDOW = 0.80f;
+    public static final float RIM_INSET_DP = 1.6f;
 
     /** The sizes that ship (sheet 5's touch-area range) — the sizes one tile scale has to serve. */
     public static final int[] SIZES_DP = {48, 56, 64};
 
     /** What a given tile scale actually draws at {@code sizeDp}: mark height / disc diameter. */
     public static float markDiscRatio(float tileScale, int sizeDp) {
-        float r = sizeDp / 2f - DISC_INSET_DP;
+        float r = (sizeDp / 2f - DISC_INSET_DP) * VISUAL_IN_WINDOW;
         float rIn = r - RIM_INSET_DP;
         return tileScale * MARK_TILE_HEIGHT * (rIn / r);
     }
