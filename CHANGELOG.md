@@ -70,6 +70,27 @@ carries the same caveat for the same reason.
 `MediaUrlTest` 7, `ExampleUnitTest` 1). Device left **disarmed**: a11y binding deleted,
 `accessibility_enabled=0`, process stopped, `spike_config.properties` = `handoff=false`.
 
+**Pre-tag forensic audit (2026-09-25, after the release commit — before the tag).** A full end-to-end
+review of the Fetcher (detection → Core → tap → resolver → `startShared` → dedup → lifecycle) found
+five latent defects, all fixed with minimal diffs; none had ever fired in a captured device log, and
+the accepted Phase A/B behaviour is unchanged. **D-i** — a second tap inside the first run's
+clipboard-retry window (~2.4 s) raced the previous run's still-pending reader (a stale URL could be
+delivered for the new tap, or the new run's delivery suppressed): delayed steps now carry a run
+generation and stand down (`CHAIN_CLIP_STALE`), and each run starts from a non-focusable Core.
+**D-j** — bench `chain.cmd click` runs bypassed the one-delivery discipline (the original D-a
+duplicate shape, bench mode only): they now go through the same `beginChainRun()` as a tap.
+**D-k** — two rapid taps on the same video downloaded it twice (`Video.mp4` + `Video (1).mp4`):
+new pure `fetcher/DeliveryGuard` suppresses the same URL within 8 s (`CHAIN_DELIVER_DUP
+suppressed=same_url_within_8s`), 6 deterministic JVM tests. **D-l** — rotation could strand a shown
+Core off-screen (B5's clamp only ran on show): `DowniCore.ensureOnScreen()` re-clamps from the
+existing 900 ms tick without clobbering the saved position. **D-m** — a rebind without `onDestroy`
+doubled all four polling loops: `pollersArmed` posts them once per service instance. Also audited
+and left alone: the sheet-2 mark (byte-exact, SHA-locked), version sync (48/3.2.0 in all three
+spots), the D-a/D-b/D-d/D-h guards, the FGS/focus-retry design. Validated: `:app:testDebugUnitTest`
++ `:app:assembleDebug` = **BUILD SUCCESSFUL, 32 tests / 0 failures** (the 26 above + `DeliveryGuardTest`
+6); `aapt dump badging` = versionCode 48 / 3.2.0. Device re-checks owed: two rapid taps on two
+different videos, and B5's rotation cell — details in `DEVICE_TEST.md` §5 rows D-i…D-m.
+
 ## Unreleased — V3.3 (in progress)
 
 _(nothing yet)_

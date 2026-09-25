@@ -189,6 +189,21 @@ public final class DowniCore {
         listener.onCoreLog("CORE_SHOW state=" + view.state());
     }
 
+    /**
+     * Re-clamps a shown Core into the current screen bounds. Rotation (or a foldable unfold)
+     * leaves the remembered coordinates beyond the new bounds — the window manager then draws the
+     * Core half or wholly off-screen, where no touch can reach it (cell B5: "clamped, never half
+     * off-screen"). The clamped position is deliberately NOT persisted, so rotating back restores
+     * where the user actually left it. No-op while the Core already fits.
+     */
+    public void ensureOnScreen() {
+        if (!attached || !visible || lp == null) return;
+        int px = Math.round(sizeDp * dp);
+        int maxX = Math.max(0, screenW() - px);
+        int maxY = Math.max(0, screenH() - px);
+        if (lp.x < 0 || lp.y < 0 || lp.x > maxX || lp.y > maxY) moveTo(lp.x, lp.y);
+    }
+
     public void hide() {
         if (!attached || !visible) return;
         visible = false;

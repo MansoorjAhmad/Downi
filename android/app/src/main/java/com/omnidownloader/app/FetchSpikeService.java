@@ -27,6 +27,7 @@ import android.view.accessibility.AccessibilityWindowInfo;
 
 import com.omnidownloader.app.downicore.CoreStates;
 import com.omnidownloader.app.downicore.DowniCore;
+import com.omnidownloader.app.fetcher.DeliveryGuard;
 import com.omnidownloader.app.fetcher.MediaUrl;
 
 import java.io.BufferedWriter;
@@ -146,6 +147,23 @@ public class FetchSpikeService extends AccessibilityService {
     private int clipTries;
     private static final int MAX_CLIP_TRIES = 6;
 
+    /**
+     * Run generation, bumped by every {@link #beginChainRun()}. A run's delayed steps capture it
+     * and stand down when it has moved on: `chainStep3` posts the clipboard reads and the focus
+     * release and then immediately ends the run (`chainReset`), so without this token a second tap
+     * inside the retry window would leave run N's reader armed under run N+1 — able to deliver run
+     * N's (stale) clipboard URL for run N+1, claim the budget, or fight over `clipTries`.
+     */
+    private int runGen;
+
+    /** Same-video rapid-retap guard (sheet 8 §5 URL matching) — see {@link DeliveryGuard}. */
+    private static final long DUP_WINDOW_MS = 8_000;
+    private final DeliveryGuard delivery = new DeliveryGuard(DUP_WINDOW_MS);
+
+    // A rebind without onDestroy (this ROM wipes the a11y binding on its own) must not double-post
+    // the polling loops — they run on the same looper for the life of the instance.
+    private boolean pollersArmed;
+
     // Foreground-service defence against the vendor power manager (see armForeground()).
     private boolean fgsArmed;
     private int fgsTries;
@@ -234,19 +252,27 @@ public class FetchSpikeService extends AccessibilityService {
         log("SERVICE_CONNECTED sdk=" + Build.VERSION.SDK_INT + " handoff=" + handoffEnabled);
         log("CONTRACT target=DowniDownloadService.startShared(context,url)");
         log("CHAIN test armed: write fetch-spike/chain.cmd (dry|click) via adb");
-        main.postDelayed(chainPoll, 2000);
 
         // The approved Core is now the live control over IG/TikTok. The legacy spike bubble is
         // no longer instantiated; its proven tap resolver remains unchanged underneath.
         core = new DowniCore(this, coreListener);
-        main.postDelayed(coreTickPoll, 1200);
-        main.postDelayed(corePoll, 1500);
         log("CORE_READY live=true window=TYPE_ACCESSIBILITY_OVERLAY states=" + CoreStates.list());
 
         // Death-hunt forensics: a heartbeat whose absence we can measure.
         connectedAt = SystemClock.elapsedRealtime();
-        main.postDelayed(heartbeat, HEARTBEAT_MS);
         log("HEARTBEAT armed every " + (HEARTBEAT_MS / 1000) + "s");
+
+        // One set of loops per service instance. This ROM has been observed to rebind an
+        // accessibility service without calling onDestroy (it wipes the binding on its own
+        // mid-run); the posts above run on this instance's own looper, so a rebind reuses the
+        // live loops instead of doubling the polling.
+        if (!pollersArmed) {
+            pollersArmed = true;
+            main.postDelayed(chainPoll, 2000);
+            main.postDelayed(coreTickPoll, 1200);
+            main.postDelayed(corePoll, 1500);
+            main.postDelayed(heartbeat, HEARTBEAT_MS);
+        }
 
         // Anti-kill defence: without this the vendor power manager ends the whole feature.
         armForeground();
@@ -512,6 +538,7 @@ public class FetchSpikeService extends AccessibilityService {
             core.setState(CoreStates.IDLE);
             log("CORE_LIVE_HIDE pkg=" + pkg);
         }
+        if (keep && core.isShown()) core.ensureOnScreen();   // rotation can move the bounds under a shown Core
     }
 
     /**
@@ -522,11 +549,27 @@ public class FetchSpikeService extends AccessibilityService {
         if (sessionPkg == null) { log("CORE_TAP_NO_SESSION open IG/TikTok first"); return; }
         if (chainRunning) { log("CORE_TAP_BUSY ignored"); return; }
         log("CORE_TAP session=" + sessionPkg);
-        chainRunning = true;
-        sheetSwipes = 0;
-        if (core != null) core.setInteractive(false);  // platform automation owns touch now
-        try { runChain(true); }
+        try { beginChainRun(); runChain(true); }
         catch (Throwable t) { log("CHAIN_ERR " + t); chainReset(); }
+    }
+
+    /**
+     * One resolver run, however it was started (a Core tap or the bench chain.cmd). Owns the
+     * run-scoped state in one place: the one-delivery budget (D-a), the sheet-scroll budget, the
+     * stale-step token, and the window flags — the clipboard reads of the *previous* run may still
+     * be pending (the retry window outlives the run), so a new run must invalidate them and start
+     * from a non-focusable, non-interactive Core.
+     */
+    private void beginChainRun() {
+        chainRunning = true;
+        chainDelivered = false;
+        chainClickedCopy = false;
+        sheetSwipes = 0;
+        runGen++;
+        if (core != null) {
+            core.setFocusable(false);          // clean slate; this run re-focuses at its own step 3
+            core.setInteractive(false);        // platform automation owns touch now
+        }
     }
 
     /** Ends a resolver run; the Core is neutral and touchable again. */
@@ -573,22 +616,25 @@ public class FetchSpikeService extends AccessibilityService {
      * be refused. So this path ignores the gate deliberately; the dump path keeps it.
      */
     private void deliverByTap(String url, String route) {
+        long now = SystemClock.elapsedRealtime();
+        if (!delivery.allow(url, now)) {
+            // A second tap on the same video seconds apart (clipboard still holding the link) used
+            // to start a second identical engine job and save "Video (1).mp4" next to "Video.mp4".
+            // Sheet 8 §5: URL matching prevents a resubmitted job. A deliberate re-fetch later than
+            // the window still passes.
+            log("CHAIN_DELIVER_DUP route=" + route + " suppressed=same_url_within_"
+                    + (DUP_WINDOW_MS / 1000) + "s");
+            return;
+        }
         if (!claimDelivery(route)) return;
         try {
             DowniDownloadService.startShared(this, url);
-            watchDelivery(url);
+            delivery.record(url, now);
             log("CHAIN_DELIVER_OK route=" + route + " tap=1 url=" + clip(url, 200));
         } catch (Throwable t) {
             log("CHAIN_DELIVER_FAIL route=" + route + " err=" + t);
         }
     }
-
-    /** The Fetcher's own copy of the URL, so the notification/Queue card can be tied to the Core. */
-    private void watchDelivery(String url) {
-        lastDeliveredUrl = url;
-    }
-
-    private String lastDeliveredUrl;
 
     private void pipeline(String url) {
         if (!seenUrls.add(url)) return;          // one PIPELINE line per URL
@@ -599,6 +645,7 @@ public class FetchSpikeService extends AccessibilityService {
         }
         try {
             DowniDownloadService.startShared(this, url);
+            delivery.record(url, SystemClock.elapsedRealtime());   // bench grabs count as deliveries too
             log("PIPELINE_HANDOFF_OK url=" + clip(url, 300));
         } catch (Throwable t) {
             log("PIPELINE_HANDOFF_FAIL url=" + clip(url, 200) + " err=" + t);
@@ -676,7 +723,15 @@ public class FetchSpikeService extends AccessibilityService {
         cmd = cmd == null ? "dry" : cmd.trim().toLowerCase(Locale.US);
         log("CHAIN_CMD cmd=" + cmd + " session=" + sessionPkg);
         if (sessionPkg == null) { log("CHAIN_NO_SESSION open IG/TikTok on a video first"); return; }
-        try { runChain(cmd.contains("click")); }
+        boolean click = cmd.contains("click");
+        if (click && chainRunning) { log("CHAIN_BUSY ignored"); return; }
+        try {
+            // A bench click run obeys the same one-delivery discipline as a tap — without this the
+            // dump path treated the run as "not running" and could deliver without claiming while
+            // the clipboard route claimed separately (the original D-a duplicate shape).
+            if (click) beginChainRun();
+            runChain(click);
+        }
         catch (Throwable t) { log("CHAIN_ERR " + t); chainReset(); }
     }
 
@@ -882,52 +937,60 @@ public class FetchSpikeService extends AccessibilityService {
         // is briefly made focusable, then restored.
         if (chainClickedCopy && !chainDelivered) {
             clipTries = 0;
+            final int gen = runGen;             // a newer run invalidates these steps
             if (core != null) core.setFocusable(true);
-            postStep(readClipAndPipe, 500);
+            postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } }, 500);
             // Hold focus for the whole retry budget, then always give it back — a permanently
             // focusable bubble would eat the platform's back key and its own touches.
-            postStep(releaseFocus, 500 + MAX_CLIP_TRIES * 250 + 400);
+            postStep(new Runnable() {
+                @Override public void run() {
+                    if (gen != runGen) return;  // the run that asked for focus was superseded
+                    if (core != null) core.setFocusable(false);
+                }
+            }, 500 + MAX_CLIP_TRIES * 250 + 400);
         } else if (chainClickedCopy) {
             log("CHAIN_CLIP_SUPPRESSED already_delivered");   // D-a: one delivery per tap
         }
         chainReset();                       // bubble idle + touchable again
     }
 
-    private final Runnable readClipAndPipe = new Runnable() {
-        @Override public void run() {
-            // D-e (2026-09-25): this route was a coin flip — 3 of 5 attempts came back got=null. The
-            // cause is focus: make-focusable is not focused, and Android 10+ hands the clipboard only
-            // to an app that holds focus. So each attempt asks for focus and *reports* whether it got
-            // it, and the read is retried while the copy settles.
-            if (core != null) { core.setFocusable(true); core.requestFocus(); }
-            boolean focus = core != null && core.hasWindowFocus();
-            String url = readClipboardText();
-            log("CHAIN_CLIP_TRY n=" + (clipTries + 1) + "/" + MAX_CLIP_TRIES
-                    + " focus=" + focus + " got=" + (url == null ? "null" : "yes"));
-            if (url == null) {
-                clipTries++;
-                if (clipTries < MAX_CLIP_TRIES) {
-                    postStep(readClipAndPipe, 250);
-                    return;
-                }
-                log("CHAIN_CLIPBOARD got=null text= tries=" + clipTries);
+    /**
+     * One clipboard read-and-deliver attempt of run {@code gen}. Runs after the run itself has
+     * ended (`chainReset` in {@link #chainStep3}), so every attempt must re-check its generation:
+     * a second tap starts a new run whose steps must never race these — a stale reader here would
+     * otherwise deliver the previous video's URL, claim the new run's delivery budget, or share
+     * {@code clipTries} with the live reader (audit 2026-09-25).
+     */
+    private void clipAttempt(final int gen) {
+        if (gen != runGen) { log("CHAIN_CLIP_STALE gen=" + gen + " now=" + runGen); return; }
+        // D-e (2026-09-25): this route was a coin flip — 3 of 5 attempts came back got=null. The
+        // cause is focus: make-focusable is not focused, and Android 10+ hands the clipboard only
+        // to an app that holds focus. So each attempt asks for focus and *reports* whether it got
+        // it, and the read is retried while the copy settles.
+        if (core != null) { core.setFocusable(true); core.requestFocus(); }
+        boolean focus = core != null && core.hasWindowFocus();
+        String url = readClipboardText();
+        log("CHAIN_CLIP_TRY n=" + (clipTries + 1) + "/" + MAX_CLIP_TRIES
+                + " focus=" + focus + " got=" + (url == null ? "null" : "yes"));
+        if (url == null) {
+            clipTries++;
+            if (clipTries < MAX_CLIP_TRIES) {
+                postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } }, 250);
                 return;
             }
-            log("CHAIN_CLIPBOARD got=yes text=" + clip(url, 200));
-            String why = MediaUrl.reason(url);      // D-b: a media page, not a bio/redirect link
-            if (why == null) {
-                // The owner's tap is the trigger, so this delivers regardless of the bench gate
-                // (ruling 2026-09-25: nothing auto-downloads, nothing a tap asks for is refused).
-                deliverByTap(url, "clipboard");
-            } else {
-                log("CHAIN_URL_REJECTED reason=" + why);
-            }
+            log("CHAIN_CLIPBOARD got=null text= tries=" + clipTries);
+            return;
         }
-    };
-
-    private final Runnable releaseFocus = new Runnable() {
-        @Override public void run() { if (core != null) core.setFocusable(false); }
-    };
+        log("CHAIN_CLIPBOARD got=yes text=" + clip(url, 200));
+        String why = MediaUrl.reason(url);      // D-b: a media page, not a bio/redirect link
+        if (why == null) {
+            // The owner's tap is the trigger, so this delivers regardless of the bench gate
+            // (ruling 2026-09-25: nothing auto-downloads, nothing a tap asks for is refused).
+            deliverByTap(url, "clipboard");
+        } else {
+            log("CHAIN_URL_REJECTED reason=" + why);
+        }
+    }
 
     /** The whole point of the chain: turn DOWNI's taps into the video's real URL. */
     private String readClipboardText() {
@@ -1203,6 +1266,7 @@ public class FetchSpikeService extends AccessibilityService {
         main.removeCallbacks(coreTickPoll);
         main.removeCallbacks(heartbeat);
         main.removeCallbacks(corePoll);
+        pollersArmed = false;               // a fresh bind after destroy must re-post the loops
         disarmForeground();
         if (core != null) core.destroy();
         closing = true;
