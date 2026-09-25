@@ -55,9 +55,11 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
-        <!-- V3.2 Phase 0 detectability spike (owner-approved 2026-09-24): logs what
-             Instagram/TikTok expose on this device (files/fetch-spike/, local only).
-             Debug tool — no bubble, no auto-download, never part of a release build.
+        <!-- V3.2 Fetcher spike (owner-approved 2026-09-24): logs what Instagram/TikTok
+             expose on this device (files/fetch-spike/, local only) and hosts the Fetcher
+             bubble — the floating DOWNI control the owner specified on 2026-09-25. The
+             bubble is a TYPE_ACCESSIBILITY_OVERLAY window, so it needs no "display over
+             other apps" grant and dies with the service. Debug tool — never released.
 
              The intent action MUST be android.accessibilityservice.AccessibilityService —
              the FQCN that AccessibilityService.SERVICE_INTERFACE resolves to, which is
@@ -68,6 +70,7 @@
         <service
             android:name=".FetchSpikeService"
             android:label="DOWNI Fetcher Spike"
+            android:foregroundServiceType="dataSync"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>

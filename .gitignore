@@ -40,3 +40,21 @@ recovered-apk-ui.html
 Thumbs.db
 *.log
 .vscode/
+
+# Transient command output from device/verify sessions (added 2026-09-25)
+# These are captured stdout/stderr of one-off adb, gradle and logcat runs — they belong in the
+# session, not in the repo. The helper scripts that produce them (`_core_*.cmd`) ARE tracked.
+_build_out.txt
+_build_err.txt
+_diag_out.txt
+_diag_err.txt
+_logcat_killwatch.txt
+_logcat_killwatch.err
+_logcat_killwatch2.txt
+_kw2.err
+_scroll.err
+_scroll2.err
+adapter*.txt
+android/build-out.txt
+android/build-err.txt
+

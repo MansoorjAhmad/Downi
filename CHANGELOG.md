@@ -3,6 +3,45 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## Unreleased — V3.2 (in progress)
+
+**The Fetcher (Downi Core), Phase A.** The Core's face exists and runs on the phone: a
+`TYPE_ACCESSIBILITY_OVERLAY` window that draws idle / detected / pressed / dragging / snapped /
+progress / paused / resuming / completing / complete / failed, at 48 / 56 / 64 dp. Phase A is
+visual only — no touch handling (`FLAG_NOT_TOUCHABLE`), no detection, no download path — and it is
+driven by the debug channel `fetch-spike/core.cmd`.
+
+**Mark correction (owner ruling 2026-09-25).** The Core was drawing the *app* icon (the speed-D) —
+wrong. The Fetcher's mark is the **design-sheet-2 identity mark** (glossy teal folded-ribbon
+chevron), lifted pixel-exact out of the owner's own sheet by `tools/core_mark_from_sheet.py` into
+`drawable-nodpi/downi_core_mark.png` + a graphite `_dark` variant — never redrawn, never re-traced.
+Its size is measured rather than guessed: the sheets' own Cores stand 0.53 of the disc tall, the
+phone reproduces 0.531 at 48 / 56 / 64 dp alike, so `CoreHost.DEFAULT_MARK_SCALE = 0.63`. The
+speed-D stays the app's identity (launcher, splash, store) and no longer appears in the Core or in
+the bubble.
+
+Verified: `:app:compileDebugJavaWithJavac` + `:app:assembleDebug` = BUILD SUCCESSFUL; `CoreLookTest`
+11 + `CoreMarkSpecTest` 7 = **18 tests / 0 failures** (the mark's solved scale, its fit at 48/56/64 dp,
+the shipped asset's PNG header + SHA-256 so the mark cannot be swapped or resized silently, and the
+error tint's single owner — FAILED — so PAUSED can never read as an error); on-device evidence
+`test_out/core_visual/core_mark_*.png` with `_review_mark_ondevice.jpg` (sheets vs device, every disc
+normalised to 130 px), and the final `-Default` run passed (no `mark` command sent, so the baked 0.63
+drew itself at 48/56/64 dp alike).
+
+**State spectrum + idle cost (cells K-A3/K-A4/K-A5, 2026-09-25).** The 17-shot state sweep is no
+longer only an eye-test: `tools/core_review_sheets.ps1` builds the review strips and then runs
+`tools/core_state_audit.py` over the same shots, so the owner sees each state's rim colour, mark,
+PAUSED bars and lit perimeter as numbers next to the picture (`_gate_kA3_audit.log`,
+`_gate_kA4_audit.log`). Result — 17/17 states match `CoreLook` (teal rim except FAILED,
+`hidden` absent), and the progress sweep paints 0 / 88 / 182 / 274 / 360 deg for a named
+0/25/50/75/100%: the perimeter *is* the progress, no percent text anywhere. Idle cost:
+**frames drawn +0, no wake locks over 10 minutes** (`_core_idle_cost.log`) — with the honest caveat
+that this ROM kills the app about two minutes in, so the zero-frame window is ~2 minutes with a live
+process. Three open questions for the owner are listed in `V3.2_PLAN.md` (disc material, lit vs logo
+glyph, does PAUSED hide the mark), alongside the K-A3/K-A4/K-A5 judgement.
+
+## Released
+
 | Version | Code | Highlights |
 |---|---|---|
 | **3.1.2** | 47 | **The Stay-Put Release.** Share → DOWNI while DOWNI sits in recents no longer rips you out of TikTok/YouTube/Instagram into the DOWNI app: the invisible DropActivity now lives in its own throwaway task (`taskAffinity=""`) and removes that task on the way out (`finishAndRemoveTask`), so warm shares behave exactly like cold ones — toast, silent background grab, you never leave the platform app (found + confirmed fixed on-device). DowniDrop failures now diagnose themselves: a failed grab writes its plain-language reason onto the in-app failed card and parks the raw engine text in `dropLastError`, returned by `getDropJobs().lastError` — the "fails twice, works on the 3rd try" report can now be named from the app itself, no adb needed. |

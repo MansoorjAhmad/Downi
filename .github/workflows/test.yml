@@ -36,6 +36,11 @@ jobs:
           cache: 'npm'
       - run: npm ci || npm install
       - run: npx cap sync android
+      - name: JVM unit tests (Fetcher Core: state table + mark spec)
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest --console=plain
       - name: Build debug APK (unsigned)
         run: |
           cd android

@@ -77,3 +77,81 @@ For each ✅: file exists in Vault, size > 0 KB, plays with audio, correct forma
 
 Device: vivo V2058, USB only.
 
+## 5. v3.2 Fetcher matrix (Phase 0 → G) — MANDATORY before any Fetcher release
+
+> Status column is honest: **✅ pass**, **⏳ not yet measured**, **❌ fail**, **— not applicable yet**.
+> Evidence must name a file, a log line or a screenshot — "it looked right" is not a pass.
+> Cells are the plan's own (`V3.2_PLAN.md`); this section exists so the Fetcher can be gated the way
+> v3.0/v3.1.0 were, instead of by eyeball.
+
+**Device pass 2026-09-25 (vivo V2058, build 3.1.2 / 47 + Fetcher spike).**
+
+| Cell | Expect | Status 2026-09-25 | Evidence |
+|---|---|---|---|
+| P0-1 | `SESSION_START` with the right package ≤~1 s of opening IG/TikTok | ✅ | Phase 0 logs, 2026-09-24 |
+| P0-2 | `STEP2` watching signals present while watching, weak while browsing | ✅ | Phase 0 logs, 2026-09-24 |
+| P0-3 | `STEP3` candidates across ≥80% of watched videos, both platforms | ❌ | Phase 0 verdict: **61/61 tree dumps clean — no URL/ID exposed by either app** |
+| P0-4 | `PIPELINE_READY` for HIGH URLs; with handoff, grab reaches Queue | ⏳ | contract logged (`CONTRACT target=DowniDownloadService.startShared`); no `PIPELINE_READY` line verified |
+| P0-5 | Service stable, log cap respected, battery sane over 10 min | ❌ | dies to vivo ABE in 84–283 s (`_soak_*.log`) |
+| C1 | `CHAIN_SCAN` finds a clickable Share node on a live video | ✅ **PASS** | **TikTok 9/9 scans** (`share=2..3`, `id/g75 text="share video 21.5k shares"` clickable+visible); **IG 16/20** (`share=1..4` on a post/Reel; the 4 zeros sit at 09:20–10:15, plausibly non-video screens) |
+| C2 | `CHAIN_SHARE_CLICK` → share UI within 1.3 s | ✅ **PASS** | `CHAIN_SHARE_CLICK text=share route=action` → `CHAIN_STEP2` sees the sheet ~1.3 s later (this is the step the old "≈1.5–1.7 s" figure described) |
+| C3 | `CHAIN_BUTTON` exposes "Copy link" and/or DOWNI | ✅ **PASS** | `CHAIN_COPYLINK_CANDIDATE … text=copy link clickable=true` (16:34:58) **and** `CHAIN_CHOOSER_DOWNI text= route=action` (16:33:51, 16:34:35, 16:35:00) after `CHAIN_CHOOSER_SCROLL n=1/4`; fallback `CHAIN_CHOOSER_NO_DOWNI back=true` (09:17) |
+| C4 | Target click lands a grab **or** the deep link on the clipboard | ⚠️ **INTERMITTENT (2/5)** | 16:51 ✓ + 16:54 ✓ (clipboard route), then 17:02 ✗ (`CHAIN_CLIPBOARD got=null`, D-e), 17:04 ✗ (`CHAIN_NO_TARGET`, D-f), 17:05 IG ✗ (`CHAIN_CHOOSER_NO_DOWNI`, no fallback, D-f). Morning's 8/8 was the clipboard route **plus** the chooser click double-firing (D-a), not reliability. Real files did land at 16:34/16:35 |
+| C5 | End-to-end ≤ ~3 s | ❌ **FAILS spec** | measured **3.2 / 3.5 / 3.7 / 4.1 / 4.1 / 4.5 / 4.6 / 5.9 s** on 8 taps (≈4.2 s avg). Decide: revise the cell or cut the delay (`postStep 1300 ms` + sheet setup) |
+| C6 | No crash; platform app stays foreground; panel closed | ✅ | `CHAIN_STEP_ERR`/`CHAIN_ERR` fencing; no crash in the chain path |
+| B1 | Bubble over IG/TikTok ≤~1.5 s; never over DOWNI/other apps | ✅ (timing ⏳) | `test_out/bubble_ig.png`, `bubble_home_hidden.png`; ≤1.5 s **not measured** |
+| B2 | Drag moves it; a drag never fires a grab | ✅ | `bubble_dragged.png`, `BUBBLE_MOVED` |
+| B3 | Position memory across re-entry and restart | ✅ | `bubble_return.png` |
+| B4 | Tap fires exactly one run; second tap ignored | ✅ | `bubble_tap.png`; after the `onBubbleTap` recursion fix |
+| B5 | Stays fully on screen after rotation / relaunch (clamped) | ⏳ | **untested** |
+| B6 | No crash; bubble dies with the service | ❌ | survives 84–283 s then vivo ABE kills it **and** wipes the a11y binding |
+| K-A1 | `CORE_ATTACH type=2032`, no overlay grant, dies with the service | ✅ | `CORE_ATTACH type=2032 x=500 y=1000 size=176px size_dp=64 touchable=0` |
+| K-A2 | Mark matches sheet 2 (not the app icon) at 48/56/64 dp | ✅ (owner ruling owed) | `_review_mark_ondevice.jpg`; 0.525/0.529/0.531 vs sheets 0.528/0.531 |
+| K-A3 | Wake ≈0.6 s; idle static and draws nothing | ⏳ partial | 17 shots audited (`_gate_kA3_audit.log`); **transition timing not measured on device** |
+| K-A4 | Every state as specced; progress on the perimeter, no % text | ⏳ partial | 17/17 rim/mark/bars match; progress paints 0/88/182/274/360°; press/snap/halo/glass values **not** measured |
+| K-A5 | Idle ≈0 cost, no wake locks, sane over 10 min | ⏳ (window short) | `_core_idle_cost.log`: frames **+0**, 0 wake locks — but the process lived only ~2 min |
+| K-B1…B5 | Press/drag/snap/position/drag≠tap in the **Core** | — | Phase B not implemented (`FLAG_NOT_TOUCHABLE`, no `onTouchEvent`) |
+| K-C1…C5 | `PlatformProfile` drives WAKE/DETECTED honestly; never downloads | — | Phase C not implemented |
+| K-D1…D5 | Real progress, duplicate check before tap, PAUSED behind D3 | — | Phase D not implemented; **D3 cannot pass today** (no resume/`.part` capability) |
+| K-E1…E5 | Settings card, persistence, honest status, exemption walkthrough | — | Phase E not implemented (no Fetcher UI in `www/index.html`) |
+| K-F1…F5 | Rotation, lock screen, app switch, network, low memory, FGS, reboot | — | Phase F not started (this matrix is its first artefact) |
+| K-G | Spike out of the release source set; debug channels removed; on-device logs deleted | — | Phase G not started; **`FetchSpikeService` is in `src/main` and `release.yml` builds a signed APK from any tag** |
+
+**Defects found while closing C1–C5 (2026-09-25, on the current build):**
+
+| # | Defect | Evidence | Where the fix belongs |
+|---|---|---|---|
+| D-a | **One tap can grab the same video twice** — the spike's own `pipeline(url)` handoff *and* the chooser click both fire for one URL | `Movies/DOWNI`: `fliqr.clips.mp4` + `fliqr.clips (1).mp4` both **2,135,039 B**; `rekrobot.mp4` + `rekrobot (1).mp4` both **3,377,818 B** | ✅ **FIXED 2026-09-25 16:47**, verified live 16:51 (tap via `input tap 961 798`): one `CHAIN_DELIVER route=clipboard` for the run, no second claim; routes now stand down (`CHAIN_CLIP_SUPPRESSED`), and the dump path skips during a run (`PIPELINE_SKIPPED chain_running`). Phase D still owns the production version of this rule |
+| D-b | **Chain can resolve a non-video URL** (a profile/bio link) | 11:06:02 `PIPELINE_HANDOFF_OK url=https://fikrfreeapp.onelink.me/xoBT/tdnrp3bc` | ✅ **FIXED 2026-09-25 16:53**: pure rule `fetcher/MediaUrl` + `MediaUrlTest` (**7 tests**; suite **26/0**). Rejects `onelink.me` (that exact link), profile paths, `linktr.ee`, YouTube; flags TikTok photo posts as `tt_photo_post`. Live 16:54: a real share link passed and delivered once |
+| D-c | **C5 exceeds spec** (3.2–5.9 s vs ≤~3 s) | 8 `BUBBLE_TAP` → `PIPELINE_HANDOFF_OK` pairs, 16:30–16:35 | Decide: revise the cell, or cut time (`postStep` 1300 ms, sheet setup, scroll wait) |
+| D-d | A chooser walk can read **quick-settings rows** instead of share targets | 16:33:51 `CHAIN_CHOOSER_BUTTON on wi-fi,cmcc-fiber … off torch … silent` | ✅ **FIXED 2026-09-25 17:02**, verified live all three walks: `pickShareRoot()` skips `com.android.systemui` (`… _WINDOW_SKIPPED pkg=com.android.systemui why=shade_cannot_hold_share_targets`) and chooses deliberately (`… _ROOT which=platform_app`). The walk no longer reads quick settings |
+| D-e | **The copy-link route is unreliable** — the sheet's Copy link is clicked but the clipboard read comes back empty, so the run delivers nothing | `CHAIN_CLIPBOARD got=null text=` at **17:02:05.631** and **17:12:05.631**, both after `CHAIN_TARGET_CLICK which=copylink`; `CHAIN_URL_REJECTED reason=null`. Same build: 16:51/16:54 `got=yes` → delivered. Morning: 5/5 `got=yes` | **Phase C/D.** Cause not isolated — most likely the focus dance (the code briefly makes the bubble focusable so our app may read the clipboard at all on API 29+) losing its race. Production should not scrape the clipboard: register DOWNI as a **share target** and let the sheet hand the URL over. Short term: verify the copy really landed and retry the read once |
+| D-f | **A miss ends the run with nothing** — no fallback when the chooser does not appear, and no retry while the sheet animates | IG 17:05: `CHAIN_TARGET_CLICK which=chooser_row` → no `android` chooser window → 4 scrolls → `CHAIN_CHOOSER_NO_DOWNI`, and **no copy-link fallback** though a clickable `copy link` row was found at 17:05:06.139. TikTok 17:04: `CHAIN_NO_TARGET neither DOWNI nor Copy link found` | **Phase C.** Make the routes a **chain, not a choice**: chooser → copy-link → tree, each with a retry/wait budget; log which one won |
+| D-g | **Suspect: an IG `/p/` carousel post is accepted as a video** | 16:33:50 `STEP3_DUMP_37 confidence=HIGH source=tree url=https://www.instagram.com/p/DdsM_GHEXAE/?img_index=14` → handed to the pipeline. `img_index=` marks a carousel slide, and `MediaUrl` accepts any `/p/<code>` | **Ruling needed:** either accept (photos are future work, `ROADMAP.md`) or flag `ig_photo_post` the way TikTok photo posts already are. `/reel/` is unambiguously video |
+
+**Route attribution (measured, gate armed) — the important line for Phase C:** the two platforms
+resolve by **different** mechanisms, so neither route may be dropped:
+
+| Platform | Morning, 8 taps | Mechanism that actually fired |
+|---|---|---|
+| TikTok (5 taps) | 5/5 handed off | **clipboard only** — `CHAIN_CLIPBOARD got=yes` → `PIPELINE_HANDOFF_OK` 28 ms later, ×5. The tree never held the URL (0 HIGH dumps in the morning; **12/12 `no_url_or_id_in_tree`** on the 17:12 run) |
+| Instagram (3 taps) | 3/3 handed off | **tree only** — `STEP3_DUMP confidence=HIGH source=tree` → `PIPELINE_HANDOFF_OK` 4 ms later, ×3 (`/p/` carousel, `/reel/` ×2) |
+
+So: on TikTok the tree route is **not** a fallback (nothing to fall back *to*), and the clipboard route
+is currently ~50% (2/4 on the new build). On IG the tree route works and the loosened D-a rule lets it
+claim the run's single delivery. The morning's 8/8 was therefore *not* eight clean route deliveries —
+it was these two mechanisms **plus** the duplicate grab of D-a, which is why the count looked perfect.
+
+**Gate safety (must be part of every future run):** `handoff` is read **only in
+`onServiceConnected`** (`FetchSpikeService:213`), so editing `spike_config.properties` changes
+nothing until the accessibility binding is toggled. History on this phone: `false` 08:20→09:04,
+**`true` 09:07→16:41**, `false` since a forced re-bind at 16:41:16. Before any scan session that is
+not itself P0-4, `tools\fetch_diag.ps1` now prints this gate — read it.
+
+**Two checks this matrix must add before it is trustworthy:**
+1. `handoff=true` is **live on this device** (`spike_config.properties`, and
+   `SERVICE_CONNECTED … handoff=true` at 16:29) — every P0-4 run can start a **real download**. Set
+   `handoff=false` before any scan session that is not itself the P0-4 experiment.
+2. The Fetcher's own a11y binding is wiped by the ROM alongside the kill, so **every cell above needs
+   the binding re-armed first** (`tools\fetch_diag.ps1 -Arm`), exactly like the Core gates do.
+
