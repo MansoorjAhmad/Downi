@@ -63,6 +63,7 @@ public final class DowniCore {
     private int downX, downY;
     private boolean dragging;
     private ValueAnimator edgeAnim;
+    private String baseState = CoreStates.IDLE;   // the arbiter's state; touch overrides it briefly
 
     public DowniCore(AccessibilityService svc, Listener listener) {
         this.svc = svc;
@@ -89,7 +90,31 @@ public final class DowniCore {
         listener.onCoreLog("CORE_STATE " + view.state());
     }
 
+    /**
+     * The arbiter's chosen state (job > detection — see FetchSpikeService). Touch interaction
+     * (pressed/dragging/snapped) still overrides it physically, but when the finger leaves,
+     * the Core returns HERE instead of a hardcoded idle — so a Core that is mid-download does
+     * not forget its job just because the user dragged it.
+     */
+    public void setBaseState(String s) {
+        if (s == null || !CoreStates.isKnown(s)) return;
+        boolean interacting = dragging;
+        baseState = s;
+        if (!interacting && view.state() != null && !view.state().equals(s)
+                && !CoreStates.isTransient(view.state())) {
+            view.setState(s);
+            listener.onCoreLog("CORE_STATE " + view.state());
+        }
+    }
+
+    /** The state the Core should fall back to when an interaction ends. */
+    public String baseState() {
+        return baseState;
+    }
+
     public void setProgress(float v) {
+        float clamped = v < 0f ? 0f : (v > 1f ? 1f : v);
+        if (Math.abs(clamped - view.progress()) < 0.0005f) return;   // a poll tick is not a change
         view.setProgress(v);
         listener.onCoreLog("CORE_PROGRESS " + Math.round(view.progress() * 100f));
     }
@@ -270,14 +295,14 @@ public final class DowniCore {
                         if (dragging) {
                             finishDrag();
                         } else {
-                            next.setState(CoreStates.IDLE);
+                            next.setState(baseState);
                             listener.onCoreTap();
                         }
                         return true;
                     case MotionEvent.ACTION_CANCEL:
                         listener.onCoreLog("CORE_TOUCH cancel dragging=" + dragging);
                         if (dragging) persistPosition();
-                        next.setState(CoreStates.IDLE);
+                        next.setState(baseState);
                         return true;
                     default:
                         return false;
@@ -327,7 +352,7 @@ public final class DowniCore {
         edgeAnim.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator a) {
                 persistPosition();
-                view.setState(CoreStates.IDLE);
+                view.setState(baseState);
                 listener.onCoreMoved(lp.x, lp.y);
                 edgeAnim = null;
             }

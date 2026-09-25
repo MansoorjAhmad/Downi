@@ -98,6 +98,36 @@ logged `CORE_TAP_NO_SESSION` instead of pretending; rotation under TikTok is str
 reproduced twice (~195 s and ~210 s uptime, binding wiped) — the known B6 platform blocker, recovered
 by re-arming each time. Details in `DEVICE_TEST.md` §5 rows D-i…D-m.
 
+**The living Core — master-package pass (2026-09-25, late evening).** The owner shipped the full
+feature definition (`DOWNI_FETCHER_MASTER_PACKAGE.md`: ONE CORE, ONE IDENTITY, ONE JOB, ONE FILE,
+MANY STATES, ZERO UNINTENTIONAL DOWNLOADS) and the missing half of the feature is now built:
+- **Detection is awareness** (§2/§9): the Core now WAKES from real evidence — the watching signals
+  Phase 0 measured (`video_player_progress` …) drive `CORE_DETECT detected=true` → WAKE → DETECTED
+  when a video is on screen, honest IDLE on profiles/settings, 1.2 s flip debounce. Detection still
+  never downloads; the tap remains the only trigger.
+- **The Core is the job's living face** (§11/§12/§30/§31): new read-only `downicore/CoreJobBinding`
+  watches the download service's own job snapshot (the same `dropLive` rows the in-app Queue
+  renders, written on the service's 800 ms floor) and turns the real job into Core states —
+  perimeter = the real percent, done → the restrained completion pulse, failed → the restrained
+  error state, canceled → quiet idle, terminal rows age out on the same 20 s TTL the app uses.
+  Zero engine modification (ruling 4 intact). 7 new JVM tests (39 total).
+- **One object, many states, honest precedence** (§7): a state arbiter (job > detection > idle)
+  owns the Core's base state; press/drag still physically override but return to the arbiter's
+  truth instead of a hardcoded idle — a Core that is mid-download no longer forgets its job when
+  dragged.
+- **Duplicate prevention before job creation** (§32/§33): a tap whose URL already has a RUNNING
+  job ADOPTS it (the Core binds to the live job, `CHAIN_DELIVER_ADOPT`); one completed seconds ago
+  is refused (`suppressed=already_saved`); failures are retried freely.
+- **Failure is finally visible** (§15): every resolver dead-end — no share row, no copy-link row,
+  empty clipboard, rejected URL, refused delivery — shows the restrained error state ("Something
+  went wrong.", retry-ready) for 3 s, then returns to whatever is actually true.
+- **Pause/resume (§13/§31) is the one capability deliberately NOT faked:** real pause needs
+  engine surgery (`.part` continuation — the TikTok fast path opens the file `'wb'` and yt-dlp
+  runs `nopart:True`), which The Law reserves for the full device matrix. PAUSED/RESUMING stay in
+  the vocabulary; nothing drives them until the D3 device test passes.
+Validated: 39 tests / 0 failures; `:app:assembleDebug` BUILD SUCCESSFUL. Mark unchanged: the Core
+still wears the design-sheet-2 chevron, never the app logo.
+
 ## Unreleased — V3.3 (in progress)
 
 _(nothing yet)_

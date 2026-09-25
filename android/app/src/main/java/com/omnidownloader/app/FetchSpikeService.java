@@ -25,6 +25,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
+import com.omnidownloader.app.downicore.CoreJobBinding;
 import com.omnidownloader.app.downicore.CoreStates;
 import com.omnidownloader.app.downicore.DowniCore;
 import com.omnidownloader.app.fetcher.DeliveryGuard;
@@ -180,6 +181,79 @@ public class FetchSpikeService extends AccessibilityService {
         @Override public void onCoreMoved(int x, int y) { log("CORE_MOVED x=" + x + " y=" + y); }
     };
 
+    // ---------- The living Core: real detection + real job (master package §9/§30/§31) ----------
+    //
+    // ONE OBJECT, MANY STATES, with honest precedence: a real download job beats detection,
+    // detection beats idle. Interaction (press/drag/snap) still physically overrides everything,
+    // but returns to the arbiter's state instead of a hardcoded idle — a Core that is
+    // mid-download must not forget its job just because the user dragged it.
+    private CoreJobBinding jobBinding;            // read-only observer of DowniDownloadService
+    private String jobState = CoreStates.IDLE;    // what the tracked job says (IDLE = none)
+    private float jobProgress;                    // 0..1, the job's real percent
+    private boolean videoDetected;                // last known watching-signal state (Phase 0 P0-2)
+    private long lastDetectFlipAt;
+    private Runnable failedHold;
+    private String lastLoggedJobState = "";
+    private int lastLoggedJobPct = -1;
+    private static final long DETECT_DEBOUNCE_MS = 1200;
+    private static final long FAILED_HOLD_MS = 3000;
+
+    /**
+     * Recomputes what the Core should show and applies it as its base state.
+     */
+    private void applyCoreState() {
+        if (core == null) return;
+        String s;
+        if (!CoreStates.IDLE.equals(jobState)) {
+            s = jobState;                          // a real job is the loudest truth
+        } else {
+            s = videoDetected ? CoreStates.DETECTED : CoreStates.IDLE;
+        }
+        if (CoreStates.showsProgress(jobState)) core.setProgress(jobProgress);
+        core.setBaseState(s);
+    }
+
+    /**
+     * Detection wake (master package §9): watching signals found in the platform's tree mean a
+     * video is on screen — the Core rises once (WAKE settles to DETECTED in the host view). No
+     * signals (profiles, settings, DMs) → honest idle. Detection never downloads; it only wakes
+     * the Core so the user knows a tap will find something.
+     */
+    private void updateDetection(boolean hasSignal) {
+        if (chainRunning || hasSignal == videoDetected) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastDetectFlipAt < DETECT_DEBOUNCE_MS) return;   // next dump re-checks
+        lastDetectFlipAt = now;
+        videoDetected = hasSignal;
+        applyCoreState();
+        if (hasSignal && core != null) core.setState(CoreStates.WAKE);
+        log("CORE_DETECT detected=" + hasSignal);
+    }
+
+    /**
+     * The resolver could not keep its promise (no share row, empty clipboard, rejected URL,
+     * refused delivery). The Core says so once — restrained error tint, retry-ready — then
+     * returns to whatever is actually true (master package §15: "Something went wrong.",
+     * never "SYSTEM FAILURE!!!").
+     */
+    private void resolverFailed(String why) {
+        log("CORE_RESOLVE_FAIL why=" + why);
+        if (failedHold != null) main.removeCallbacks(failedHold);
+        jobState = CoreStates.FAILED;
+        jobProgress = 0f;
+        applyCoreState();
+        failedHold = new Runnable() {
+            @Override public void run() {
+                if (CoreStates.FAILED.equals(jobState)) {   // never clobber a newer job/run
+                    jobState = CoreStates.IDLE;
+                    applyCoreState();
+                }
+                failedHold = null;
+            }
+        };
+        main.postDelayed(failedHold, FAILED_HOLD_MS);
+    }
+
     // Reads fetch-spike/core.cmd — the Core's Phase A command channel:
     //   show | hide | list | size <48|56|64> | state <name> | progress <0-100> | mark <scale> | at <x> <y>
     private final Runnable corePoll = new Runnable() {
@@ -258,6 +332,26 @@ public class FetchSpikeService extends AccessibilityService {
         core = new DowniCore(this, coreListener);
         log("CORE_READY live=true window=TYPE_ACCESSIBILITY_OVERLAY states=" + CoreStates.list());
 
+        // The Core becomes the face of the download service: a read-only observer of the same
+        // job snapshot the in-app Queue renders (master package: ONE JOB, ONE SOURCE OF TRUTH).
+        jobBinding = new CoreJobBinding(this, new CoreJobBinding.Listener() {
+            @Override public void onJobView(CoreJobBinding.JobView v) {
+                if (v == null || v.coreState == null) return;
+                // Progress re-applies (the number moved); an unchanged terminal view must not
+                // re-fire the completion animation every poll.
+                if (v.coreState.equals(jobState) && !CoreStates.PROGRESS.equals(v.coreState)) return;
+                jobState = v.coreState;
+                jobProgress = v.progress;
+                applyCoreState();
+                int pct = Math.round(v.progress * 100f);
+                if (!v.coreState.equals(lastLoggedJobState) || pct != lastLoggedJobPct) {
+                    lastLoggedJobState = v.coreState;
+                    lastLoggedJobPct = pct;
+                    log("CORE_JOB state=" + v.coreState + " pct=" + pct);
+                }
+            }
+        });
+
         // Death-hunt forensics: a heartbeat whose absence we can measure.
         connectedAt = SystemClock.elapsedRealtime();
         log("HEARTBEAT armed every " + (HEARTBEAT_MS / 1000) + "s");
@@ -333,6 +427,7 @@ public class FetchSpikeService extends AccessibilityService {
     public boolean onUnbind(Intent intent) {
         log("SERVICE_UNBIND");
         disarmForeground();
+        if (jobBinding != null) jobBinding.stop();
         if (core != null) core.destroy();
         return super.onUnbind(intent);
     }
@@ -415,6 +510,7 @@ public class FetchSpikeService extends AccessibilityService {
         log("DUMP_" + dumpCount + " reason=" + reason + " pkg=" + sessionPkg + " nodes=" + c.nodes);
         log(bodyStr);                            // full tree, one chunk
         extractAndVerdict(corpus.toString());
+        updateDetection(!signals.isEmpty());     // Phase 0 P0-2: watching signals = a video is on screen
         if (sessionDumps == 4) maybeScreenshot("dump4");
     }
 
@@ -531,10 +627,13 @@ public class FetchSpikeService extends AccessibilityService {
         boolean keep = coreManualVisibility != null ? coreManualVisibility : followTarget;
         if (keep && !core.isShown()) {
             core.show();
+            applyCoreState();                    // re-apply the honest state on return
             log("CORE_LIVE_SHOW pkg=" + pkg + " on_target=" + onTarget);
             if (!fgsArmed) armForeground();
         } else if (!keep && core.isShown()) {
             core.hide();
+            videoDetected = false;               // off-target: detection resets, the job binding
+            jobState = CoreStates.IDLE;          // keeps watching for the next entry
             core.setState(CoreStates.IDLE);
             log("CORE_LIVE_HIDE pkg=" + pkg);
         }
@@ -626,13 +725,35 @@ public class FetchSpikeService extends AccessibilityService {
                     + (DUP_WINDOW_MS / 1000) + "s");
             return;
         }
+        // Duplicate prevention BEFORE creating a job (master package §32/§33): an equivalent job
+        // that is running is ADOPTED — the Core binds to it instead of firing a second identical
+        // download; one that just completed means the file already exists.
+        String active = CoreJobBinding.activeStateFor(this, url);
+        if ("running".equals(active)) {
+            log("CHAIN_DELIVER_ADOPT state=running url=" + clip(url, 200));
+            jobState = CoreStates.PROGRESS;
+            jobProgress = 0f;                    // the binding's first poll brings the real percent
+            applyCoreState();
+            if (jobBinding != null) jobBinding.track(url);
+            return;
+        }
+        if ("done".equals(active)) {
+            log("CHAIN_DELIVER_DUP route=" + route + " suppressed=already_saved");
+            return;
+        }
         if (!claimDelivery(route)) return;
         try {
             DowniDownloadService.startShared(this, url);
             delivery.record(url, now);
             log("CHAIN_DELIVER_OK route=" + route + " tap=1 url=" + clip(url, 200));
+            // The Core becomes the live visual representation of this job (master package §11).
+            jobState = CoreStates.PROGRESS;
+            jobProgress = 0f;
+            applyCoreState();
+            if (jobBinding != null) jobBinding.track(url);
         } catch (Throwable t) {
             log("CHAIN_DELIVER_FAIL route=" + route + " err=" + t);
+            resolverFailed("deliver_" + t.getClass().getSimpleName());
         }
     }
 
@@ -775,7 +896,7 @@ public class FetchSpikeService extends AccessibilityService {
 
     private void runChain(final boolean doClick) {
         AccessibilityNodeInfo root = pickShareRoot("CHAIN_SCAN", false);
-        if (root == null) { log("CHAIN_ROOT_NULL"); if (doClick) chainReset(); return; }
+        if (root == null) { log("CHAIN_ROOT_NULL"); if (doClick) { resolverFailed("root_null"); chainReset(); } return; }
         ArrayList<AccessibilityNodeInfo> share = new ArrayList<>();
         ArrayList<AccessibilityNodeInfo> copy = new ArrayList<>();
         ArrayList<AccessibilityNodeInfo> downi = new ArrayList<>();
@@ -789,7 +910,7 @@ public class FetchSpikeService extends AccessibilityService {
         }
         if (!doClick) { log("CHAIN_DRY_DONE"); return; }
         AccessibilityNodeInfo t = firstClickable(share);
-        if (t == null) { log("CHAIN_NO_SHARE_CLICK"); chainReset(); return; }
+        if (t == null) { log("CHAIN_NO_SHARE_CLICK"); resolverFailed("no_share_row"); chainReset(); return; }
         log("CHAIN_SHARE_CLICK text=" + clip(nodeText(t), 120)
                 + " route=" + clickNode(t));
         postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 1300);
@@ -831,6 +952,7 @@ public class FetchSpikeService extends AccessibilityService {
                 return;
             }
             log("CHAIN_NO_TARGET neither DOWNI nor Copy link found");
+            resolverFailed("no_copy_link");
             chainReset();
             return;
         }
@@ -979,6 +1101,7 @@ public class FetchSpikeService extends AccessibilityService {
                 return;
             }
             log("CHAIN_CLIPBOARD got=null text= tries=" + clipTries);
+            resolverFailed("clipboard_empty");
             return;
         }
         log("CHAIN_CLIPBOARD got=yes text=" + clip(url, 200));
@@ -989,6 +1112,7 @@ public class FetchSpikeService extends AccessibilityService {
             deliverByTap(url, "clipboard");
         } else {
             log("CHAIN_URL_REJECTED reason=" + why);
+            resolverFailed("rejected_" + why);
         }
     }
 
@@ -1266,6 +1390,8 @@ public class FetchSpikeService extends AccessibilityService {
         main.removeCallbacks(coreTickPoll);
         main.removeCallbacks(heartbeat);
         main.removeCallbacks(corePoll);
+        if (failedHold != null) { main.removeCallbacks(failedHold); failedHold = null; }
+        if (jobBinding != null) { jobBinding.stop(); jobBinding = null; }
         pollersArmed = false;               // a fresh bind after destroy must re-post the loops
         disarmForeground();
         if (core != null) core.destroy();
