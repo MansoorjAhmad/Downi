@@ -473,7 +473,12 @@ public class FetchSpikeService extends AccessibilityService {
                 // (D-e: `CHAIN_CLIPBOARD got=null`; D-f: chooser missed, no copy-link fallback). So
                 // during a run this route may deliver — but only as that run's *single* delivery, so
                 // D-a's guarantee still holds and the later routes stand down.
-                if (claimDelivery("dump_of_sheet")) pipeline(url);
+                //
+                // D-h (found 2026-09-25 18:0x by reading this code, not by log): claim ONLY when the
+                // gate can actually deliver. pipeline() returns early when handoff is disabled, so
+                // claiming first marked the run "delivered" without a grab and made the clipboard/
+                // chooser routes stand down -> a run that found its URL and still delivered nothing.
+                if (handoffEnabled && claimDelivery("dump_of_sheet")) pipeline(url);
             } else {
                 pipeline(url);
             }
@@ -965,8 +970,15 @@ public class FetchSpikeService extends AccessibilityService {
                     + clip(url == null ? "" : url, 200));
             String why = MediaUrl.reason(url);      // D-b: a media page, not a bio/redirect link
             if (why == null) {
-                if (claimDelivery("clipboard")) {
-                    pipeline(url);          // handoff gate decides whether it really grabs
+                // D-h, same rule as the dump route: claim only when this route can actually
+                // deliver. With the gate off pipeline() only logs the contract, so claiming would
+                // print a CHAIN_DELIVER that never grabbed — and this log is C4's evidence.
+                // (The chooser route is exempt: the system hands the URL to DropActivity directly,
+                // so it delivers with or without the gate.)
+                if (!handoffEnabled) {
+                    pipeline(url);
+                } else if (claimDelivery("clipboard")) {
+                    pipeline(url);
                 }
             } else {
                 log("CHAIN_URL_REJECTED reason=" + why);
