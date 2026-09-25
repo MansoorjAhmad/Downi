@@ -88,8 +88,15 @@ doubled all four polling loops: `pollersArmed` posts them once per service insta
 and left alone: the sheet-2 mark (byte-exact, SHA-locked), version sync (48/3.2.0 in all three
 spots), the D-a/D-b/D-d/D-h guards, the FGS/focus-retry design. Validated: `:app:testDebugUnitTest`
 + `:app:assembleDebug` = **BUILD SUCCESSFUL, 32 tests / 0 failures** (the 26 above + `DeliveryGuardTest`
-6); `aapt dump badging` = versionCode 48 / 3.2.0. Device re-checks owed: two rapid taps on two
-different videos, and B5's rotation cell — details in `DEVICE_TEST.md` §5 rows D-i…D-m.
+6); `aapt dump badging` = versionCode 48 / 3.2.0. **Device-verified on the vivo V2058 the same evening
+(build installed over the owner's 3.1.2, prod-signed, gate `handoff=false`):** two rapid Core taps on
+two different TikTok videos delivered one video per tap with zero cross-run interference (twice —
+21:32 and 21:38, the second time with TikTok's feed auto-advancing between taps); both downloads
+landed in `Movies/DOWNI` (end-to-end: tap → resolver → engine → Vault); a tap during a dead session
+logged `CORE_TAP_NO_SESSION` instead of pretending; rotation under TikTok is structurally impossible
+(portrait-locked, `ROTATION_0`) and the re-clamp verified no-op-safe. The vivo ABE killer was
+reproduced twice (~195 s and ~210 s uptime, binding wiped) — the known B6 platform blocker, recovered
+by re-arming each time. Details in `DEVICE_TEST.md` §5 rows D-i…D-m.
 
 ## Unreleased — V3.3 (in progress)
 
