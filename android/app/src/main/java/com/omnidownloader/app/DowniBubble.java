@@ -129,6 +129,20 @@ class DowniBubble {
         try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
     }
 
+    /** Does our own window hold focus **right now**? (Focus, not focusability — see setFocusable.) */
+    boolean hasWindowFocus() {
+        try { return view != null && view.hasWindowFocus(); } catch (Throwable t) { return false; }
+    }
+
+    /**
+     * Ask the window manager for focus. `setFocusable(true)` only clears FLAG_NOT_FOCUSABLE, which
+     * does not by itself move focus to us — measured on the vivo V2058 (2026-09-25): the clipboard
+     * read failed 3 of 5 times with the flag cleared, because focus stayed on TikTok.
+     */
+    void requestFocus() {
+        try { if (view != null) view.requestFocus(); } catch (Throwable ignored) {}
+    }
+
     /**
      * Attach once, then only toggle visibility/flags. Empirically on the vivo V2058
      * (Android 13) a window that is removeView'd and re-added never receives touch

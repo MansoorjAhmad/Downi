@@ -141,10 +141,12 @@ public class FetchSpikeService extends AccessibilityService {
     // The chain is only what happens *behind* a bubble tap.
     private DowniBubble bubble;
     private boolean chainRunning;
-    private int chooserSwipes;                       // chooser list scrolls used by this run
     private int sheetSwipes;                         // platform-sheet scrolls used by this run
-    private static final int MAX_CHOOSER_SWIPES = 4;
     private static final int MAX_SHEET_SWIPES = 2;
+    // D-e (2026-09-25): the clipboard read is a *race* — our window must actually hold focus, and
+    // setFocusable(true) alone does not grant it. So the read is retried a few times behind the tap.
+    private int clipTries;
+    private static final int MAX_CLIP_TRIES = 6;
 
     // Foreground-service defence against the vendor power manager (see armForeground()).
     private boolean fgsArmed;
@@ -534,13 +536,17 @@ public class FetchSpikeService extends AccessibilityService {
         }
     }
 
-    /** Bubble tap = the owner's zero-touch grab: DOWNI drives the platform's own flow. */
+    /**
+     * The owner's tap — the only thing that ever starts a download (ruling 2026-09-25 ~18:20).
+     * DOWNI resolves the link behind this tap (invisible to the owner: no share sheet to DOWNI, no
+     * Drop, no clipboard hand-off by hand) and hands it to the engine, which downloads in the
+     * background while the owner keeps watching.
+     */
     private void onBubbleTap() {
         if (sessionPkg == null) { log("BUBBLE_TAP_NO_SESSION open IG/TikTok on a video first"); return; }
         if (chainRunning) { log("BUBBLE_TAP_BUSY ignored"); return; }
         log("BUBBLE_TAP session=" + sessionPkg);
         chainRunning = true;
-        chooserSwipes = 0;
         sheetSwipes = 0;
         if (bubble != null) {
             bubble.setState(DowniBubble.STATE_BUSY);
@@ -586,6 +592,30 @@ public class FetchSpikeService extends AccessibilityService {
     }
 
     // ---------- Q4: pipeline contract ----------
+
+    /**
+     * The owner's tap (ruling 2026-09-25 ~18:20). A **user-initiated** download always goes through:
+     * the gate in `spike_config.properties` exists only so bench runs can prove the *automatic* path
+     * still grabs — in the product nothing may download without a tap, and nothing a tap asks for may
+     * be refused. So this path ignores the gate deliberately; the dump path keeps it.
+     */
+    private void deliverByTap(String url, String route) {
+        if (!claimDelivery(route)) return;
+        try {
+            DowniDownloadService.startShared(this, url);
+            watchDelivery(url);
+            log("CHAIN_DELIVER_OK route=" + route + " tap=1 url=" + clip(url, 200));
+        } catch (Throwable t) {
+            log("CHAIN_DELIVER_FAIL route=" + route + " err=" + t);
+        }
+    }
+
+    /** The Fetcher's own copy of the URL, so the notification/Queue card can be tied to the Core. */
+    private void watchDelivery(String url) {
+        lastDeliveredUrl = url;
+    }
+
+    private String lastDeliveredUrl;
 
     private void pipeline(String url) {
         if (!seenUrls.add(url)) return;          // one PIPELINE line per URL
@@ -756,23 +786,12 @@ public class FetchSpikeService extends AccessibilityService {
             log("CHAIN_DOWNI_CANDIDATE id=" + clip(strOrEmpty(n.getViewIdResourceName()), 90)
                     + " text=" + clip(nodeText(n), 120) + " clickable=" + n.isClickable());
         }
-        AccessibilityNodeInfo d = firstClickable(downi);
-        if (d != null) {                                 // TikTok: DOWNI sits right in the sheet
-            chainClickedCopy = false;
-            log("CHAIN_TARGET_CLICK which=downi text=" + clip(nodeText(d), 120)
-                    + " route=" + clickNode(d));
-            postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1600);
-            return;
-        }
-        AccessibilityNodeInfo row = findSheetShareRow(); // IG: its "share" row opens the chooser
-        if (row != null) {
-            chainClickedCopy = false;
-            log("CHAIN_TARGET_CLICK which=chooser_row text=" + clip(nodeText(row), 120)
-                    + " route=" + clickNode(row));
-            postStep(new Runnable() { @Override public void run() { chainChooser(); } }, 1600);
-            return;
-        }
-        AccessibilityNodeInfo c = firstClickable(copy);  // last resort: copy link + clipboard
+        // Owner ruling 2026-09-25 ~18:20: the Fetcher must NOT act as Downi Drop. The routes that
+        // clicked DOWNI in the system chooser (or the sheet row that opens it) are DELETED — that is
+        // Drop's territory, and presenting it as the Fetcher is what the owner rejected. The one
+        // target here is the platform's own **Copy link**: DOWNI reads the link it just copied and
+        // starts the download. Nothing is shared with anyone, and nothing downloads without a tap.
+        AccessibilityNodeInfo c = firstClickable(copy);
         if (c == null) {
             // IG's sheet lists DM targets first; its own action rows ("share", "copy link")
             // sit below the fold unless the sheet is scrolled (device 2026-09-25).
@@ -793,79 +812,15 @@ public class FetchSpikeService extends AccessibilityService {
         postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1600);
     }
 
-    // ---------- Phase 0.5b: sheet -> DOWNI (the transport with no clipboard) ----------
-    // Instagram's in-app sheet carries no DOWNI entry, but its own "share" row opens the
-    // system chooser, where DowniDrop is a text/plain target; TikTok lists DOWNI directly.
-    // The URL then arrives through the platform's normal share intent — nothing for the
-    // owner to tap and no clipboard involved.
+    // ---------- deleted 2026-09-25 ~18:20 by owner ruling ----------
+    // `findSheetShareRow()`, `chainChooser()` and `swipeChooserList()` used to click DOWNI inside the
+    // system share chooser (TikTok lists it directly; Instagram's sheet has a "share" row that opens
+    // the chooser). That transport belongs to **Downi Drop**, not the Fetcher: a share sheet whose
+    // target is DOWNI is exactly what the owner already has. The Fetcher's own transport is the
+    // platform's "Copy link" -> clipboard -> `deliverByTap()`. The three methods and the
+    // `chooserSwipes` counter are gone rather than kept dormant, so no future session can drift back
+    // into calling them.
 
-    /** The in-app sheet row that opens the system chooser ("share" / "share to" / "more"). */
-    private AccessibilityNodeInfo findSheetShareRow() {
-        AccessibilityNodeInfo root = pickShareRoot("CHAIN_SHEET_ROW", false);
-        if (root == null) return null;
-        ArrayList<AccessibilityNodeInfo> share = new ArrayList<>();
-        ArrayList<AccessibilityNodeInfo> copy = new ArrayList<>();
-        ArrayList<AccessibilityNodeInfo> downi = new ArrayList<>();
-        collectCandidates(root, share, copy, downi, new Counter(), 0);
-        int screenH = getResources().getDisplayMetrics().heightPixels;
-        for (AccessibilityNodeInfo n : share) {
-            String t = nodeText(n);
-            if (!(t.equals("share") || t.contains("share to") || t.contains("more")
-                    || t.contains("other"))) continue;
-            Rect r = new Rect();
-            try { n.getBoundsInScreen(r); } catch (Throwable ignored) { continue; }
-            if (r.exactCenterY() < screenH * 0.45f) continue;   // rows of the sheet live low
-            AccessibilityNodeInfo clickable = clickableSelfOrAncestor(n);
-            if (clickable != null) return clickable;
-        }
-        return null;
-    }
-
-    /** The chooser is open: find DOWNI and let the platform hand it the real link. */
-    private void chainChooser() {
-        logWindows("CHAIN_CHOOSER");
-        AccessibilityNodeInfo root = pickShareRoot("CHAIN_CHOOSER", true);
-        if (root == null) { log("CHAIN_CHOOSER_ROOT_NULL"); chainReset(); return; }
-        ArrayList<AccessibilityNodeInfo> share = new ArrayList<>();
-        ArrayList<AccessibilityNodeInfo> copy = new ArrayList<>();
-        ArrayList<AccessibilityNodeInfo> downi = new ArrayList<>();
-        collectCandidates(root, share, copy, downi, new Counter(), 0);
-        ArrayList<AccessibilityNodeInfo> buttons = new ArrayList<>();
-        collectButtons(root, buttons, new Counter(), 0);
-        for (AccessibilityNodeInfo b : buttons) log("CHAIN_CHOOSER_BUTTON " + clip(nodeText(b), 80));
-        AccessibilityNodeInfo d = firstClickable(downi);
-        if (d != null) {
-            if (chainDelivered) {
-                // D-a: this tap already delivered (the sheet's URL was read from the tree / the
-                // clipboard). Clicking DOWNI now would launch DropActivity for a *second* grab of the
-                // same video — the exact double-grab seen at 16:34. Stand down instead.
-                log("CHAIN_CHOOSER_SKIPPED already_delivered");
-                chainReset();
-                return;
-            }
-            String route = clickNode(d);
-            if (!"fail".equals(route)) claimDelivery("chooser_downi");   // D-a: this tap is delivered
-            log("CHAIN_CHOOSER_DOWNI text=" + clip(nodeText(d), 80) + " route=" + route);
-            chainReset();
-            return;
-        }
-        // The chooser only ranks a handful of targets; DOWNI is further down the list and
-        // has to be scrolled into view before it can be tapped.
-        if (chooserSwipes < MAX_CHOOSER_SWIPES) {
-            chooserSwipes++;
-            log("CHAIN_CHOOSER_SCROLL n=" + chooserSwipes + "/" + MAX_CHOOSER_SWIPES
-                    + " swipe=" + swipeChooserList());
-            postStep(new Runnable() { @Override public void run() { chainChooser(); } }, 900);
-            return;
-        }
-        log("CHAIN_CHOOSER_NO_DOWNI back=" + performGlobalAction(GLOBAL_ACTION_BACK));
-        chainReset();
-    }
-
-    /** Scroll the chooser list by one page (kept inside the sheet's lower half). */
-    private boolean swipeChooserList() {
-        return swipeWithinSheet(0.78f, 0.45f);
-    }
 
     /** Scroll the platform's own share sheet (gentler: it is anchored to the bottom). */
     private boolean swipeSheetList() {
@@ -954,32 +909,44 @@ public class FetchSpikeService extends AccessibilityService {
         // (our own window) is briefly made focusable, then restored. First working
         // SourceResolver: chain -> clipboard -> existing pipeline.
         if (chainClickedCopy && !chainDelivered) {
+            clipTries = 0;
             if (bubble != null) bubble.setFocusable(true);
             postStep(readClipAndPipe, 500);
-            postStep(releaseFocus, 1300);
+            // Hold focus for the whole retry budget, then always give it back — a permanently
+            // focusable bubble would eat the platform's back key and its own touches.
+            postStep(releaseFocus, 500 + MAX_CLIP_TRIES * 250 + 400);
         } else if (chainClickedCopy) {
-            log("CHAIN_CLIP_SUPPRESSED already_delivered");   // D-a: the sheet route already delivered
+            log("CHAIN_CLIP_SUPPRESSED already_delivered");   // D-a: one delivery per tap
         }
         chainReset();                       // bubble idle + touchable again
     }
 
     private final Runnable readClipAndPipe = new Runnable() {
         @Override public void run() {
+            // D-e (2026-09-25): this route was a coin flip — 3 of 5 attempts came back got=null. The
+            // cause is focus: make-focusable is not focused, and Android 10+ hands the clipboard only
+            // to an app that holds focus. So each attempt asks for focus and *reports* whether it got
+            // it, and the read is retried while the copy settles.
+            if (bubble != null) { bubble.setFocusable(true); bubble.requestFocus(); }
+            boolean focus = bubble != null && bubble.hasWindowFocus();
             String url = readClipboardText();
-            log("CHAIN_CLIPBOARD got=" + (url == null ? "null" : "yes") + " text="
-                    + clip(url == null ? "" : url, 200));
+            log("CHAIN_CLIP_TRY n=" + (clipTries + 1) + "/" + MAX_CLIP_TRIES
+                    + " focus=" + focus + " got=" + (url == null ? "null" : "yes"));
+            if (url == null) {
+                clipTries++;
+                if (clipTries < MAX_CLIP_TRIES) {
+                    postStep(readClipAndPipe, 250);
+                    return;
+                }
+                log("CHAIN_CLIPBOARD got=null text= tries=" + clipTries);
+                return;
+            }
+            log("CHAIN_CLIPBOARD got=yes text=" + clip(url, 200));
             String why = MediaUrl.reason(url);      // D-b: a media page, not a bio/redirect link
             if (why == null) {
-                // D-h, same rule as the dump route: claim only when this route can actually
-                // deliver. With the gate off pipeline() only logs the contract, so claiming would
-                // print a CHAIN_DELIVER that never grabbed — and this log is C4's evidence.
-                // (The chooser route is exempt: the system hands the URL to DropActivity directly,
-                // so it delivers with or without the gate.)
-                if (!handoffEnabled) {
-                    pipeline(url);
-                } else if (claimDelivery("clipboard")) {
-                    pipeline(url);
-                }
+                // The owner's tap is the trigger, so this delivers regardless of the bench gate
+                // (ruling 2026-09-25: nothing auto-downloads, nothing a tap asks for is refused).
+                deliverByTap(url, "clipboard");
             } else {
                 log("CHAIN_URL_REJECTED reason=" + why);
             }
