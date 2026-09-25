@@ -74,4 +74,56 @@ public class MainActivity extends BridgeActivity {
             }
         } catch (Exception ignored) {}
     }
+
+    // ---------- Fetcher self-recovery (vivo ABE wipes the accessibility binding) ----------
+
+    private static final String A11Y_COMPONENT =
+            "com.omnidownloader.app/com.omnidownloader.app.FetchSpikeService";
+
+    /**
+     * The vivo Application Behavior Engine force-stops the Fetcher and CLEARS
+     * `enabled_accessibility_services` with it — the Core then never comes back until the
+     * binding is re-applied (measured 2026-09-25: process dead, setting null, no unbind marker).
+     *
+     * With the one-time adb grant `WRITE_SECURE_SETTINGS`, DOWNI can re-apply its own binding
+     * the moment the user opens the app: recovery becomes "open DOWNI" instead of a manual
+     * Settings walk. Guarded three ways so it can never surprise anyone:
+     *   1. only if the user ever armed the Fetcher (`wasArmed`, set by the service itself),
+     *   2. only with the grant present (absent -> silent no-op),
+     *   3. only when the binding is actually missing.
+     */
+    private void ensureFetcherArmed() {
+        try {
+            android.content.SharedPreferences prefs = getSharedPreferences("downi_fetcher", MODE_PRIVATE);
+            if (!prefs.getBoolean("wasArmed", false)) return;
+            if (checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+            android.content.ContentResolver cr = getContentResolver();
+            String current = android.provider.Settings.Secure.getString(
+                    cr, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (current != null && current.contains(A11Y_COMPONENT)) {
+                if (android.provider.Settings.Secure.getInt(
+                        cr, android.provider.Settings.Secure.ACCESSIBILITY_ENABLED, 0) != 1) {
+                    android.provider.Settings.Secure.putInt(
+                            cr, android.provider.Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+                }
+                return;
+            }
+            String next = (current == null || current.trim().isEmpty())
+                    ? A11Y_COMPONENT : current + ":" + A11Y_COMPONENT;
+            android.provider.Settings.Secure.putString(
+                    cr, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next);
+            android.provider.Settings.Secure.putInt(
+                    cr, android.provider.Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+            android.util.Log.i("DOWNI", "fetcher re-armed after vendor wipe (wasArmed=true)");
+        } catch (Throwable t) {
+            android.util.Log.i("DOWNI", "fetcher arm check failed: " + t);
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        ensureFetcherArmed();
+    }
 }

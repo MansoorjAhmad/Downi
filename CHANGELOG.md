@@ -150,6 +150,19 @@ Device-verified on the vivo V2058 over a live Reel: `test_out/core_v2_zoom.jpg` 
 `core_v2_dl_zoom.jpg` (downloading at ~27% with the arc at the perimeter's top), 39/39 tests green.
 The mark is still the design-sheet-2 chevron, byte-identical asset — never the app icon.
 
+**Fetcher self-recovery after the vivo wipe (2026-09-25, night).** The vivo power manager doesn't
+just kill the process — it **clears `enabled_accessibility_services`**, so the Core never came
+back on its own and every death needed a manual re-arm (measured again tonight: process dead,
+setting null, no unbind marker). Now, with the one-time adb grant
+`pm grant com.omnidownloader.app android.permission.WRITE_SECURE_SETTINGS`, DOWNI re-applies its
+own binding the moment the app is opened: **recovery = open DOWNI**. Guarded so it can never
+surprise anyone: it only re-arms a service the user themselves enabled once (`wasArmed`, set by
+the service on connect), only with the grant present, and only when the binding is actually
+missing. Proven on device: binding wiped by hand → DOWNI relaunched → binding restored → Core
+attached over Instagram (`test_out/core_v3_showing.png`). The full fix for the killing itself
+remains the user-side vivo exemption (Autostart allow + battery unrestricted + lock in Recents) —
+no code can reach that.
+
 ## Unreleased — V3.3 (in progress)
 
 _(nothing yet)_

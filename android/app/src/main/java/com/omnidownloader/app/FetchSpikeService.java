@@ -311,6 +311,14 @@ public class FetchSpikeService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
 
+        // The user chose this service once; record that so MainActivity may RE-arm it after a
+        // vendor wipe (vivo's ABE clears enabled_accessibility_services when it force-stops us).
+        // Without this flag the app would never resurrect a service the user never enabled.
+        try {
+            getSharedPreferences("downi_fetcher", MODE_PRIVATE)
+                .edit().putBoolean("wasArmed", true).apply();
+        } catch (Throwable ignored) {}
+
         // Screenshot capability is declared in XML (android:canTakeScreenshot, API 34).
         File dir = spikeDir();
         dir.mkdirs();
