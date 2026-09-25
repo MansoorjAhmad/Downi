@@ -57,14 +57,21 @@
 
         <!-- V3.2 Phase 0 detectability spike (owner-approved 2026-09-24): logs what
              Instagram/TikTok expose on this device (files/fetch-spike/, local only).
-             Debug tool — no bubble, no auto-download, never part of a release build. -->
+             Debug tool — no bubble, no auto-download, never part of a release build.
+
+             The intent action MUST be android.accessibilityservice.AccessibilityService —
+             the FQCN that AccessibilityService.SERVICE_INTERFACE resolves to, which is
+             what AccessibilityManagerService queries when it builds the installed-service
+             list. An earlier revision declared android.service.accessibility.* (wrong word
+             order); the service was then never discovered, never listed in Settings and
+             never bound — on any device, whatever else looked correct. -->
         <service
             android:name=".FetchSpikeService"
             android:label="DOWNI Fetcher Spike"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.service.accessibility.AccessibilityService" />
+                <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
             <meta-data
                 android:name="android.accessibilityservice"
