@@ -143,6 +143,8 @@ public class FetchSpikeService extends AccessibilityService {
     private boolean chainRunning;
     private int sheetSwipes;                         // platform-sheet scrolls used by this run
     private static final int MAX_SHEET_SWIPES = 2;
+    private int sheetWaits;                          // re-scans while the sheet is still animating
+    private static final int MAX_SHEET_WAITS = 1;
     // D-e (2026-09-25): the clipboard read is a *race* — our window must actually hold focus, and
     // setFocusable(true) alone does not grant it. So the read is retried a few times behind the tap.
     private int clipTries;
@@ -672,6 +674,7 @@ public class FetchSpikeService extends AccessibilityService {
         chainDelivered = false;
         chainClickedCopy = false;
         sheetSwipes = 0;
+        sheetWaits = 0;
         runGen++;
         if (core != null) {
             core.setFocusable(false);          // clean slate; this run re-focuses at its own step 3
@@ -952,15 +955,31 @@ public class FetchSpikeService extends AccessibilityService {
         if (c == null) {
             // IG's sheet lists DM targets first; its own action rows ("share", "copy link")
             // sit below the fold unless the sheet is scrolled (device 2026-09-25).
-            if (sheetSwipes < MAX_SHEET_SWIPES) {
+            //
+            // DEFECT (owner report 2026-09-25 night): the old code swiped BLINDLY — an upward
+            // center-screen stroke, which is exactly the feed's next-video gesture. When the
+            // share surface had not opened yet (or had already closed), that stroke scrolled
+            // the VIDEO away instead of the sheet. A swipe may now only ever fire when the
+            // share surface is verifiably on screen as its own window; otherwise the run waits
+            // once for the sheet animation and then fails honestly, never touching the feed.
+            boolean surface = shareSurfaceOpen();
+            if (surface && sheetSwipes < MAX_SHEET_SWIPES) {
                 sheetSwipes++;
                 log("CHAIN_SHEET_SCROLL n=" + sheetSwipes + "/" + MAX_SHEET_SWIPES
                         + " swipe=" + swipeSheetList());
                 postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 900);
                 return;
             }
-            log("CHAIN_NO_TARGET neither DOWNI nor Copy link found");
-            resolverFailed("no_copy_link");
+            if (!surface && sheetWaits < MAX_SHEET_WAITS) {
+                sheetWaits++;
+                log("CHAIN_SHEET_WAIT n=" + sheetWaits + "/" + MAX_SHEET_WAITS
+                        + " why=surface_not_open_no_swipe");
+                postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 900);
+                return;
+            }
+            log("CHAIN_NO_TARGET neither DOWNI nor Copy link found"
+                    + (surface ? "" : " note=share_surface_never_opened"));
+            resolverFailed(surface ? "no_copy_link" : "sheet_never_opened");
             chainReset();
             return;
         }
@@ -980,9 +999,9 @@ public class FetchSpikeService extends AccessibilityService {
     // into calling them.
 
 
-    /** Scroll the platform's own share sheet (gentler: it is anchored to the bottom). */
+    /** Scroll the platform's own share sheet (gentle: it is anchored to the bottom). */
     private boolean swipeSheetList() {
-        return swipeWithinSheet(0.72f, 0.55f);
+        return swipeWithinSheet(0.80f, 0.64f);
     }
 
     private boolean swipeWithinSheet(float fromFrac, float toFrac) {
@@ -998,6 +1017,29 @@ public class FetchSpikeService extends AccessibilityService {
             log("CHAIN_SWIPE_FAIL " + t);
             return false;
         }
+    }
+
+    /**
+     * True when a share surface (the platform's sheet or the system chooser) is verifiably on
+     * screen as its OWN window. This ROM's sheet is a separate `com.vivo.upslide` window; other
+     * devices use the system resolver — anything that is not the target app, our overlay, or the
+     * system UI counts. This is the gate that keeps the sheet-scroll swipe OFF the feed: no
+     * share surface, no swipe (the feed's next-video gesture must never fire from a fetch).
+     */
+    private boolean shareSurfaceOpen() {
+        try {
+            for (AccessibilityWindowInfo w : getWindows()) {
+                AccessibilityNodeInfo r;
+                try { r = w.getRoot(); } catch (Throwable t) { continue; }
+                if (r == null || r.getPackageName() == null) continue;
+                String wp = r.getPackageName().toString();
+                if (wp.equals(getPackageName())) continue;                  // our overlay
+                if (wp.equals("com.android.systemui")) continue;            // shade / keys
+                if (wp.equals(sessionPkg) || TARGETS.contains(wp)) continue; // the platform app itself
+                return true;                                                // a share surface exists
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     // ---------- screenshots (diagnostic fallback, spike only) ----------
