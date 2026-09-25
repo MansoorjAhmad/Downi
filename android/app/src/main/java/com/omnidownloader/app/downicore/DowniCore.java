@@ -1,32 +1,40 @@
 package com.omnidownloader.app.downicore;
 
 import android.accessibilityservice.AccessibilityService;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowManager;
 
 /**
- * V3.2 Downi Core — the window host (Phase A: shell + visual states only).
+ * V3.2 Downi Core — the window host (approved visual shell + Phase B interaction).
  *
  * Ruling D1: the window is `TYPE_ACCESSIBILITY_OVERLAY` — an accessibility service may add it
  * without the "display over other apps" grant, and it dies with the service, so there is never
  * an orphaned Core on screen. The attach-once / toggle-visibility discipline is the one proven
  * on the vivo V2058 by `DowniBubble` (a re-added window loses touch on that ROM).
  *
- * Phase A rules, enforced here:
- *  - the window is `FLAG_NOT_TOUCHABLE` at all times: this is a visual preview, it must never
- *    eat a tap meant for the app underneath (interaction is Phase B);
+ * Phase B interaction rules, enforced here:
+ *  - the Core owns a real touch target while visible, but is non-touchable while DOWNI drives the
+ *    platform UI and while hidden;
  *  - size is 48/56/64 dp (sheet 5's touch-area range), remembered in `downi_fetcher` prefs;
- *  - position is remembered in the same prefs (Phase B adds the drag that writes it by hand).
+ *  - press, drag, drag-vs-tap and position memory are real; a release only magnetises when the
+ *    Core is already within 12 dp of an edge, so it remains draggable anywhere.
  */
 public final class DowniCore {
 
-    public interface Listener { void onCoreLog(String msg); }
+    public interface Listener {
+        void onCoreLog(String msg);
+        void onCoreTap();
+        void onCoreMoved(int x, int y);
+    }
 
     private static final String PREFS = "downi_fetcher";
     private static final String KEY_X = "core_x";
@@ -49,13 +57,20 @@ public final class DowniCore {
     private boolean destroyed;
     private int sizeDp;
     private int swpx, shpx;                 // cached screen bounds
+    private boolean interactive = true;
+    private final int touchSlop;
+    private float downRawX, downRawY;
+    private int downX, downY;
+    private boolean dragging;
+    private ValueAnimator edgeAnim;
 
     public DowniCore(AccessibilityService svc, Listener listener) {
         this.svc = svc;
         this.listener = listener;
         this.dp = svc.getResources().getDisplayMetrics().density;
         this.sizeDp = prefs().getInt(KEY_SIZE, DEFAULT_SIZE_DP);
-        this.view = new CoreHost(svc);
+        this.touchSlop = ViewConfiguration.get(svc).getScaledTouchSlop();
+        this.view = createView();
     }
 
     public int sizeDp() { return sizeDp; }
@@ -84,6 +99,33 @@ public final class DowniCore {
         listener.onCoreLog("CORE_MARK_SCALE " + view.markScale());
     }
 
+    /** False only while DOWNI is driving platform UI; hidden windows are always non-touchable. */
+    public void setInteractive(boolean on) {
+        interactive = on;
+        if (!attached || !visible || lp == null) return;
+        applyInteractiveFlag();
+        try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
+        listener.onCoreLog("CORE_INTERACTIVE " + on);
+    }
+
+    /** Momentarily focusable for Android 10+ clipboard access; always restored after the read. */
+    public void setFocusable(boolean on) {
+        if (!attached || lp == null) return;
+        int next = on ? (lp.flags & ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+                : (lp.flags | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        if (next == lp.flags) return;
+        lp.flags = next;
+        try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
+    }
+
+    public void requestFocus() {
+        try { if (view != null) view.requestFocus(); } catch (Throwable ignored) {}
+    }
+
+    public boolean hasWindowFocus() {
+        try { return view != null && view.hasWindowFocus(); } catch (Throwable t) { return false; }
+    }
+
     /** 48 / 56 / 64 dp; the window is rebuilt because a window's size is fixed at creation. */
     public void setSizeDp(int want) {
         int next = DEFAULT_SIZE_DP;
@@ -100,7 +142,7 @@ public final class DowniCore {
         detach();
         sizeDp = next;
         prefs().edit().putInt(KEY_SIZE, sizeDp).apply();
-        view = new CoreHost(svc);
+        view = createView();
         view.setMarkScale(keepScale);
         view.setProgress(keepProgress);
         view.setState(keepState);
@@ -108,16 +150,10 @@ public final class DowniCore {
         if (wasVisible) show();
     }
 
-    /** Debug/gate helper: place the Core anywhere (Phase B turns this into a real drag). */
+    /** Debug/gate helper; touch uses the same clamped geometry, then persists on release. */
     public void move(int x, int y) {
-        if (lp == null) return;
-        swpx = screenW();
-        shpx = screenH();
-        int px = Math.round(sizeDp * dp);
-        lp.x = clamp(x, 0, Math.max(0, swpx - px));
-        lp.y = clamp(y, 0, Math.max(0, shpx - px));
-        try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
-        prefs().edit().putInt(KEY_X, lp.x).putInt(KEY_Y, lp.y).apply();
+        moveTo(x, y);
+        persistPosition();
     }
 
     public void show() {
@@ -125,7 +161,7 @@ public final class DowniCore {
         if (attached && !windowAlive()) {                 // the ROM dropped the window
             listener.onCoreLog("CORE_WINDOW_LOST rebuild=1");
             detach();
-            view = new CoreHost(svc);
+            view = createView();
         }
         if (!attached) {
             if (!buildLp()) return;
@@ -134,7 +170,7 @@ public final class DowniCore {
                 attached = true;
                 listener.onCoreLog("CORE_ATTACH type=" + lp.type + " x=" + lp.x + " y=" + lp.y
                         + " size=" + Math.round(sizeDp * dp) + "px size_dp=" + sizeDp
-                        + " touchable=0");
+                        + " touchable=" + (interactive ? 1 : 0));
             } catch (Throwable t) {
                 listener.onCoreLog("CORE_ATTACH_FAIL err=" + t);
                 return;
@@ -147,8 +183,9 @@ public final class DowniCore {
         lp.x = clamp(lp.x, 0, Math.max(0, swpx - px));
         lp.y = clamp(lp.y, 0, Math.max(0, shpx - px));
         view.setVisibility(View.VISIBLE);
-        try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
         visible = true;
+        applyInteractiveFlag();
+        try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
         listener.onCoreLog("CORE_SHOW state=" + view.state());
     }
 
@@ -156,6 +193,11 @@ public final class DowniCore {
         if (!attached || !visible) return;
         visible = false;
         view.setVisibility(View.GONE);                    // window stays; this ROM loses touch on re-add
+        if (lp != null) {
+            lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
+        }
         listener.onCoreLog("CORE_HIDE");
     }
 
@@ -166,6 +208,7 @@ public final class DowniCore {
 
     private void detach() {
         visible = false;
+        if (edgeAnim != null) { edgeAnim.cancel(); edgeAnim = null; }
         if (attached) {
             try { wm.removeViewImmediate(view); } catch (Throwable ignored) {}
             attached = false;
@@ -177,6 +220,127 @@ public final class DowniCore {
         detach();
     }
 
+    // ---------- Phase B interaction ----------
+
+    private CoreHost createView() {
+        final CoreHost next = new CoreHost(svc);
+        next.setFocusableInTouchMode(true);
+        next.setClickable(true);
+        next.setOnTouchListener(new View.OnTouchListener() {
+            @Override public boolean onTouch(View v, MotionEvent e) {
+                if (!visible || !interactive || lp == null) return false;
+                switch (e.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        if (edgeAnim != null) { edgeAnim.cancel(); edgeAnim = null; }
+                        downRawX = e.getRawX();
+                        downRawY = e.getRawY();
+                        downX = lp.x;
+                        downY = lp.y;
+                        dragging = false;
+                        next.setState(CoreStates.PRESSED);
+                        listener.onCoreLog("CORE_TOUCH down");
+                        return true;
+                    case MotionEvent.ACTION_MOVE: {
+                        float dx = e.getRawX() - downRawX;
+                        float dy = e.getRawY() - downRawY;
+                        if (!dragging && Math.hypot(dx, dy) > touchSlop) {
+                            dragging = true;
+                            next.setState(CoreStates.DRAGGING);
+                        }
+                        if (dragging) moveTo(Math.round(downX + dx), Math.round(downY + dy));
+                        return true;
+                    }
+                    case MotionEvent.ACTION_UP:
+                        listener.onCoreLog("CORE_TOUCH up dragging=" + dragging);
+                        if (dragging) {
+                            finishDrag();
+                        } else {
+                            next.setState(CoreStates.IDLE);
+                            listener.onCoreTap();
+                        }
+                        return true;
+                    case MotionEvent.ACTION_CANCEL:
+                        listener.onCoreLog("CORE_TOUCH cancel dragging=" + dragging);
+                        if (dragging) persistPosition();
+                        next.setState(CoreStates.IDLE);
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        });
+        return next;
+    }
+
+    private void finishDrag() {
+        if (edgeAnim != null) { edgeAnim.cancel(); edgeAnim = null; }
+        swpx = screenW();
+        shpx = screenH();
+        int px = Math.round(sizeDp * dp);
+        int maxX = Math.max(0, swpx - px);
+        int maxY = Math.max(0, shpx - px);
+        int near = Math.round(12 * dp);
+        int nearX = lp.x;
+        int nearY = lp.y;
+        boolean magnetic = false;
+        if (lp.x <= near) { nearX = 0; magnetic = true; }
+        else if (lp.x >= maxX - near) { nearX = maxX; magnetic = true; }
+        if (lp.y <= near) { nearY = 0; magnetic = true; }
+        else if (lp.y >= maxY - near) { nearY = maxY; magnetic = true; }
+
+        if (!magnetic) {
+            persistPosition();
+            view.setState(CoreStates.IDLE);
+            listener.onCoreMoved(lp.x, lp.y);
+            return;
+        }
+
+        final int targetX = nearX;
+        final int targetY = nearY;
+        final int fromX = lp.x;
+        final int fromY = lp.y;
+        view.setState(CoreStates.SNAPPED);
+        edgeAnim = ValueAnimator.ofFloat(0f, 1f);
+        edgeAnim.setDuration(CoreMotion.SNAP_MS);
+        edgeAnim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override public void onAnimationUpdate(ValueAnimator a) {
+                float t = CoreMotion.easeInOut((Float) a.getAnimatedValue());
+                moveTo(Math.round(fromX + (targetX - fromX) * t),
+                        Math.round(fromY + (targetY - fromY) * t));
+            }
+        });
+        edgeAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator a) {
+                persistPosition();
+                view.setState(CoreStates.IDLE);
+                listener.onCoreMoved(lp.x, lp.y);
+                edgeAnim = null;
+            }
+        });
+        edgeAnim.start();
+    }
+
+    private void moveTo(int x, int y) {
+        if (lp == null) return;
+        if (swpx <= 0) swpx = screenW();
+        if (shpx <= 0) shpx = screenH();
+        int px = Math.round(sizeDp * dp);
+        lp.x = clamp(x, 0, Math.max(0, swpx - px));
+        lp.y = clamp(y, 0, Math.max(0, shpx - px));
+        try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
+    }
+
+    private void persistPosition() {
+        if (lp == null) return;
+        prefs().edit().putInt(KEY_X, lp.x).putInt(KEY_Y, lp.y).apply();
+    }
+
+    private void applyInteractiveFlag() {
+        if (lp == null) return;
+        if (visible && interactive) lp.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        else lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+    }
+
     // ---------- window + geometry ----------
 
     private boolean buildLp() {
@@ -185,8 +349,7 @@ public final class DowniCore {
             if (wm == null) { listener.onCoreLog("CORE_NO_WINDOW_SERVICE"); return false; }
             int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                     | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;   // Phase A: visual only
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
             int px = Math.round(sizeDp * dp);
             lp = new WindowManager.LayoutParams(px, px,
                     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, flags,

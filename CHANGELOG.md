@@ -3,9 +3,9 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
-## Unreleased — V3.2 (in progress)
+## V3.2.0 — The Fetcher (Downi Core), shipped 2026-09-25
 
-**The Fetcher (Downi Core), Phase A.** The Core's face exists and runs on the phone: a
+**Phase A — the Core's face.** The Core's face exists and runs on the phone: a
 `TYPE_ACCESSIBILITY_OVERLAY` window that draws idle / detected / pressed / dragging / snapped /
 progress / paused / resuming / completing / complete / failed, at 48 / 56 / 64 dp. Phase A is
 visual only — no touch handling (`FLAG_NOT_TOUCHABLE`), no detection, no download path — and it is
@@ -40,10 +40,46 @@ that this ROM kills the app about two minutes in, so the zero-frame window is ~2
 process. Three open questions for the owner are listed in `V3.2_PLAN.md` (disc material, lit vs logo
 glyph, does PAUSED hide the mark), alongside the K-A3/K-A4/K-A5 judgement.
 
+**Phase B — Physical interaction: ACCEPTED on device (2026-09-25).** The Core is live, touchable,
+persistent, and one tap fetches — with no bubble anywhere in the chain. The overlay is no longer
+`FLAG_NOT_TOUCHABLE`; `DowniCore` owns press/drag/release and persists the position.
+
+| Cell | On-device evidence (vivo V2058, Android 13, TikTok) | Verdict |
+|---|---|---|
+| K-B1 one tap = one grab | `spike_20260925-194207.log`: `CORE_TOUCH down` → `CORE_TOUCH up dragging=false` → `CORE_TAP` → `CHAIN_DELIVER_OK route=clipboard tap=1 url=https://vt.tiktok.com/ZSbLoParN/` — **1/1/1**, and `BUBBLE_*` = **0**, `CHAIN_ERR`/`CHAIN_STEP_ERR` = **0** | PASS |
+| K-B2 drag moves it, drag ≠ tap | `spike_20260925-194828.log`: 1500 ms swipe → `CORE_TOUCH up dragging=true` → `CORE_MOVED x=236 y=1653`; WMS frame moved `[500,1000][676,1176]` → `[236,1653][412,1829]`, `HAS_DRAWN`/`isOnScreen=true`, and **no `CORE_TAP` fired** | PASS |
+| K-B3 position memory | `hide` → `CORE_HIDE` (window `mViewVisibility=0x8`, `isVisible=false`, nothing on screen); `show` → Core returns at the **dragged** `[236,1653]`, not the original; after a full service rebind the new process logged `CORE_ATTACH x=236 y=1653` | PASS |
+| K-B4 authoritative bounds | WMS: `mAttrs={(500,1000)(176x176) ty=2032}` + `CORE_ATTACH x=500 y=1000 size=176px size_dp=64 touchable=1`; the predicted box held 2 099 core-coloured px (0 before the service was re-armed) and the disc renders in `test_out/core_live_crop.png` | PASS |
+| K-B5 on-screen/clamped | Dragged Core renders fully inside the display in `test_out/after_drag_crop.png` | PASS |
+
+`handoff=false` stayed in effect for the whole run (each bind proved
+`SERVICE_CONNECTED sdk=33 handoff=false`), so the tap chain was exercised without automatic handoff —
+as intended, `handoff` gates the hand-off, not the tap.
+
+**Known issue, not fixed by this release — the vivo force-stop.** This ROM still kills the process
+and wipes `enabled_accessibility_services` back to `null` with no crash marker and no Java exception.
+Three measured runs this session: **150 s**, **210 s**, and **5 s** of uptime
+(`test_out/kill_analysis/run{1,2,3}.log`), so it is not a fixed two-minute timer. The Core recovers
+cleanly every time — re-arming via `tools/fetch_diag.ps1 -Arm` rebinds, re-attaches and restores the
+saved position — but the sample is still too small to call the platform win, and the user-side
+exemption walkthrough (Phase E) is still owed. The 10-minute idle-cost result in the previous entry
+carries the same caveat for the same reason.
+
+**Build + tests (2026-09-25).** `:app:testDebugUnitTest --rerun-tasks` = **BUILD SUCCESSFUL**,
+83/83 tasks executed, **26 tests / 0 failures / 0 errors** (`CoreLookTest` 11, `CoreMarkSpecTest` 7,
+`MediaUrlTest` 7, `ExampleUnitTest` 1). Device left **disarmed**: a11y binding deleted,
+`accessibility_enabled=0`, process stopped, `spike_config.properties` = `handoff=false`.
+
+## Unreleased — V3.3 (in progress)
+
+_(nothing yet)_
+
 ## Released
 
 | Version | Code | Highlights |
 |---|---|---|
+| **3.2.0** | 48 | **The Fetcher (Downi Core) — Phase A + B, accepted on device.** The Core is live, touchable and persistent: a `TYPE_ACCESSIBILITY_OVERLAY` window drawing idle / detected / pressed / dragging / snapped / progress / paused / resuming / completing / complete / failed at 48/56/64 dp, wearing the **design-sheet-2 identity mark** (glossy teal folded-ribbon chevron, lifted pixel-exact by `tools/core_mark_from_sheet.py` — never redrawn, never re-traced, and no longer wearing the app's speed-D icon). One tap on the Core now fetches: on the vivo V2058 / Android 13 / TikTok a single tap produced exactly `1 × CORE_TOUCH down → 1 × CORE_TOUCH up → 1 × CORE_TAP → 1 × CHAIN_DELIVER_OK route=clipboard tap=1` with **zero** `BUBBLE_*` events and zero chain errors. Drag moves it and never fires a grab (`dragging=true` + `CORE_MOVED`, no `CORE_TAP`); hide/show and a full service rebind both restore the saved position, which survives process death. The Core is drawn once and only short transitions animate — **frames drawn +0, no wake locks** while idle. `handoff=false` is the default and is proven live on every bind, so nothing auto-downloads: the tap is the whole UX. Known and not fixed here: this vivo ROM still force-stops the process and wipes the accessibility binding (measured at 150 s / 210 s / 5 s across three runs); the Core re-attaches and restores position on every re-arm, and the user-side exemption walkthrough is owed |
+| **3.1.2** | 47 | **The Stay-Put Release.** Share → DOWNI while DOWNI sits in recents no longer rips you out of TikTok/YouTube/Instagram into the DOWNI app: the invisible DropActivity now lives in its own throwaway task (`taskAffinity=""`) and removes that task on the way out (`finishAndRemoveTask`), so warm shares behave exactly like cold ones — toast, silent background grab, you never leave the platform app (found + confirmed fixed on-device). DowniDrop failures now diagnose themselves: a failed grab writes its plain-language reason onto the in-app failed card and parks the raw engine text in `dropLastError`, returned by `getDropJobs().lastError` — the "fails twice, works on the 3rd try" report can now be named from the app itself, no PC or cable needed.
 | **3.1.2** | 47 | **The Stay-Put Release.** Share → DOWNI while DOWNI sits in recents no longer rips you out of TikTok/YouTube/Instagram into the DOWNI app: the invisible DropActivity now lives in its own throwaway task (`taskAffinity=""`) and removes that task on the way out (`finishAndRemoveTask`), so warm shares behave exactly like cold ones — toast, silent background grab, you never leave the platform app (found + confirmed fixed on-device). DowniDrop failures now diagnose themselves: a failed grab writes its plain-language reason onto the in-app failed card and parks the raw engine text in `dropLastError`, returned by `getDropJobs().lastError` — the "fails twice, works on the 3rd try" report can now be named from the app itself, no adb needed. |
 | **3.1.1** | 46 | **The Truth Release.** Notifications finally match reality: live rows carry real % · size · speed · ETA, background Share → DOWNI grabs show up inside the app (Grab + Queue tabs) with working Cancel, the "Saved" alert fires only on real completion, tapping any notification lands on the Queue, and a one-time dismissible hint card offers notification permission only when it is actually off. New: the Vault live-refreshes when a grab lands while you watch it (keyed diff, only the new card animates). Job-card Cancel buttons get full 44dp tap targets, live numbers leave the 10px floor. Copy hygiene: raw engine text becomes plain reasons ("That link isn't a video." / "Can't reach the network — try again."), non-video links are rejected honestly at the Inspector, user cancels show a neutral "Grab canceled" instead of a scary failure, and logcat gains DOWNI breadcrumbs. Finished background-grab cards clear themselves a few seconds after landing (defect N8). One grab now shows exactly one notification row (defect N10): the foreground slot has a single owner, a finishing, failing or cancelled grab releases it and hands it to the next live grab, and progress ticks only ever write to the owning row — so a grab can no longer post two copies of itself, and a second concurrent grab gets its own row instead. A grab that no longer exists can no longer be shown as live (defect N11): killing the app mid-grab used to leave a frozen "running" card — and an ACTIVE count plus Queue badge — for a grab that was gone, so live snapshot entries now expire on liveness (the service's own live-job list) instead of never, while finished/failed entries keep their short age window. Share → DOWNI is always instant — the Instant/Ask-quality toggle is retired (owner ruling; the Inspector stays for in-app picks). Also fixes the stale version fallback (defect C). Queue accounting is honest (defect N9): "MB grabbed" and the history list now include the grabs that finished while the app was shut — the service keeps its own ledger — and every completion reports the real size of the file that landed. Two more truth fixes from the device pass: a finished grab can no longer be counted as running (defect N12) — the 20 s "Saved" card is no longer counted in the ACTIVE tile or the Queue badge dot, so nothing lights up while the service is already stopped — and "MB grabbed" no longer sits a grab behind (defect N13): the service's ledger is folded in the moment a grab completes, not only on the next app start. |
 | **3.1.0** | 45 | **The Polish Release.** DowniDrop 2.0: Share → DOWNI grabs instantly in the background again (invisible DropActivity revived from the v2.6.4 golden era, self-starting engine — no app warm-up needed, per-platform quality memory honored headless, Cancel button on the progress notification, rich saved/failed notifications with tap-to-retry) — with an "Ask quality first" toggle in Settings for the v3.0 Inspector flow. Vault blink fixed at the root: keyed-DOM reconciliation (cards are created once and only ever moved/added/removed — never rebuilt), in-place selection toggles, no-op refresh detection, 200ms search debounce, single-card new-arrival animation. Also folds in v3.0.4 (DOWNI-only Vault folders) |

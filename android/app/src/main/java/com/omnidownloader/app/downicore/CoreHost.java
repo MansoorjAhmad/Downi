@@ -20,8 +20,8 @@ import com.omnidownloader.app.R;
 
 /**
  * V3.2 Downi Core — the face. One view, drawn in code (no layout XML), hosted by
- * {@link DowniCore}. Phase A renders the visual states only: no touch handling, no detection,
- * no download path — and its window is NOT_TOUCHABLE, so it cannot swallow a tap.
+ * {@link DowniCore}. The approved visual states and Phase B interaction share this view; the
+ * service binds detection and job state around it.
  *
  * The mark is the **Core's own identity mark from design sheet 2** — the glossy teal
  * "folded ribbon chevron" — lifted pixel-exact out of the owner's sheet by

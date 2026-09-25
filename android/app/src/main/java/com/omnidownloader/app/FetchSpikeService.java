@@ -137,9 +137,7 @@ public class FetchSpikeService extends AccessibilityService {
         return true;
     }
 
-    // Phase 1 (owner ruling 2026-09-25): the Fetcher's face is the floating bubble.
-    // The chain is only what happens *behind* a bubble tap.
-    private DowniBubble bubble;
+    // V3.2 Downi Core is the live Fetcher face. The resolver remains plumbing behind one tap.
     private boolean chainRunning;
     private int sheetSwipes;                         // platform-sheet scrolls used by this run
     private static final int MAX_SHEET_SWIPES = 2;
@@ -152,12 +150,16 @@ public class FetchSpikeService extends AccessibilityService {
     private boolean fgsArmed;
     private int fgsTries;
 
-    // V3.2 Downi Core (owner-approved plan 2026-09-25) — Phase A is the shell and the visual
-    // states: no interaction, no detection, no download path. It is driven from the debug
-    // channel (fetch-spike/core.cmd) and its window is NOT_TOUCHABLE, so it cannot take a tap.
+    // V3.2 Downi Core — approved shell + Phase B interaction, now the production-facing control.
     private DowniCore core;
+    private Boolean coreManualVisibility;         // debug show/hide; null = follow target app
     private final DowniCore.Listener coreListener = new DowniCore.Listener() {
         @Override public void onCoreLog(String msg) { log(msg); }
+        @Override public void onCoreTap() {
+            try { FetchSpikeService.this.onCoreTap(); }
+            catch (Throwable t) { log("CORE_TAP_ERR " + t); chainReset(); }
+        }
+        @Override public void onCoreMoved(int x, int y) { log("CORE_MOVED x=" + x + " y=" + y); }
     };
 
     // Reads fetch-spike/core.cmd — the Core's Phase A command channel:
@@ -169,26 +171,11 @@ public class FetchSpikeService extends AccessibilityService {
         }
     };
 
-    private final DowniBubble.Listener bubbleListener = new DowniBubble.Listener() {
-        // NB: must be qualified. An unqualified onBubbleTap() here resolves to this
-        // anonymous class's own method — infinite recursion, StackOverflowError on the
-        // first tap (found on device 2026-09-25, crash buffer).
-        @Override public void onBubbleTap() {
-            // A throwable escaping a View callback kills the whole process — that is exactly how
-            // the first tap died on device 2026-09-25 (StackOverflowError in this listener). The
-            // whole tap path is fenced now: a bug can cost one run, never the service.
-            try { FetchSpikeService.this.onBubbleTap(); }
-            catch (Throwable t) { log("BUBBLE_TAP_ERR " + t); chainReset(); }
-        }
-        @Override public void onBubbleMoved(int x, int y) { log("BUBBLE_MOVED x=" + x + " y=" + y); }
-        @Override public void onBubbleLog(String msg) { log(msg); }
-    };
-
-    // Tracks the foreground package so the bubble follows IG/TikTok even when no
-    // accessibility event fires (service switched on while the platform is already open).
-    private final Runnable bubblePoll = new Runnable() {
+    // Tracks the foreground package so the Core follows IG/TikTok even when no accessibility
+    // event fires (service switched on while the platform is already open).
+    private final Runnable coreTickPoll = new Runnable() {
         @Override public void run() {
-            try { bubbleTick(); } catch (Throwable t) { log("BUBBLE_TICK_ERR " + t); }
+            try { coreTick(); } catch (Throwable t) { log("CORE_TICK_ERR " + t); }
             main.postDelayed(this, 900);
         }
     };
@@ -217,7 +204,7 @@ public class FetchSpikeService extends AccessibilityService {
                         + " heap_mb=" + usedMb + "/" + maxMb
                         + " session=" + (sessionPkg == null ? "-" : sessionPkg)
                         + " dumps=" + dumpCount + " chain=" + chainRunning
-                        + " bubble=" + (bubble != null && bubble.isShown())
+                        + " core=" + (core != null && core.isShown())
                         + " fgs=" + fgsArmed + "/" + fgsTries);
             } catch (Throwable t) {
                 log("HEARTBEAT_ERR " + t);
@@ -249,16 +236,12 @@ public class FetchSpikeService extends AccessibilityService {
         log("CHAIN test armed: write fetch-spike/chain.cmd (dry|click) via adb");
         main.postDelayed(chainPoll, 2000);
 
-        // Phase 1: the bubble the owner asked for — it lives on top of IG/TikTok.
-        bubble = new DowniBubble(this, bubbleListener);
-        main.postDelayed(bubblePoll, 1200);
-        log("BUBBLE_READY window=TYPE_ACCESSIBILITY_OVERLAY tap=runs the chain behind the scenes");
-
-        // V3.2 Core (Phase A): the shell exists but stays invisible until the debug channel says
-        // `show`. Nothing about it touches detection, interaction or downloads yet.
+        // The approved Core is now the live control over IG/TikTok. The legacy spike bubble is
+        // no longer instantiated; its proven tap resolver remains unchanged underneath.
         core = new DowniCore(this, coreListener);
+        main.postDelayed(coreTickPoll, 1200);
         main.postDelayed(corePoll, 1500);
-        log("CORE_READY states=" + CoreStates.list() + " cmd=fetch-spike/core.cmd");
+        log("CORE_READY live=true window=TYPE_ACCESSIBILITY_OVERLAY states=" + CoreStates.list());
 
         // Death-hunt forensics: a heartbeat whose absence we can measure.
         connectedAt = SystemClock.elapsedRealtime();
@@ -312,8 +295,7 @@ public class FetchSpikeService extends AccessibilityService {
     @Override
     public void onInterrupt() {
         log("INTERRUPT");
-        if (bubble != null) bubble.hide();   // no bubble left behind when the service stops
-        if (core != null) core.hide();       // neither the Core
+        if (core != null) core.hide();       // no Core left behind when the service stops
     }
 
     /**
@@ -325,7 +307,6 @@ public class FetchSpikeService extends AccessibilityService {
     public boolean onUnbind(Intent intent) {
         log("SERVICE_UNBIND");
         disarmForeground();
-        if (bubble != null) bubble.destroy();
         if (core != null) core.destroy();
         return super.onUnbind(intent);
     }
@@ -497,9 +478,9 @@ public class FetchSpikeService extends AccessibilityService {
         }
     }
 
-    // ---------- Phase 1: the bubble (owner ruling 2026-09-25) ----------
-    // The Fetcher's face: a floating DOWNI control over IG/TikTok. A tap runs the
-    // Phase 0.5 chain *behind* the scenes — the owner never drives a share sheet.
+    // ---------- live Downi Core + tap resolver ----------
+    // The Fetcher's face: a floating DOWNI Core over IG/TikTok. A tap runs the
+    // resolver *behind* the scenes — the owner never drives a share sheet.
 
     private String foregroundPkg() {
         try {
@@ -509,60 +490,52 @@ public class FetchSpikeService extends AccessibilityService {
         return null;
     }
 
-    private void bubbleTick() {
-        if (bubble == null) return;
+    private void coreTick() {
+        if (core == null) return;
         String pkg = foregroundPkg();
         if (pkg == null) pkg = sessionPkg;
         boolean onTarget = pkg != null && TARGETS.contains(pkg);
-        // Session tracking must not depend on a window event alone: a service switched on
-        // while IG/TikTok is already open never sees one, so the bubble would show while
-        // unable to act ("no session" on every tap — device 2026-09-25).
         if (onTarget && sessionPkg == null) {
             startSession(pkg);
         } else if (!onTarget && sessionPkg != null && !chainRunning
                 && pkg != null && !pkg.equals(getPackageName())) {
             endSession("poll:" + pkg);
         }
-        boolean keep = (onTarget && sessionPkg != null) || chainRunning;  // never a fake armed state
-        if (keep && !bubble.isShown()) {
-            bubble.show();
-            log("BUBBLE_SHOW pkg=" + pkg + " on_target=" + onTarget);
-            // A visible overlay window is the strongest "user can see us" state we can hold, so
-            // this is also the most reliable moment to (re)take the foreground (see armForeground).
+        boolean followTarget = (onTarget && sessionPkg != null) || chainRunning;
+        boolean keep = coreManualVisibility != null ? coreManualVisibility : followTarget;
+        if (keep && !core.isShown()) {
+            core.show();
+            log("CORE_LIVE_SHOW pkg=" + pkg + " on_target=" + onTarget);
             if (!fgsArmed) armForeground();
-        } else if (!keep && bubble.isShown()) {
-            bubble.hide();
-            log("BUBBLE_HIDE pkg=" + pkg);
+        } else if (!keep && core.isShown()) {
+            core.hide();
+            core.setState(CoreStates.IDLE);
+            log("CORE_LIVE_HIDE pkg=" + pkg);
         }
     }
 
     /**
      * The owner's tap — the only thing that ever starts a download (ruling 2026-09-25 ~18:20).
-     * DOWNI resolves the link behind this tap (invisible to the owner: no share sheet to DOWNI, no
-     * Drop, no clipboard hand-off by hand) and hands it to the engine, which downloads in the
-     * background while the owner keeps watching.
+     * DOWNI resolves the link behind this tap and hands it to the existing engine.
      */
-    private void onBubbleTap() {
-        if (sessionPkg == null) { log("BUBBLE_TAP_NO_SESSION open IG/TikTok on a video first"); return; }
-        if (chainRunning) { log("BUBBLE_TAP_BUSY ignored"); return; }
-        log("BUBBLE_TAP session=" + sessionPkg);
+    private void onCoreTap() {
+        if (sessionPkg == null) { log("CORE_TAP_NO_SESSION open IG/TikTok first"); return; }
+        if (chainRunning) { log("CORE_TAP_BUSY ignored"); return; }
+        log("CORE_TAP session=" + sessionPkg);
         chainRunning = true;
         sheetSwipes = 0;
-        if (bubble != null) {
-            bubble.setState(DowniBubble.STATE_BUSY);
-            bubble.setInteractive(false);   // DOWNI's own taps must reach the platform app
-        }
+        if (core != null) core.setInteractive(false);  // platform automation owns touch now
         try { runChain(true); }
         catch (Throwable t) { log("CHAIN_ERR " + t); chainReset(); }
     }
 
-    /** Ends a run: bubble idle and touchable again. Called on every exit path. */
+    /** Ends a resolver run; the Core is neutral and touchable again. */
     private void chainReset() {
         chainRunning = false;
         chainDelivered = false;             // each run gets its own one-delivery budget (D-a)
-        if (bubble != null) {
-            bubble.setState(DowniBubble.STATE_IDLE);
-            bubble.setInteractive(true);
+        if (core != null) {
+            core.setState(CoreStates.IDLE);
+            core.setInteractive(true);
         }
     }
 
@@ -570,7 +543,7 @@ public class FetchSpikeService extends AccessibilityService {
      * Every chain step is posted to the main looper — and an uncaught throwable in one of them
      * takes the whole process down with it, which is exactly how the first tap died on device
      * 2026-09-25 (StackOverflowError inside a View callback). Steps go through here now, so a
-     * failed step ends its run instead of killing the bubble and the service with it.
+     * failed step ends its run instead of killing the Core and the service with it.
      */
     private void postStep(final Runnable step, long delayMs) {
         main.postDelayed(new Runnable() {
@@ -581,7 +554,7 @@ public class FetchSpikeService extends AccessibilityService {
         }, delayMs);
     }
 
-    /** True for nodes from this app's own overlay (the bubble) — never a click candidate. */
+    /** True for nodes from our own overlay (the Core) — never a click candidate. */
     private boolean isOurs(AccessibilityNodeInfo n) {
         try {
             CharSequence p = n.getPackageName();
@@ -664,8 +637,8 @@ public class FetchSpikeService extends AccessibilityService {
         String lower = cmd.toLowerCase(Locale.US);
         String[] parts = lower.split("\\s+");
         try {
-            if (lower.equals("show")) { core.show(); return; }
-            if (lower.equals("hide")) { core.hide(); return; }
+            if (lower.equals("show")) { coreManualVisibility = Boolean.TRUE; core.show(); return; }
+            if (lower.equals("hide")) { coreManualVisibility = Boolean.FALSE; core.hide(); return; }
             if (lower.equals("list")) { log("CORE_STATES " + CoreStates.list()); return; }
             if (parts.length >= 2 && parts[0].equals("size")) {
                 core.setSizeDp(Integer.parseInt(parts[1]));
@@ -905,12 +878,11 @@ public class FetchSpikeService extends AccessibilityService {
         logWindows("CHAIN_DONE");
 
         // The platform's own "Copy link" has just put the real deep link on the clipboard.
-        // Android 10+ refuses clipboard reads to apps that are not in focus, so the bubble
-        // (our own window) is briefly made focusable, then restored. First working
-        // SourceResolver: chain -> clipboard -> existing pipeline.
+        // Android 10+ refuses clipboard reads to apps that are not in focus, so the Core
+        // is briefly made focusable, then restored.
         if (chainClickedCopy && !chainDelivered) {
             clipTries = 0;
-            if (bubble != null) bubble.setFocusable(true);
+            if (core != null) core.setFocusable(true);
             postStep(readClipAndPipe, 500);
             // Hold focus for the whole retry budget, then always give it back — a permanently
             // focusable bubble would eat the platform's back key and its own touches.
@@ -927,8 +899,8 @@ public class FetchSpikeService extends AccessibilityService {
             // cause is focus: make-focusable is not focused, and Android 10+ hands the clipboard only
             // to an app that holds focus. So each attempt asks for focus and *reports* whether it got
             // it, and the read is retried while the copy settles.
-            if (bubble != null) { bubble.setFocusable(true); bubble.requestFocus(); }
-            boolean focus = bubble != null && bubble.hasWindowFocus();
+            if (core != null) { core.setFocusable(true); core.requestFocus(); }
+            boolean focus = core != null && core.hasWindowFocus();
             String url = readClipboardText();
             log("CHAIN_CLIP_TRY n=" + (clipTries + 1) + "/" + MAX_CLIP_TRIES
                     + " focus=" + focus + " got=" + (url == null ? "null" : "yes"));
@@ -954,7 +926,7 @@ public class FetchSpikeService extends AccessibilityService {
     };
 
     private final Runnable releaseFocus = new Runnable() {
-        @Override public void run() { if (bubble != null) bubble.setFocusable(false); }
+        @Override public void run() { if (core != null) core.setFocusable(false); }
     };
 
     /** The whole point of the chain: turn DOWNI's taps into the video's real URL. */
@@ -994,7 +966,7 @@ public class FetchSpikeService extends AccessibilityService {
     private void collectButtons(AccessibilityNodeInfo node, ArrayList<AccessibilityNodeInfo> out,
                                 Counter c, int depth) {
         if (node == null || c.nodes >= MAX_NODES || depth > MAX_DEPTH || out.size() >= 50) return;
-        if (isOurs(node)) return;             // the bubble is not a platform button
+        if (isOurs(node)) return;             // the Core is not a platform button
         c.nodes++;
         if (node.isClickable() && !nodeText(node).isEmpty()) out.add(node);
         for (int i = 0; i < node.getChildCount(); i++) {
@@ -1155,7 +1127,7 @@ public class FetchSpikeService extends AccessibilityService {
                     : new Notification.Builder(this);
             Notification n = b.setSmallIcon(R.drawable.ic_tile_grab)
                     .setContentTitle("DOWNI Fetcher is ready")
-                    .setContentText("Tap the bubble on an Instagram or TikTok video")
+                    .setContentText("Tap the Core on an Instagram or TikTok video")
                     .setContentIntent(pi)
                     .setOngoing(true)
                     .setPriority(Notification.PRIORITY_MIN)
@@ -1228,11 +1200,10 @@ public class FetchSpikeService extends AccessibilityService {
     public void onDestroy() {
         log("SERVICE_DESTROY");
         main.removeCallbacks(chainPoll);
-        main.removeCallbacks(bubblePoll);
+        main.removeCallbacks(coreTickPoll);
         main.removeCallbacks(heartbeat);
         main.removeCallbacks(corePoll);
         disarmForeground();
-        if (bubble != null) bubble.destroy();
         if (core != null) core.destroy();
         closing = true;
         outbox.offer(POISON);
