@@ -119,6 +119,8 @@ public class FetchSpikeService extends AccessibilityService {
     // Phase 0.5 chain test: true while the last chain click was "Copy link"
     // (so chainStep3 can close the platform share panel afterwards).
     private boolean chainClickedCopy;
+    /** True once this run has confirmed the platform share sheet is open (panel must be closed). */
+    private boolean chainSheetNeedsClose;
 
     /**
      * Defect D-a (found on device 2026-09-25): one tap could deliver the SAME url **twice**. Two
@@ -147,6 +149,7 @@ public class FetchSpikeService extends AccessibilityService {
     private int sheetSwipes;                         // platform-sheet scrolls used by this run
     private static final int MAX_SHEET_SWIPES = 2;
     private int sheetWaits;                          // re-scans while the sheet is still animating
+    private int sheetScans;                          // sheet-tree fast-lane retries (IG only)
     private static final int MAX_SHEET_WAITS = 1;
     // D-e (2026-09-25): the clipboard read is a *race* — our window must actually hold focus, and
     // setFocusable(true) alone does not grant it. So the read is retried a few times behind the tap.
@@ -796,8 +799,10 @@ public class FetchSpikeService extends AccessibilityService {
         chainRunning = true;
         chainDelivered = false;
         chainClickedCopy = false;
+        chainSheetNeedsClose = false;
         sheetSwipes = 0;
         sheetWaits = 0;
+        sheetScans = 0;
         runGen++;
         if (core != null) {
             core.setFocusable(false);          // clean slate; this run re-focuses at its own step 3
@@ -1067,8 +1072,27 @@ public class FetchSpikeService extends AccessibilityService {
     private void waitShareSurface(final int attempt) {
         if (!chainRunning) return;               // the run ended under us
         if (shareSurfaceOpen()) {
-            log("CHAIN_SURFACE_OPEN after_ms=" + (300 + attempt * 250));
-            chainStep2();
+            chainSheetNeedsClose = true;         // a sheet is up — somebody must close it
+            // The window opens BEFORE its content loads (device 2026-09-26 08:57: TikTok's
+            // sheet tree was still showing feed rows at +80 ms, and an early scan read the
+            // feed instead of the sheet -> no_copy_link). Wait for the sheet's own content:
+            // a copy-link candidate anywhere in the surface/platform trees — with a deadline.
+            ArrayList<AccessibilityNodeInfo> copyProbe = new ArrayList<>();
+            collectCandidates(shareSurfaceRoot(), new ArrayList<AccessibilityNodeInfo>(),
+                    copyProbe, new ArrayList<AccessibilityNodeInfo>(), new Counter(), 0);
+            collectCandidates(pickShareRoot("CHAIN_CONTENT_PROBE", false), new ArrayList<AccessibilityNodeInfo>(),
+                    copyProbe, new ArrayList<AccessibilityNodeInfo>(), new Counter(), 0);
+            if (!copyProbe.isEmpty()) {
+                log("CHAIN_SURFACE_OPEN after_ms=" + (300 + attempt * 250) + " content=ready");
+                chainStep2();
+                return;
+            }
+            if (attempt >= 15) {                 // ~3.7 s total: scan anyway, scrolls take over
+                log("CHAIN_SURFACE_TIMEOUT fallback=scan");
+                chainStep2();
+                return;
+            }
+            postStep(new Runnable() { @Override public void run() { waitShareSurface(attempt + 1); } }, 250);
             return;
         }
         if (attempt >= 7) {
@@ -1103,6 +1127,31 @@ public class FetchSpikeService extends AccessibilityService {
         // Drop's territory, and presenting it as the Fetcher is what the owner rejected. The one
         // target here is the platform's own **Copy link**: DOWNI reads the link it just copied and
         // starts the download. Nothing is shared with anyone, and nothing downloads without a tap.
+        //
+        // THE SHEET-TREE FAST LANE (measured 2026-09-26 08:41): on Instagram the OPEN SHEET's own
+        // window tree holds the reel's page URL (quiet-watch dumps are 21/21 clean, but sheet-time
+        // dumps carried it). When it is here, deliver straight from the sheet — skipping the
+        // copy-link click AND the focus/clipboard dance saves ~1.5-2 s and one fragile step.
+        // The sheet gets its BACK press before delivery; nothing else changes.
+        java.util.ArrayList<String> sheetUrls = corpusUrls(root);
+        for (String cand : sheetUrls) {
+            if (MediaUrl.reason(cand) != null) continue;
+            log("CHAIN_SHEET_TREE_DELIVER url=" + clip(cand, 200));
+            chainSheetNeedsClose = false;
+            log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK) + " why=sheet_tree_route");
+            deliverByTap(cand, "sheet_tree");
+            chainReset();
+            return;
+        }
+        // Instagram only: give the sheet's web content one extra beat (350 ms) to expose its URL
+        // before falling to the copy-link click — the tree lane saves the click AND the focus
+        // dance. TikTok skips this entirely (its sheet tree never holds a URL).
+        if ("instagram".equals(sessionShort()) && shareSurfaceOpen() && sheetScans < 1) {
+            sheetScans++;
+            log("CHAIN_SHEET_TREE_RETRY n=" + sheetScans + " why=awaiting_sheet_webview");
+            postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 350);
+            return;
+        }
         AccessibilityNodeInfo c = firstClickable(copy);
         if (c == null) {
             // IG's sheet lists DM targets first; its own action rows ("share", "copy link")
@@ -1136,6 +1185,7 @@ public class FetchSpikeService extends AccessibilityService {
             return;
         }
         chainClickedCopy = true;
+        chainSheetNeedsClose = true;
         log("CHAIN_TARGET_CLICK which=copylink text=" + clip(nodeText(c), 120)
                 + " route=" + clickNode(c));
         postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1200);
@@ -1194,6 +1244,54 @@ public class FetchSpikeService extends AccessibilityService {
         return false;
     }
 
+    /** The share surface's own window root (this ROM: com.vivo.upslide), or null when closed. */
+    private AccessibilityNodeInfo shareSurfaceRoot() {
+        try {
+            for (AccessibilityWindowInfo w : getWindows()) {
+                AccessibilityNodeInfo r;
+                try { r = w.getRoot(); } catch (Throwable t) { continue; }
+                if (r == null || r.getPackageName() == null) continue;
+                String wp = r.getPackageName().toString();
+                if (wp.equals(getPackageName()) || wp.equals("com.android.systemui")) continue;
+                if (wp.equals(sessionPkg) || TARGETS.contains(wp)) continue;
+                return r;
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    /**
+     * Media-page URLs visible in the open share surface first, then the platform app's tree.
+     * The sheet-tree fast lane's evidence source (§next-level: IG leaks the reel URL through the
+     * open sheet's window — delivering from it skips the copy-link click and the clipboard dance).
+     */
+    private java.util.ArrayList<String> corpusUrls(AccessibilityNodeInfo platformRoot) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        collectUrls(shareSurfaceRoot(), out, new Counter(), 0);
+        collectUrls(platformRoot, out, new Counter(), 0);
+        return out;
+    }
+
+    private void collectUrls(AccessibilityNodeInfo node, java.util.ArrayList<String> out,
+                             Counter c, int depth) {
+        if (node == null || c.nodes >= MAX_NODES || depth > MAX_DEPTH || out.size() >= 8) return;
+        if (isOurs(node)) return;
+        c.nodes++;
+        String txt = strOrEmpty(node.getText()) + " " + strOrEmpty(node.getContentDescription());
+        if (txt.contains("http")) {
+            Matcher m = URL_P.matcher(txt);
+            while (m.find() && out.size() < 8) {
+                String u = m.group().replaceAll("[\\.,;:!?)\\]\"']+$", "");
+                if (!out.contains(u)) out.add(u);
+            }
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = null;
+            try { child = node.getChild(i); } catch (Throwable ignored) {}
+            collectUrls(child, out, c, depth + 1);
+        }
+    }
+
     // ---------- screenshots (diagnostic fallback, spike only) ----------
 
     private void maybeScreenshot(String reason) {
@@ -1250,8 +1348,9 @@ public class FetchSpikeService extends AccessibilityService {
     private void chainStep3() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         String pkg = root != null && root.getPackageName() != null ? root.getPackageName().toString() : "?";
-        if (chainClickedCopy) {
+        if (chainSheetNeedsClose) {
             log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK));
+            chainSheetNeedsClose = false;
         }
         log("CHAIN_DONE focus_pkg=" + pkg);
         logWindows("CHAIN_DONE");

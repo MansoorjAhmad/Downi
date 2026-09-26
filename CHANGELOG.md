@@ -199,6 +199,28 @@ Validated: **54 tests / 0 failures**; `:app:assembleDebug` BUILD SUCCESSFUL; ins
 prod-signed. On-device instant-tap verification pending (phone locked for the night — the ledger
 gates are JVM-proven; live proof lands with the next unlocked session).
 
+**Device session 2026-09-26 morning — the resolver learns patience, and gets faster.**
+- **Honest finding on the instant-tap premise:** during normal Reels watching, Instagram's tree
+  carried **no URL in 21/21 dumps** — the URL only appears while the share sheet is open. The
+  Wave-1 passive ledger is therefore structurally inert on fresh reels (and correctly so: it
+  falls back to the proven chain rather than guessing). The ledger stays as the confidence gate
+  for when the platform *does* leak (it auto-upgrades if a future IG version exposes URLs again).
+- **Event-driven waits verified:** the chain now polls for the share surface's real window
+  (`CHAIN_SURFACE_OPEN after_ms=300–550`) instead of sleeping 1300 ms — tap→deliver measured
+  **2.74 s** (first run under the ≤3 s C5 target) and 3.3 s on TikTok.
+- **New defect caught + fixed (TikTok, `no_copy_link`):** the sheet *window* opens before its
+  *content* loads — an early scan read the feed's buttons and failed. The wait now requires the
+  sheet's own content (a copy-link candidate present) with a ~3.7 s deadline; TikTok then
+  delivered cleanly at 3.3 s (`content=ready`, ACTION-route click).
+- **Sheet-tree fast lane shipped as opportunistic:** chainStep2 scans the share surface's own
+  window (com.vivo.upslide) plus the platform tree for a media URL and delivers straight from
+  the sheet (skipping the copy-link click and the focus dance) — but this IG build never leaks
+  the URL, so the clipboard lane remains the workhorse. Cost when silent: one 350 ms IG-only
+  retry. Auto-upgrades if the platform starts leaking again.
+- Close-panel logic split from the copy-click flag (`chainSheetNeedsClose`), so every route that
+  opens a sheet closes it — including future ones.
+54 tests / 0 failures; both platforms verified live on the V2058.
+
 ## Unreleased — V3.3 (in progress)
 
 _(nothing yet)_
