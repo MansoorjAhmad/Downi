@@ -26,6 +26,7 @@ import com.omnidownloader.app.downicore.CoreHaptics;
 import com.omnidownloader.app.downicore.CoreJobBinding;
 import com.omnidownloader.app.downicore.CoreStates;
 import com.omnidownloader.app.downicore.DowniCore;
+import com.omnidownloader.app.fetcher.ChainObserver;
 import com.omnidownloader.app.fetcher.AttentionLedger;
 import com.omnidownloader.app.fetcher.DeliveryGuard;
 import com.omnidownloader.app.fetcher.MediaUrl;
@@ -75,6 +76,29 @@ public class DowniFetcherService extends AccessibilityService {
     public static void resetCorePositionLive() {
         DowniFetcherService s = live;
         if (s != null && s.core != null) s.core.resetPosition();
+    }
+
+    /**
+     * Route health from the live service's strategy ledger (Wave 1): per platform+route
+     * recent success rates over a rolling 20-attempt window, as a JSON array for the
+     * settings card. Empty array when no Fetcher is running — honest, not a guess. Rates
+     * are session-scoped: they describe THIS process's measured reality.
+     */
+    public static org.json.JSONArray routeHealth() {
+        org.json.JSONArray out = new org.json.JSONArray();
+        DowniFetcherService s = live;
+        if (s == null) return out;
+        try {
+            for (StrategyLedger.Stat st : s.strategies.stats()) {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("platform", st.platform);
+                o.put("route", st.route);
+                o.put("rate", st.rate < 0 ? -1 : Math.round(st.rate * 100) / 100.0);
+                o.put("samples", st.samples);
+                out.put(o);
+            }
+        } catch (Throwable ignored) {}
+        return out;
     }
 
     /** The current session's profile, or null outside a target app (Wave 1: one home
@@ -162,6 +186,28 @@ public class DowniFetcherService extends AccessibilityService {
     /** Same-video rapid-retap guard (sheet 8 §5 URL matching) — see {@link DeliveryGuard}. */
     private static final long DUP_WINDOW_MS = 8_000;
     private final DeliveryGuard delivery = new DeliveryGuard(DUP_WINDOW_MS);
+
+    // Wave 1: the run narrates. The observer receives every named beat; this service's
+    // listener logs them, times the run, and fires the capture haptic at the clipboard
+    // beat (Wave 2's Reach choreography will listen to the same events from CoreHost).
+    private long runStartedAt;
+    private String runRoute;                          // the route that delivered, or null
+    private final ChainObserver observer = new ChainObserver() {
+        @Override public void onRunStarted(String platform, String routePlan, boolean interactive) {
+            log("RUN_START platform=" + platform + " plan=" + routePlan);
+        }
+        @Override public void onStep(String step, String detail) {
+            log("RUN_STEP step=" + step + (detail == null || detail.isEmpty() ? "" : " " + detail));
+        }
+        @Override public void onCaptured(String route, String url) {
+            log("RUN_CAPTURE route=" + route + " url=" + clip(url, 120));
+            if (screenOn && core != null && core.isShown()) CoreHaptics.capture(DowniFetcherService.this);
+        }
+        @Override public void onRunEnded(boolean delivered, String route, long durationMs) {
+            log("RUN_END delivered=" + delivered + " route=" + (route == null ? "-" : route)
+                    + " ms=" + durationMs);
+        }
+    };
 
     // ---------- The attention model + strategy self-awareness (next-level pass) ----------
 
@@ -823,6 +869,8 @@ public class DowniFetcherService extends AccessibilityService {
         sheetWaits = 0;
         sheetScans = 0;
         runGen++;
+        runStartedAt = SystemClock.elapsedRealtime();
+        runRoute = null;
         if (core != null) {
             core.setFocusable(false);          // clean slate; this run re-focuses at its own step 3
             core.setInteractive(false);        // platform automation owns touch now
@@ -831,6 +879,16 @@ public class DowniFetcherService extends AccessibilityService {
         // rim-orbit light actually renders while the resolver works. Wave 0 audit: the run
         // never applied its own state, so the Core sat in its previous look for the whole run.
         applyCoreState();
+        // Wave 1: the run narrates. routePlan is the profile's ordered route list.
+        PlatformProfile p = profile();
+        observer.onRunStarted(sessionShort(),
+                p != null ? joinRoutes(p.routes) : "-", core != null);
+    }
+
+    private static String joinRoutes(String[] routes) {
+        StringBuilder b = new StringBuilder();
+        for (String r : routes) { if (b.length() > 0) b.append('>'); b.append(r); }
+        return b.toString();
     }
 
     /**
@@ -841,8 +899,12 @@ public class DowniFetcherService extends AccessibilityService {
      * {@link #resolverFailed}). Applying the arbiter keeps both honest.
      */
     private void chainReset() {
+        boolean delivered = chainDelivered;
+        String route = runRoute;
+        long ms = SystemClock.elapsedRealtime() - runStartedAt;
         chainRunning = false;
         chainDelivered = false;             // each run gets its own one-delivery budget (D-a)
+        observer.onRunEnded(delivered, route, ms);
         if (core != null) {
             core.setInteractive(true);
             applyCoreState();
@@ -926,6 +988,7 @@ public class DowniFetcherService extends AccessibilityService {
             DowniDownloadService.startShared(this, url);
             delivery.record(url, now);
             lastDeliveredUrl = url;
+            runRoute = route;                    // the run's narrated outcome (observer)
             recordStrategy(route, true, url);
             log("CHAIN_DELIVER_OK route=" + route + " tap=1 url=" + clip(url, 200));
             // The Core becomes the live visual representation of this job (master package §11).
@@ -1132,6 +1195,7 @@ public class DowniFetcherService extends AccessibilityService {
         if (!doClick) { log("CHAIN_DRY_DONE"); return; }
         AccessibilityNodeInfo t = firstClickable(share);
         if (t == null) { log("CHAIN_NO_SHARE_CLICK"); resolverFailed("no_share_row"); chainReset(); return; }
+        observer.onStep("share_found", "");
         log("CHAIN_SHARE_CLICK text=" + clip(nodeText(t), 120)
                 + " route=" + clickNode(t));
         // Event-driven wait (§H2): poll for the share surface's own window instead of sleeping a
@@ -1154,6 +1218,7 @@ public class DowniFetcherService extends AccessibilityService {
             collectCandidates(pickShareRoot("CHAIN_CONTENT_PROBE", false), new ArrayList<AccessibilityNodeInfo>(),
                     copyProbe, new ArrayList<AccessibilityNodeInfo>(), new Counter(), 0);
             if (!copyProbe.isEmpty()) {
+                observer.onStep("sheet_open", "after_ms=" + (300 + attempt * 250));
                 log("CHAIN_SURFACE_OPEN after_ms=" + (300 + attempt * 250) + " content=ready");
                 chainStep2();
                 return;
@@ -1207,6 +1272,7 @@ public class DowniFetcherService extends AccessibilityService {
         java.util.ArrayList<String> sheetUrls = corpusUrls(root);
         for (String cand : sheetUrls) {
             if (MediaUrl.reason(cand) != null) continue;
+            observer.onStep("sheet_tree_hit", "");
             log("CHAIN_SHEET_TREE_DELIVER url=" + clip(cand, 200));
             chainSheetNeedsClose = false;
             log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK) + " why=sheet_tree_route");
@@ -1260,6 +1326,7 @@ public class DowniFetcherService extends AccessibilityService {
         }
         chainClickedCopy = true;
         chainSheetNeedsClose = true;
+        observer.onStep("copy_link_clicked", "");
         log("CHAIN_TARGET_CLICK which=copylink text=" + clip(nodeText(c), 120)
                 + " route=" + clickNode(c));
         postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1200);
@@ -1376,6 +1443,15 @@ public class DowniFetcherService extends AccessibilityService {
         if (chainSheetNeedsClose) {
             log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK));
             chainSheetNeedsClose = false;
+            observer.onStep("panel_closed", "");
+            // Wave 1 focus-overlap experiment (D-e): ask for focus NOW, while the sheet's
+            // close animation plays, instead of at the first clipboard attempt. Android
+            // usually grants window focus within the next ~500 ms, so the first read can
+            // succeed one full attempt earlier. Idempotent with the setFocusable below.
+            if (chainClickedCopy && !chainDelivered && core != null) {
+                core.setFocusable(true);
+                core.requestFocus();
+            }
         }
         log("CHAIN_DONE focus_pkg=" + pkg);
         logWindows("CHAIN_DONE");
@@ -1435,6 +1511,7 @@ public class DowniFetcherService extends AccessibilityService {
         log("CHAIN_CLIPBOARD got=yes text=" + clip(url, 200));
         String why = MediaUrl.reason(url);      // D-b: a media page, not a bio/redirect link
         if (why == null) {
+            observer.onCaptured("clipboard", url);   // the capture beat (light tick, sheet C4)
             // The owner's tap is the trigger, so this delivers regardless of the bench gate
             // (ruling 2026-09-25: nothing auto-downloads, nothing a tap asks for is refused).
             deliverByTap(url, "clipboard");

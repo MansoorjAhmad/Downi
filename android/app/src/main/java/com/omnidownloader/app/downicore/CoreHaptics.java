@@ -13,6 +13,7 @@ import android.os.VibratorManager;
  * audio. Haptics only, and only while the Core is actually on screen (never from a pocket):
  *
  *   detected   one soft tick            "I see it"
+ *   capture    one very light tick      "got the link"  (the Reach's capture beat, sheet C4)
  *   complete   quick double tick        "yours"
  *   failed     one low, dull pulse      "it didn't work"
  *   unsupported two short dull taps     "not this kind of thing"
@@ -24,6 +25,7 @@ public final class CoreHaptics {
     private CoreHaptics() {}
 
     public static void detected(Context c)  { waveform(c, new long[]{0, 14}, new int[]{0, 120}); }
+    public static void capture(Context c)   { waveform(c, new long[]{0, 10}, new int[]{0, 140}); }
     public static void complete(Context c)  { waveform(c, new long[]{0, 12, 70, 18}, new int[]{0, 130, 0, 170}); }
     public static void failed(Context c)    { waveform(c, new long[]{0, 46}, new int[]{0, 90}); }
     public static void unsupported(Context c) { waveform(c, new long[]{0, 20, 90, 20}, new int[]{0, 90, 0, 90}); }

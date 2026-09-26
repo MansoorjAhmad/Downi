@@ -58,4 +58,29 @@ public final class StrategyLedger {
         Deque<Record> q = outcomes.get(key(platform, strategy));
         return strategy + " " + Math.round(r * 100) + "% (" + Math.round(r * q.size()) + "/" + q.size() + ")";
     }
+
+    /** One (platform, route) success rate — what the settings card and logs read (Wave 1). */
+    public static final class Stat {
+        public final String platform, route;
+        public final double rate;      // 0..1, or -1 when no data
+        public final int samples;
+        Stat(String platform, String route, double rate, int samples) {
+            this.platform = platform; this.route = route; this.rate = rate; this.samples = samples;
+        }
+    }
+
+    /** Every (platform, route) pair this ledger has seen, insertion order. */
+    public java.util.List<Stat> stats() {
+        java.util.List<Stat> out = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, Deque<Record>> e : outcomes.entrySet()) {
+            String[] parts = e.getKey().split("/", 2);
+            String platform = parts.length > 0 ? parts[0] : "?";
+            String route = parts.length > 1 ? parts[1] : "?";
+            Deque<Record> q = e.getValue();
+            int ok = 0;
+            for (Record r : q) if (r.ok) ok++;
+            out.add(new Stat(platform, route, (double) ok / q.size(), q.size()));
+        }
+        return out;
+    }
 }

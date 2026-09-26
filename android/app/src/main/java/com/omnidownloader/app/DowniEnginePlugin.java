@@ -475,6 +475,9 @@ public class DowniEnginePlugin extends Plugin {
         r.put("bytesToday", bytes);
         r.put("sizeDp", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
                 .getInt("core_size_dp", 64));
+        // Wave 1: the resolver's measured route health (session-scoped rates), rendered by
+        // the settings card in Wave 3 — the data is honest from the moment it exists.
+        r.put("routes", DowniFetcherService.routeHealth());
         call.resolve(r);
     }
 
