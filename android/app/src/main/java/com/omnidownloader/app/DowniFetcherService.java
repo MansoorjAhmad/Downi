@@ -1,7 +1,6 @@
 package com.omnidownloader.app;
 
 import android.accessibilityservice.AccessibilityService;
-import android.accessibilityservice.AccessibilityServiceInfo;
 import android.accessibilityservice.GestureDescription;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -11,16 +10,13 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.graphics.Path;
 import android.graphics.Rect;
-import android.hardware.HardwareBuffer;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
-import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -35,22 +31,14 @@ import com.omnidownloader.app.fetcher.DeliveryGuard;
 import com.omnidownloader.app.fetcher.MediaUrl;
 import com.omnidownloader.app.fetcher.StrategyLedger;
 
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Locale;
-import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.Executor;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -72,7 +60,6 @@ import java.util.regex.Pattern;
  */
 public class DowniFetcherService extends AccessibilityService {
     private static final String TAG = "DowniFetcher";
-    private static final String POISON = new String("close"); // writer queue stop marker
 
     private static final Set<String> TARGETS = new HashSet<>();
 
@@ -108,24 +95,15 @@ public class DowniFetcherService extends AccessibilityService {
     private static final long SETTLE_MS = 650;         // wait after a scroll before dumping
     private static final int MAX_NODES = 1500;         // tree walk guard
     private static final int MAX_DEPTH = 40;           // depth guard
-    private static final long LOG_CAP_BYTES = 15L * 1024 * 1024;
     private static final long HEARTBEAT_MS = 30_000;   // liveness + memory snapshot cadence
 
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final LinkedBlockingQueue<String> outbox = new LinkedBlockingQueue<>();
-    private final Executor mainExec = new Executor() {
-        @Override public void execute(Runnable r) { main.post(r); }
-    };
 
-    private Thread writer;
-    private BufferedWriter fileOut;
-    private long logBytes;
-    private volatile boolean closing;
     private long connectedAt;             // service-connect stamp, for HEARTBEAT uptime
 
     private String sessionPkg;            // non-null while a target app is foreground
     private long sessionStart;
-    private int dumpCount, sessionDumps, shotCount, step3Hits;
+    private int dumpCount, sessionDumps, step3Hits;
     private long lastDumpAt, lastScrollLogAt;
     private String lastDumpBody = "";
     private Runnable settleDump;
@@ -436,16 +414,12 @@ public class DowniFetcherService extends AccessibilityService {
                 .edit().putBoolean("wasArmed", true).apply();
         } catch (Throwable ignored) {}
 
-        // Screenshot capability is declared in XML (android:canTakeScreenshot, API 34).
-        File dir = spikeDir();
-        dir.mkdirs();
-        handoffEnabled = readHandoffGate(dir);
-        try {
-            fileOut = new BufferedWriter(new FileWriter(new File(dir, "spike_" + tsFile() + ".log")));
-        } catch (Exception e) {
-            Log.e(TAG, "cannot open spike log", e);
-        }
-        startWriter();
+        // Bench plumbing (log file, handoff gate, screenshots) lives in FetcherBench —
+        // debug builds only; a release build does no bench I/O at all. The screenshot
+        // capability itself is declared ONLY in the debug source set's a11y config.
+        File dir = FetcherBench.dir(this);
+        handoffEnabled = FetcherBench.readHandoffGate(dir);
+        FetcherBench.openLog(dir);
 
         log("=== DOWNI FETCHER (debug build: bench log local only) ===");
         log("SERVICE_CONNECTED sdk=" + Build.VERSION.SDK_INT + " handoff=" + handoffEnabled);
@@ -601,12 +575,12 @@ public class DowniFetcherService extends AccessibilityService {
     private void startSession(String pkg) {
         sessionPkg = pkg;
         sessionStart = System.currentTimeMillis();
-        dumpCount = sessionDumps = shotCount = step3Hits = 0;
+        dumpCount = sessionDumps = step3Hits = 0;
         lastDumpBody = "";
         seenUrls.clear();
         ledger.clear();                      // a new app context: attention resets
         log("SESSION_START pkg=" + pkg);
-        maybeScreenshot("session_start");
+        FetcherBench.screenshot(this, "session_start");
         // Perceived speed: the Core appears WITH the session - a target app coming to the
         // foreground triggers the visibility tick immediately instead of waiting up to 900 ms
         // for the next poll. Idempotent: coreTick only acts when something changed.
@@ -616,7 +590,7 @@ public class DowniFetcherService extends AccessibilityService {
     private void endSession(String why) {
         log("SESSION_END pkg=" + sessionPkg + " why=" + why
                 + " duration_ms=" + (System.currentTimeMillis() - sessionStart)
-                + " dumps=" + dumpCount + " step3_hits=" + step3Hits + " shots=" + shotCount);
+                + " dumps=" + dumpCount + " step3_hits=" + step3Hits);
         if (settleDump != null) main.removeCallbacks(settleDump);
         settleDump = null;
         sessionPkg = null;
@@ -667,7 +641,7 @@ public class DowniFetcherService extends AccessibilityService {
         extractAndVerdict(corpus.toString());
         feedLedger();                            // attention: what is on screen right now
         updateDetection(!signals.isEmpty());     // Phase 0 P0-2: watching signals = a video is on screen
-        if (sessionDumps == 4) maybeScreenshot("dump4");
+        if (sessionDumps == 4) FetcherBench.screenshot(this, "dump4");
     }
 
     private void walk(AccessibilityNodeInfo node, int depth, StringBuilder body,
@@ -996,9 +970,9 @@ public class DowniFetcherService extends AccessibilityService {
 
     private void pollCoreCmd() {
         if (!BuildConfig.DEBUG) return;          // Phase G: the bench channel never ships
-        File f = new File(spikeDir(), "core.cmd");
+        File f = new File(FetcherBench.dir(this), "core.cmd");
         if (!f.exists()) return;
-        String body = readSmallFile(f);
+        String body = FetcherBench.readSmallFile(f);
         //noinspection ResultOfMethodCallIgnored
         f.delete();
         if (body == null) return;
@@ -1082,9 +1056,9 @@ public class DowniFetcherService extends AccessibilityService {
 
     private void pollChainCmd() {
         if (!BuildConfig.DEBUG) return;          // Phase G: the bench channel never ships
-        File f = new File(spikeDir(), "chain.cmd");
+        File f = new File(FetcherBench.dir(this), "chain.cmd");
         if (!f.exists()) return;
-        String cmd = readSmallFile(f);
+        String cmd = FetcherBench.readSmallFile(f);
         //noinspection ResultOfMethodCallIgnored
         f.delete();
         cmd = cmd == null ? "dry" : cmd.trim().toLowerCase(Locale.US);
@@ -1388,59 +1362,9 @@ public class DowniFetcherService extends AccessibilityService {
         }
     }
 
-    // ---------- screenshots (diagnostic fallback, spike only) ----------
-
-    private void maybeScreenshot(String reason) {
-        if (!BuildConfig.DEBUG) return;          // Phase G: never in a release build
-        if (Build.VERSION.SDK_INT < 34) {
-            log("SCREENSHOT_SKIPPED reason=" + reason + " why=sdk_below_34");
-            return;
-        }
-        if (shotCount >= 6) return;
-        shotCount++;
-        try {
-            takeScreenshot(Display.DEFAULT_DISPLAY, mainExec, new TakeScreenshotCallback() {
-                @Override public void onSuccess(ScreenshotResult result) {
-                    saveShot(result, shotCount);
-                }
-                @Override public void onFailure(int error) {
-                    log("SCREENSHOT_FAIL error=" + error);
-                }
-            });
-            log("SCREENSHOT_REQUEST reason=" + reason + " n=" + shotCount);
-        } catch (Throwable t) {
-            log("SCREENSHOT_THROW reason=" + reason + " err=" + t);
-        }
-    }
-
-    private void saveShot(final ScreenshotResult result, final int n) {
-        new Thread(new Runnable() {
-            @Override public void run() {
-                HardwareBuffer hb = null;
-                Bitmap bm = null, copy = null;
-                try {
-                    File dir = new File(spikeDir(), "shots");
-                    dir.mkdirs();
-                    File f = new File(dir, "shot_" + tsFile() + "_" + n + ".png");
-                    hb = result.getHardwareBuffer();
-                    bm = Bitmap.wrapHardwareBuffer(hb, result.getColorSpace());
-                    if (bm == null) { log("SCREENSHOT_NULL_BITMAP"); return; }
-                    copy = bm.copy(Bitmap.Config.ARGB_8888, false);
-                    if (copy == null) { log("SCREENSHOT_COPY_FAIL"); return; }
-                    FileOutputStream fos = new FileOutputStream(f);
-                    copy.compress(Bitmap.CompressFormat.PNG, 100, fos);
-                    fos.close();
-                    log("SCREENSHOT_SAVED path=" + f.getName() + " ts=" + result.getTimestamp());
-                } catch (Throwable t) {
-                    log("SCREENSHOT_SAVE_FAIL " + t);
-                } finally {
-                    if (copy != null) copy.recycle();
-                    if (bm != null) bm.recycle();
-                    if (hb != null) hb.close();
-                }
-            }
-        }, "spike-shot").start();
-    }
+    // ---------- screenshots (diagnostic fallback) ----------
+    // The screenshot plumbing moved to FetcherBench (Wave 0): debug builds only,
+    // session-capped, saved under fetch-spike/shots/. The service only asks for one.
 
     private void chainStep3() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -1627,53 +1551,10 @@ public class DowniFetcherService extends AccessibilityService {
         return cs == null ? "" : cs.toString();
     }
 
-    private static String readSmallFile(File f) {
-        try {
-            InputStream in = new FileInputStream(f);
-            try {
-                byte[] buf = new byte[256];
-                int n = in.read(buf);
-                return n > 0 ? new String(buf, 0, n, "UTF-8") : "";
-            } finally { in.close(); }
-        } catch (Throwable t) { return null; }
-    }
-
-    // ---------- log plumbing (writer thread keeps event handling jank-free) ----------
-
-    private void startWriter() {
-        // Phase G: the forensic file log is a DEBUG-build instrument. Release builds keep only
-        // logcat breadcrumbs - accessibility data never gets written to disk in a release.
-        if (!BuildConfig.DEBUG) return;
-        writer = new Thread(new Runnable() {
-            @Override public void run() {
-                try {
-                    while (!closing) {
-                        String line = outbox.take();
-                        if (line == POISON) break;
-                        writeFile(line);
-                    }
-                    String extra;
-                    while ((extra = outbox.poll()) != null && extra != POISON) writeFile(extra);
-                } catch (InterruptedException ignored) {}
-            }
-        }, "spike-log-writer");
-        writer.start();
-    }
-
-    private synchronized void writeFile(String s) {
-        if (fileOut == null) return;
-        try {
-            String line = s.endsWith("\n") ? s : s + "\n";
-            if (logBytes <= LOG_CAP_BYTES) {
-                fileOut.write(line);
-                logBytes += line.length();
-                if (logBytes > LOG_CAP_BYTES) {
-                    fileOut.write("=== LOG CAP REACHED — remaining lines dropped ===\n");
-                }
-            }
-            fileOut.flush();
-        } catch (Exception ignored) {}
-    }
+    // ---------- log plumbing ----------
+    // The bench log writer (queue, thread, file, cap) lives in FetcherBench (Wave 0).
+    // The service only stamps lines; in a release build the file log does not exist at
+    // all — accessibility data never gets written to disk in a release.
 
     // ---------- foreground service: the one defence a vendor power manager respects ----------
 
@@ -1745,30 +1626,10 @@ public class DowniFetcherService extends AccessibilityService {
     private void log(String msg) {
         String line = ts() + " " + msg;
         Log.i(TAG, line);
-        if (BuildConfig.DEBUG) outbox.offer(line);   // no queue growth when the writer is off
+        FetcherBench.logRaw(line);                  // no-op in release; no queue growth there
     }
 
     // ---------- helpers ----------
-
-    private File spikeDir() {
-        File base = getExternalFilesDir(null);
-        if (base == null) base = getFilesDir();
-        return new File(base, "fetch-spike");
-    }
-
-    private boolean readHandoffGate(File dir) {
-        if (!BuildConfig.DEBUG) return false;    // Phase G: the bench gate is a debug instrument
-        try {
-            File cfg = new File(dir, "spike_config.properties");
-            if (!cfg.exists()) return false;
-            Properties p = new Properties();
-            InputStream in = new FileInputStream(cfg);
-            try { p.load(in); } finally { in.close(); }
-            return "true".equalsIgnoreCase(p.getProperty("handoff", "false"));
-        } catch (Throwable t) {
-            return false;
-        }
-    }
 
     private static String classNameOf(AccessibilityEvent e) {
         return e.getClassName() != null ? e.getClassName().toString() : "?";
@@ -1781,10 +1642,6 @@ public class DowniFetcherService extends AccessibilityService {
 
     private static String ts() {
         return new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date());
-    }
-
-    private static String tsFile() {
-        return new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
     }
 
     @Override
@@ -1801,10 +1658,7 @@ public class DowniFetcherService extends AccessibilityService {
         pollersArmed = false;               // a fresh bind after destroy must re-post the loops
         disarmForeground();
         if (core != null) core.destroy();
-        closing = true;
-        outbox.offer(POISON);
-        try { if (writer != null) writer.join(300); } catch (InterruptedException ignored) {}
-        try { if (fileOut != null) fileOut.close(); } catch (Exception ignored) {}
+        FetcherBench.closeLog();            // flush, poison, join and close the bench log
         super.onDestroy();
     }
 }
