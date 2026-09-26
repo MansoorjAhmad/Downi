@@ -27,6 +27,7 @@ import com.omnidownloader.app.downicore.CoreJobBinding;
 import com.omnidownloader.app.downicore.CoreStates;
 import com.omnidownloader.app.downicore.DowniCore;
 import com.omnidownloader.app.fetcher.ChainObserver;
+import com.omnidownloader.app.fetcher.Route;
 import com.omnidownloader.app.fetcher.AttentionLedger;
 import com.omnidownloader.app.fetcher.DeliveryGuard;
 import com.omnidownloader.app.fetcher.MediaUrl;
@@ -191,6 +192,7 @@ public class DowniFetcherService extends AccessibilityService {
     // listener logs them, times the run, and fires the capture haptic at the clipboard
     // beat (Wave 2's Reach choreography will listen to the same events from CoreHost).
     private long runStartedAt;
+    private boolean runEndPending;                    // clipboard window still owns the run's end
     private String runRoute;                          // the route that delivered, or null
     private final ChainObserver observer = new ChainObserver() {
         @Override public void onRunStarted(String platform, String routePlan, boolean interactive) {
@@ -280,8 +282,11 @@ public class DowniFetcherService extends AccessibilityService {
 
     private void recordStrategy(String route, boolean ok, String url) {
         String platform = platformOf(url);
-        strategies.record(platform, route, ok, SystemClock.elapsedRealtime());
-        log("STRATEGY " + platform + " " + strategies.summary(platform, route));
+        // Wave 1: the ledger speaks the Route vocabulary. The clipboard MECHANISM delivers
+        // the copy_link ROUTE (logs keep `route=clipboard` for history continuity).
+        String routeKey = "clipboard".equals(route) ? Route.COPY_LINK : route;
+        strategies.record(platform, routeKey, ok, SystemClock.elapsedRealtime());
+        log("STRATEGY " + platform + " " + strategies.summary(platform, routeKey));
     }
 
     // Screen-off discipline (§E2): nothing polls, dumps, or shows while the screen is dark.
@@ -871,6 +876,7 @@ public class DowniFetcherService extends AccessibilityService {
         runGen++;
         runStartedAt = SystemClock.elapsedRealtime();
         runRoute = null;
+        runEndPending = false;              // a newer run owns its own narration (D-i staleness)
         if (core != null) {
             core.setFocusable(false);          // clean slate; this run re-focuses at its own step 3
             core.setInteractive(false);        // platform automation owns touch now
@@ -904,11 +910,28 @@ public class DowniFetcherService extends AccessibilityService {
         long ms = SystemClock.elapsedRealtime() - runStartedAt;
         chainRunning = false;
         chainDelivered = false;             // each run gets its own one-delivery budget (D-a)
-        observer.onRunEnded(delivered, route, ms);
+        // Wave 1 honesty fix (found on device, 17:53 run): the clipboard retry window OUTLIVES
+        // the run (D-i's design), so ending the narration here said "delivered=false" while the
+        // async attempts were still about to deliver — the log contradicted reality. When the
+        // copy-link path is still pending, the run's TRUE end is the clipboard attempts'
+        // terminal branch (delivered, rejected, or exhausted) — those fire the end instead.
+        if (chainClickedCopy && !delivered) {
+            runEndPending = true;
+        } else {
+            observer.onRunEnded(delivered, route, ms);
+        }
         if (core != null) {
             core.setInteractive(true);
             applyCoreState();
         }
+    }
+
+    /** Fires the pending run end once — the async clipboard window's true outcome. */
+    private void endPendingRun(boolean delivered) {
+        if (!runEndPending) return;
+        runEndPending = false;
+        observer.onRunEnded(delivered, delivered ? runRoute : null,
+                SystemClock.elapsedRealtime() - runStartedAt);
     }
 
     /**
@@ -1506,6 +1529,7 @@ public class DowniFetcherService extends AccessibilityService {
             strategies.record(sessionShort(), "clipboard", false, SystemClock.elapsedRealtime());
             log("STRATEGY " + sessionShort() + " " + strategies.summary(sessionShort(), "clipboard"));
             resolverFailed("clipboard_empty");
+            endPendingRun(false);           // the async window's true outcome (Wave 1 honesty)
             return;
         }
         log("CHAIN_CLIPBOARD got=yes text=" + clip(url, 200));
@@ -1515,9 +1539,11 @@ public class DowniFetcherService extends AccessibilityService {
             // The owner's tap is the trigger, so this delivers regardless of the bench gate
             // (ruling 2026-09-25: nothing auto-downloads, nothing a tap asks for is refused).
             deliverByTap(url, "clipboard");
+            endPendingRun(chainDelivered);
         } else {
             log("CHAIN_URL_REJECTED reason=" + why);
             resolverFailed("rejected_" + why);
+            endPendingRun(false);
         }
     }
 
