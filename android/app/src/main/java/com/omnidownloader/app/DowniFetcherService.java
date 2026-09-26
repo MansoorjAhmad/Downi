@@ -883,6 +883,9 @@ public class DowniFetcherService extends AccessibilityService {
      * be refused. So this path ignores the gate deliberately; the dump path keeps it.
      */
     private void deliverByTap(String url, String route) {
+        // Wave 1: normalize per-share tracking (and the carousel slide index) away first, so
+        // the same post always carries one string through dedup and the engine.
+        url = MediaUrl.canonicalize(url);
         // Single-funnel validation: every route (clipboard, ledger tree, dump) passes the same
         // media-page rule right before the pipeline — a non-media URL can never slip through.
         String why = MediaUrl.reason(url);

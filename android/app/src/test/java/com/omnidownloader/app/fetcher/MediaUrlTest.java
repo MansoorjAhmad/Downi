@@ -59,4 +59,30 @@ public class MediaUrlTest {
     @Test public void isCaseInsensitiveOnHost() {
         assertTrue(MediaUrl.isMedia("https://WWW.Instagram.com/reel/DdU-2-4R7W-/"));
     }
+
+    @Test public void canonicalizeStripsPerShareTracking() {
+        // Wave 1: the same post must carry one string through the dedup layers, no matter
+        // which share produced it. Real tracking shape from a device clipboard (D-k).
+        assertEquals("https://www.instagram.com/reel/DdtJHggzNGA/",
+                MediaUrl.canonicalize("https://www.instagram.com/reel/DdtJHggzNGA/"
+                        + "?igsh=MXJteXQxdWE3Z3JuZQ==&utm_source=ig_web_copy_link"));
+    }
+
+    @Test public void canonicalizeStripsTheCarouselSlideIndex() {
+        // D-g: img_index marks the SLIDE, not a different post — two sightings of one
+        // carousel dedup to one string instead of grabbing the post twice.
+        assertEquals("https://www.instagram.com/p/DdsM_GHEXAE/",
+                MediaUrl.canonicalize("https://www.instagram.com/p/DdsM_GHEXAE/?img_index=14"));
+    }
+
+    @Test public void canonicalizeKeepsNonVaryingParametersAndPlainUrls() {
+        // A parameter we do not know must survive (never over-strip).
+        assertEquals("https://www.instagram.com/reel/AbC/?a=1",
+                MediaUrl.canonicalize("https://www.instagram.com/reel/AbC/?a=1&_r=1"));
+        // TikTok short links carry the code in the PATH — nothing to strip, byte-identical.
+        assertEquals("https://vt.tiktok.com/ZSbL4MgaG/", MediaUrl.canonicalize("https://vt.tiktok.com/ZSbL4MgaG/"));
+        // Junk in, junk out — canonicalize never throws and never invents.
+        assertEquals("not a url", MediaUrl.canonicalize("not a url"));
+        assertNull(MediaUrl.canonicalize(null));
+    }
 }

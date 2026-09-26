@@ -19,6 +19,17 @@ import java.util.Locale;
  *
  * `reason()` returns `null` when the URL is acceptable, otherwise a short machine-readable reason for
  * the log — so a rejected candidate says *why* it was rejected instead of vanishing.
+ *
+ * `canonicalize()` (Wave 1) normalizes a media URL BEFORE the duplicate checks: Instagram's
+ * copy link and tree sightings carry per-share tracking parameters and, on carousel posts,
+ * the slide index (`img_index`) — the same post produced different strings and defeated the
+ * dedup layers. Only known-varying parameters are removed; the media path is untouched.
+ *
+ * D-g ruling (Wave 1, owner plan §3.10): Instagram `/p/` URLs are ACCEPTED. A `/p/` path
+ * cannot be distinguished photo-vs-video from the URL shape alone (unlike TikTok's
+ * `/photo/`), so flagging every `/p/` would refuse real video posts. The engine stays the
+ * honest gate: a photo post fails there with a plain reason, and the Core shows its
+ * restrained failure — never a silent wrong file.
  */
 public final class MediaUrl {
 
@@ -71,4 +82,40 @@ public final class MediaUrl {
         }
         return "host_not_supported";
     }
+
+    /**
+     * Strip known per-share tracking parameters so the same post always yields the same
+     * string for the dedup layers (DeliveryGuard, activeStateFor, the engine's own name
+     * dedup). The media path is never touched; anything unparseable returns unchanged.
+     * Instagram's `img_index` is included deliberately: it marks the carousel SLIDE, not a
+     * different post, so two sightings of one post dedup to one string (D-g, Wave 1).
+     */
+    public static String canonicalize(String url) {
+        if (url == null) return null;
+        String s = url.trim();
+        int q = s.indexOf('?');
+        if (q < 0) return s;
+        String base = s.substring(0, q);
+        String query = s.substring(q + 1);
+        StringBuilder kept = new StringBuilder();
+        for (String pair : query.split("&")) {
+            if (pair.isEmpty()) continue;
+            String name = pair;
+            int eq = pair.indexOf('=');
+            if (eq >= 0) name = pair.substring(0, eq);
+            String n = name.toLowerCase(Locale.ROOT);
+            if (TRACKING_PARAMS.contains(n)) continue;
+            if (kept.length() > 0) kept.append('&');
+            kept.append(pair);
+        }
+        return kept.length() > 0 ? base + "?" + kept : base;
+    }
+
+    /** Per-share parameters that vary without changing what the post IS. */
+    private static final java.util.Set<String> TRACKING_PARAMS = new java.util.HashSet<>(
+            java.util.Arrays.asList(
+                    "img_index",       // carousel slide index (D-g)
+                    "igsh", "igshid",  // Instagram share tracking
+                    "_r", "is_from_webapp", "sender_device", "sender_device_id",
+                    "web_id", "share_url_id", "utm_source", "utm_medium", "utm_campaign"));
 }
