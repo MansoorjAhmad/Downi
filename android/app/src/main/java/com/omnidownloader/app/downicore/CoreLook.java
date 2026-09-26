@@ -90,12 +90,13 @@ public final class CoreLook {
                 L.detected = 0.55f;
             }
         } else if (CoreStates.RESOLVING.equals(state)) {
-            // §M-1: the tap fired; the resolver is working. The rim carries one orbiting light
-            // (the host draws it) — resolution has visible progress, never a frozen state.
+            // §M-1 + sheet C4 ENGAGE: the chevron sinks slightly, internal energy activates,
+            // and the orbit light appears at the top (the host draws it at the step position).
             L.detected = 1f;
             L.halo = 0.55f;
             L.rim = 1.00f;
             L.mark = 1.00f;
+            L.markSink = 0.5f;
             L.track = 0.16f;
         } else if (CoreStates.PRESSED.equals(state)) {
             // sheet 6 #2: compress inward in 0.1 s, brighter response; the mark sinks into the gel.

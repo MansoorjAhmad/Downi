@@ -82,6 +82,7 @@ public final class CoreHost extends View {
     private ValueAnimator orbit;                     // RESOLVING rim orbit (§M-1)
     private float flowDeg;                           // the sheen's current rotation
     private float orbitDeg;                          // the resolving light's position
+    private Float orbitFixed;                        // step mode: the orbit holds this angle (C4)
     private float markLagX, markLagY;                // interior slosh (gel physics, V-3)
     private float squashX = 1f, squashY = 1f;        // edge-snap gel deformation (V-3)
     private boolean animCancelled;                   // a cancelled transition must never settle
@@ -150,6 +151,15 @@ public final class CoreHost extends View {
     public void setUnsupported(boolean u) {
         if (unsupported == u) return;
         unsupported = u;
+        invalidate();
+    }
+
+    /**
+     * Step mode (sheet C4 STEPS): hold the orbit light at a named chain step (0/90/180/270),
+     * or pass null to resume the continuous rotation. Ignored outside RESOLVING.
+     */
+    public void setOrbitStep(Float degrees) {
+        orbitFixed = degrees;
         invalidate();
     }
 
@@ -414,14 +424,17 @@ public final class CoreHost extends View {
             }
         }
 
-        // 5b) the RESOLVING orbit (§M-1): one light circling the rim while the resolver works
+        // 5b) the RESOLVING orbit (§M-1, sheet C4 STEPS): one light on the rim while the
+        // resolver works. In step mode it HOLDS a named position (0/90/180/270 — the chain's
+        // clock); without a fixed step it rotates continuously (the legacy read).
         if (CoreStates.RESOLVING.equals(state)) {
+            float deg = orbitFixed != null ? orbitFixed : orbitDeg;
             p.setShader(null);
             p.setColor(0xFFBDFBFF);
             p.setAlpha(235);
             p.setStrokeWidth(2.8f * dp);
             p.setStrokeCap(Paint.Cap.ROUND);
-            c.drawArc(inner, orbitDeg - 5f, 10f, false, p);
+            c.drawArc(inner, deg - 5f, 10f, false, p);
             p.setStrokeCap(Paint.Cap.BUTT);
         }
 

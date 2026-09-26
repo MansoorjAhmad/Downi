@@ -22,6 +22,7 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
 import com.omnidownloader.app.downicore.CoreArbiter;
+import com.omnidownloader.app.downicore.ReachLayer;
 import com.omnidownloader.app.downicore.CoreHaptics;
 import com.omnidownloader.app.downicore.CoreJobBinding;
 import com.omnidownloader.app.downicore.CoreStates;
@@ -314,6 +315,7 @@ public class DowniFetcherService extends AccessibilityService {
 
     // V3.2 Downi Core — approved shell + Phase B interaction, now the production-facing control.
     private DowniCore core;
+    private ReachLayer reach;                   // the run's choreography layer (Wave 2)
     private Boolean coreManualVisibility;         // debug show/hide; null = follow target app
     private final DowniCore.Listener coreListener = new DowniCore.Listener() {
         @Override public void onCoreLog(String msg) { log(msg); }
@@ -521,6 +523,10 @@ public class DowniFetcherService extends AccessibilityService {
         core = new DowniCore(this, coreListener);
         log("CORE_READY live=true window=TYPE_ACCESSIBILITY_OVERLAY states=" + CoreStates.list());
 
+        // The Reach (Wave 2, sheet C4): the run's choreography layer — tether, landing
+        // highlight, capture flash. Attached lazily per run, gone when the run's truth lands.
+        reach = new ReachLayer(this, msg -> log(msg));
+
         // The Core becomes the face of the download service: a read-only observer of the same
         // job snapshot the in-app Queue renders (master package: ONE JOB, ONE SOURCE OF TRUTH).
         jobBinding = new CoreJobBinding(this, new CoreJobBinding.Listener() {
@@ -640,6 +646,7 @@ public class DowniFetcherService extends AccessibilityService {
         disarmForeground();
         if (jobBinding != null) jobBinding.stop();
         if (core != null) core.destroy();
+        if (reach != null) reach.destroy();
         return super.onUnbind(intent);
     }
 
@@ -1001,6 +1008,12 @@ public class DowniFetcherService extends AccessibilityService {
         // rim-orbit light actually renders while the resolver works. Wave 0 audit: the run
         // never applied its own state, so the Core sat in its previous look for the whole run.
         applyCoreState();
+        // Wave 2 (sheet C4): the Reach begins — the choreography layer anchors to the Core.
+        if (reach != null && core != null && core.isShown()) {
+            float[] c = core.windowCenterAndRadius();
+            reach.begin(c[0], c[1], c[2]);
+            if (core != null) core.setOrbitStep(0f);   // ENGAGE: the orbit light appears at the top
+        }
         // Wave 1: the run narrates. routePlan is the profile's ordered route list.
         PlatformProfile p = profile();
         observer.onRunStarted(sessionShort(),
@@ -1035,9 +1048,11 @@ public class DowniFetcherService extends AccessibilityService {
             runEndPending = true;
         } else {
             observer.onRunEnded(delivered, route, ms);
+            if (reach != null) reach.end();     // the choreography retracts with the truth
         }
         if (core != null) {
             core.setShielded(false);           // the run's gestures are done or deferred
+            core.setOrbitStep(null);           // the orbit returns to its continuous read
             core.setInteractive(true);
             applyCoreState();
         }
@@ -1049,6 +1064,7 @@ public class DowniFetcherService extends AccessibilityService {
         runEndPending = false;
         observer.onRunEnded(delivered, delivered ? runRoute : null,
                 SystemClock.elapsedRealtime() - runStartedAt);
+        if (reach != null) reach.end();         // the choreography retracts with the truth
     }
 
     /**
@@ -1131,6 +1147,11 @@ public class DowniFetcherService extends AccessibilityService {
             runRoute = route;                    // the run's narrated outcome (observer)
             recordStrategy(route, true, url);
             log("CHAIN_DELIVER_OK route=" + route + " tap=1 url=" + clip(url, 200));
+            // The capture beat, uniform for every route (sheet C4 CAPTURE): the node returns,
+            // the rim flashes, the orbit steps to 270. The light tick says "delivered".
+            if (reach != null) reach.capture();
+            if (core != null) core.setOrbitStep(270f);
+            if (screenOn && core != null && core.isShown()) CoreHaptics.capture(this);
             // The Core becomes the live visual representation of this job (master package §11).
             jobState = CoreStates.PROGRESS;
             jobProgress = 0f;
@@ -1223,6 +1244,25 @@ public class DowniFetcherService extends AccessibilityService {
                 // Wave 2 bench: drive FAILED's neutral mood for the C6 gate.
                 core.setUnsupported("true".equals(parts[1]));
                 log("CORE_UNSUPPORTED " + parts[1]);
+                return;
+            }
+            if (parts.length >= 3 && parts[0].equals("reach")) {
+                // Wave 2 bench: hold the Reach tether to a fixed screen point (C4 gate).
+                try {
+                    if (reach == null) reach = new ReachLayer(this, msg -> log(msg));
+                    float[] rc = core.windowCenterAndRadius();
+                    reach.begin(rc[0], rc[1], rc[2]);
+                    int tx = Integer.parseInt(parts[1]), ty = Integer.parseInt(parts[2]);
+                    reach.reachTo(new Rect(tx - 60, ty - 60, tx + 60, ty + 60));
+                    core.setOrbitStep(180f);
+                    log("CORE_CMD_REACH to=" + tx + "," + ty);
+                } catch (Throwable t2) { log("CORE_CMD_REACH_ERR " + t2); }
+                return;
+            }
+            if (lower.equals("reachend")) {
+                if (reach != null) reach.end();
+                core.setOrbitStep(null);
+                log("CORE_CMD_REACH_END");
                 return;
             }
             if (parts.length >= 1 && parts[0].equals("pause")) {
@@ -1348,6 +1388,13 @@ public class DowniFetcherService extends AccessibilityService {
         AccessibilityNodeInfo t = firstClickable(share);
         if (t == null) { log("CHAIN_NO_SHARE_CLICK"); resolverFailed("no_share_row"); chainReset(); return; }
         observer.onStep("share_found", "");
+        // Wave 2 (sheet C4 REACH): the tether lands on the REAL control the resolver is
+        // about to touch — its screen bounds are the truth, no invented coordinates.
+        try {
+            Rect sb = new Rect();
+            t.getBoundsInScreen(sb);
+            if (reach != null) reach.reachTo(sb);
+        } catch (Throwable ignored) {}
         log("CHAIN_SHARE_CLICK text=" + clip(nodeText(t), 120)
                 + " route=" + clickNode(t));
         // Event-driven wait (§H2): poll for the share surface's own window instead of sleeping a
@@ -1371,6 +1418,8 @@ public class DowniFetcherService extends AccessibilityService {
                     copyProbe, new ArrayList<AccessibilityNodeInfo>(), new Counter(), 0);
             if (!copyProbe.isEmpty()) {
                 observer.onStep("sheet_open", "after_ms=" + (300 + attempt * 250));
+                // Wave 2: the orbit light steps to 90 — the sheet is open (sheet C4 STEPS).
+                if (core != null) core.setOrbitStep(90f);
                 log("CHAIN_SURFACE_OPEN after_ms=" + (300 + attempt * 250) + " content=ready");
                 chainStep2();
                 return;
@@ -1486,6 +1535,13 @@ public class DowniFetcherService extends AccessibilityService {
         chainClickedCopy = true;
         chainSheetNeedsClose = true;
         observer.onStep("copy_link_clicked", "");
+        // Wave 2: the tether moves to the copy-link row (the orbit steps to 180 — sheet C4).
+        try {
+            Rect cb = new Rect();
+            c.getBoundsInScreen(cb);
+            if (reach != null) reach.reachTo(cb);
+            if (core != null) core.setOrbitStep(180f);
+        } catch (Throwable ignored) {}
         log("CHAIN_TARGET_CLICK which=copylink text=" + clip(nodeText(c), 120)
                 + " route=" + clickNode(c));
         postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1200);
@@ -1729,7 +1785,7 @@ public class DowniFetcherService extends AccessibilityService {
         log("CHAIN_CLIPBOARD got=yes text=" + clip(url, 200));
         String why = MediaUrl.reason(url);      // D-b: a media page, not a bio/redirect link
         if (why == null) {
-            observer.onCaptured("clipboard", url);   // the capture beat (light tick, sheet C4)
+            observer.onCaptured("clipboard", url);   // the capture beat (log narration)
             // The owner's tap is the trigger, so this delivers regardless of the bench gate
             // (ruling 2026-09-25: nothing auto-downloads, nothing a tap asks for is refused).
             deliverByTap(url, "clipboard");
@@ -1984,6 +2040,7 @@ public class DowniFetcherService extends AccessibilityService {
         pollersArmed = false;               // a fresh bind after destroy must re-post the loops
         disarmForeground();
         if (core != null) core.destroy();
+        if (reach != null) reach.destroy();
         FetcherBench.closeLog();            // flush, poison, join and close the bench log
         super.onDestroy();
     }

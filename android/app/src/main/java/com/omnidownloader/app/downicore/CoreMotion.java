@@ -24,6 +24,12 @@ public final class CoreMotion {
     public static final long PAUSE_MS = 400;      // the energy freezes gently
     public static final long COMPLETE_MS = 400;   // success pulse, then a calm return
     public static final long ERROR_MS = 300;      // restrained error pulse
+    // The Reach (sheet C4): tether growth, node travel, capture flash, retraction.
+    public static final long REACH_GROW_MS = 200;
+    public static final long TETHER_SEND_MS = 350;
+    public static final long TETHER_RETURN_MS = 250;
+    public static final long CAPTURE_PULSE_MS = 150;
+    public static final long REACH_FADE_MS = 200;
 
     /** Smooth S-curve (sheet 6, "Easing curve"): slow start, fast middle, soft landing. */
     public static float easeInOut(float t) {

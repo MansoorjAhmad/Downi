@@ -135,6 +135,11 @@ public final class DowniCore {
         view.setUnsupported(u);
     }
 
+    /** Step mode (sheet C4): hold the resolving orbit at a chain step, or null for continuous. */
+    public void setOrbitStep(Float degrees) {
+        view.setOrbitStep(degrees);
+    }
+
     /** False only while DOWNI is driving platform UI; hidden windows are always non-touchable. */
     public void setInteractive(boolean on) {
         interactive = on;
@@ -185,6 +190,14 @@ public final class DowniCore {
     public boolean isFocusableNow() {
         try { return lp != null && (lp.flags & WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) == 0; }
         catch (Throwable t) { return false; }
+    }
+
+    /** The Core's screen-space center and radius — the Reach layer's tether anchor (Wave 2). */
+    public float[] windowCenterAndRadius() {
+        int px = Math.round(sizeDp * dp);
+        float cx = (lp != null ? lp.x : 0) + px / 2f;
+        float cy = (lp != null ? lp.y : 0) + px / 2f;
+        return new float[]{cx, cy, px / 2f};
     }
 
     /** 48 / 56 / 64 dp; the window is rebuilt because a window's size is fixed at creation. */
