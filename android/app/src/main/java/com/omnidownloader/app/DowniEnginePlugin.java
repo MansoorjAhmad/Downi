@@ -1441,7 +1441,8 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve();
     }
 
-    /** v3.1.1 (defect N7): true exactly once after the user tapped a grab notification. */
+    /** v3.1.1 (defect N7): true exactly once after the user tapped a grab notification.
+     *  Wave 2: also carries the completed Core's PEEK request — the Vault item to open. */
     @PluginMethod
     public void consumeOpenQueueFlag(PluginCall call) {
         JSObject result = new JSObject();
@@ -1451,6 +1452,12 @@ public class DowniEnginePlugin extends Plugin {
                 .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
             open = prefs.getBoolean("openQueuePending", false);
             if (open) prefs.edit().putBoolean("openQueuePending", false).apply();
+            String vaultRaw = prefs.getString("openVaultPending", null);
+            if (vaultRaw != null && !vaultRaw.isEmpty()) {
+                prefs.edit().remove("openVaultPending").apply();
+                JSONObject v = new JSONObject(vaultRaw);
+                result.put("vault", v);   // { mediaId, isVideo }
+            }
         } catch (Exception ignored) {}
         result.put("open", open);
         call.resolve(result);

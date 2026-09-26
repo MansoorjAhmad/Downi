@@ -575,6 +575,7 @@ public class DowniDownloadService extends Service {
             // the last live tick is a per-stream number (or 0 during a merge phase), so the app's
             // "MB grabbed" counter had nothing honest to add for DowniDrop grabs.
             long finalBytes = 0;
+            DowniDownloadService.SaveResult saveResult = null;
             applyPhase(jobId, "Saving to your Vault…", 98);
             if (file.optBoolean("merge", false)) {
                 applyPhase(jobId, "Merging video + audio…", 96);
@@ -587,13 +588,15 @@ public class DowniDownloadService extends Service {
                     throw new IllegalStateException("Could not merge 1080p on this device. Try 720p HD or Best Available.");
                 }
                 finalBytes = merged.length();
-                destination = saveToGallery(merged, title, "mp4");
+                saveResult = saveToGallery(merged, title, "mp4");
+                destination = saveResult.label;
                 try { videoPart.delete(); } catch (Exception ignored) {}
                 try { audioPart.delete(); } catch (Exception ignored) {}
             } else {
                 File single = new File(file.getString("path"));
                 finalBytes = single.length();
-                destination = saveToGallery(single, title, file.getString("ext"));
+                saveResult = saveToGallery(single, title, file.getString("ext"));
+                destination = saveResult.label;
             }
             if (cancelled != null && cancelled.get()) {
                 writeDropSnapshot(jobId, "canceled", null, null);
@@ -607,6 +610,9 @@ public class DowniDownloadService extends Service {
             persistPausedRemove(jobId);
             unregisterActiveGrab(jobId);
             writeDropSnapshot(jobId, "done", title, destination, finalBytes);
+            // Wave 2 (peek): the completed Core's tap must reach the real file — carry the
+            // media reference in the done row the Core's binding reads.
+            writeDropSnapshotMedia(jobId, saveResult);
             // N9: the durable half of the accounting — recorded by the service, so the app sees the
             // grab even when it was closed the whole time.
             addGrabBytes(this, finalBytes);
@@ -770,13 +776,30 @@ public class DowniDownloadService extends Service {
 
     // ---------- Gallery save (ported from DowniEnginePlugin — same behavior, headless) ----------
 
-    private String saveToGallery(File source, String title, String extension) {
-        if (source == null || !source.exists()) return "Downloaded file missing";
+    /** What one save produced (Wave 2): the honest label for notifications plus the media
+     *  reference the completed Core's PEEK action needs. uri/mediaId are null/0 for the
+     *  fallback paths (no MediaStore row exists there — peek then falls back to the Vault). */
+    static final class SaveResult {
+        final String label;
+        final String uri;
+        final long mediaId;
+        final boolean video;
+        SaveResult(String label, String uri, long mediaId, boolean video) {
+            this.label = label; this.uri = uri; this.mediaId = mediaId; this.video = video;
+        }
+    }
+
+    private SaveResult saveToGallery(File source, String title, String extension) {
+        if (source == null || !source.exists()) return new SaveResult("Downloaded file missing", null, 0, true);
+        boolean videoMime = true;
         String displayName = nextGalleryName(title, extension, source);
         String ext = (extension == null || extension.trim().isEmpty()) ? "mp4" : extension.toLowerCase(Locale.US);
         String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
         if (mime == null) mime = ext.startsWith("m4") || ext.equals("mp3") ? "audio/" + ext : "video/mp4";
+        videoMime = mime.startsWith("video/");
 
+        String savedUri = null;
+        long savedId = 0;
         boolean saved = false;
 
         String treeUri = getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getString("treeUri", "");
@@ -793,12 +816,15 @@ public class DowniDownloadService extends Service {
                             saved = true;
                         }
                     }
-                    if (saved) scanSafDocument(destination, mime);
+                    if (saved) {
+                        scanSafDocument(destination, mime);
+                        savedUri = destination.toString();   // SAF document — peek opens it directly
+                    }
                 }
             } catch (Exception ignored) {}
             if (saved) {
                 try { source.delete(); } catch (Exception ignored) {}
-                return "Custom folder";
+                return new SaveResult("Custom folder", savedUri, savedId, videoMime);
             }
         }
 
@@ -825,6 +851,10 @@ public class DowniDownloadService extends Service {
                     ContentValues ready = new ContentValues();
                     ready.put(MediaStore.MediaColumns.IS_PENDING, 0);
                     getContentResolver().update(destination, ready, null, null);
+                }
+                if (saved) {
+                    savedUri = destination.toString();
+                    try { savedId = Long.parseLong(destination.getLastPathSegment()); } catch (Exception ignored) {}
                 }
             }
         } catch (Exception ignored) {
@@ -867,7 +897,30 @@ public class DowniDownloadService extends Service {
         }
 
         try { source.delete(); } catch (Exception ignored) {}
-        return "Gallery / Movies";
+        return new SaveResult("Gallery / Movies", savedUri, savedId, videoMime);
+    }
+
+    /**
+     * Wave 2 (peek): fold the save's media reference into the DONE snapshot row the Core
+     * reads — `mediaId` (MediaStore row, 0 when the save used a fallback path) and `mediaUri`
+     * (also set for SAF documents). The completed Core's tap turns these into a Vault peek.
+     */
+    private void writeDropSnapshotMedia(String jobId, SaveResult save) {
+        if (save == null) return;
+        try {
+            SharedPreferences prefs = getSharedPreferences("downi_settings", MODE_PRIVATE);
+            JSONArray list = new JSONArray(prefs.getString("dropLive", "[]"));
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject o = list.optJSONObject(i);
+                if (o != null && jobId.equals(o.optString("id"))) {
+                    o.put("mediaId", save.mediaId);
+                    if (save.uri != null) o.put("mediaUri", save.uri);
+                    o.put("isVideo", save.video);
+                    prefs.edit().putString("dropLive", list.toString()).apply();
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     private synchronized String nextGalleryName(String title, String extension, File source) {

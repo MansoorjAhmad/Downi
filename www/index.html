@@ -932,6 +932,13 @@
       try {
         const res = await engine.consumeOpenQueueFlag();
         if (res && res.open) switchTab('queue');
+        // Wave 2 (peek): a tap on the completed Core parked the file to open — the Vault
+        // comes forward and the player starts on that item (a deliberate user action).
+        if (res && res.vault) {
+          switchTab('vault');
+          const id = Number(res.vault.mediaId || 0);
+          if (id > 0) playVaultMedia(id, res.vault.isVideo !== false);
+        }
       } catch (e) {}
     }
     async function checkNotificationHint() {

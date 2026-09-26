@@ -102,6 +102,11 @@ public final class CoreJobBinding {
         return polling;
     }
 
+    /** The URL the Core is tracking (the last delivered job), or null. */
+    public synchronized String trackedUrl() {
+        return trackedUrl;
+    }
+
     /**
      * The newest snapshot row for the tracked URL, mapped to a {@link JobView}.
      * Returns null when nothing is live for it (unknown, expired, or service snapshot gone).

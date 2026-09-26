@@ -27,6 +27,7 @@ import com.omnidownloader.app.downicore.CoreJobBinding;
 import com.omnidownloader.app.downicore.CoreStates;
 import com.omnidownloader.app.downicore.DowniCore;
 import com.omnidownloader.app.fetcher.ChainObserver;
+import com.omnidownloader.app.fetcher.CoreTapAction;
 import com.omnidownloader.app.fetcher.Route;
 import com.omnidownloader.app.fetcher.SheetSwipe;
 import com.omnidownloader.app.fetcher.AttentionLedger;
@@ -840,14 +841,36 @@ public class DowniFetcherService extends AccessibilityService {
 
     /**
      * The owner's tap — the only thing that ever starts a download (ruling 2026-09-25 ~18:20).
-     * If the attention ledger holds a READY candidate (the video on screen was seen, visible,
-     * dwelled on, and the feed hasn't paged since), the tap resolves INSTANTLY — no share sheet,
-     * no flash. Otherwise the proven copy-link chain runs. TikTok never enters the ledger
-     * (its tree is opaque), so its taps always take the chain.
+     * Wave 2 tap grammar (D-V2-3): the tap's MEANING follows the Core's state — a PAUSED Core
+     * resumes its job, a COMPLETE Core peeks at the file, a FAILED Core retries — and every
+     * other state fetches. If the attention ledger holds a READY candidate the fetch resolves
+     * INSTANTLY; otherwise the proven copy-link chain runs.
      */
     private void onCoreTap() {
-        if (sessionPkg == null) { log("CORE_TAP_NO_SESSION open IG/TikTok first"); return; }
         if (chainRunning) { log("CORE_TAP_BUSY ignored"); return; }
+        String base = CoreArbiter.baseState(jobState, chainRunning, videoDetected);
+        String tracked = jobBinding != null ? jobBinding.trackedUrl() : null;
+        CoreTapAction.Action action = CoreTapAction.of(base, tracked != null);
+        log("CORE_TAP session=" + sessionPkg + " action=" + action + " state=" + base);
+        switch (action) {
+            case RESUME:
+                resumeTracked(tracked);
+                return;
+            case PEEK:
+                peekTracked(tracked);
+                return;
+            case RETRY:
+                if (tracked != null) {
+                    // The engine failed this URL — failures may retry freely (master package §33).
+                    try { beginChainRun(); deliverByTap(tracked, "retry"); } catch (Throwable t) { log("CHAIN_ERR " + t); }
+                    chainReset();
+                    return;
+                }
+                break;                       // a resolver dead-end: fall through to a fresh fetch
+            case FETCH:
+                break;
+        }
+        if (sessionPkg == null) { log("CORE_TAP_NO_SESSION open IG/TikTok first"); return; }
         AttentionLedger.Candidate cand = ledger.best(SystemClock.elapsedRealtime());
         if (cand != null) {
             log("CORE_TAP session=" + sessionPkg + " passive=1 confidence=READY url=" + clip(cand.url, 120));
@@ -864,6 +887,47 @@ public class DowniFetcherService extends AccessibilityService {
         log("CORE_TAP session=" + sessionPkg);
         try { beginChainRun(); runChain(true); }
         catch (Throwable t) { log("CHAIN_ERR " + t); chainReset(); }
+    }
+
+    /** Tap on a PAUSED Core: continue the transfer from the bytes on disk (D3). */
+    private void resumeTracked(String url) {
+        try {
+            org.json.JSONObject row = JobSnapshot.newestRowFor(this, url, "paused");
+            String jobId = row == null ? null : row.optString("id");
+            if (jobId == null || jobId.isEmpty()) { log("CORE_RESUME miss why=no_paused_row"); return; }
+            android.content.Intent i = new android.content.Intent(this, DowniDownloadService.class);
+            i.setAction("shared_resume");
+            i.putExtra("jobId", jobId);
+            startService(i);
+            log("CORE_RESUME job=" + jobId + " url=" + clip(url, 120));
+            // the binding flips the Core to RESUMING on the service's next snapshot write
+        } catch (Throwable t) { log("CORE_RESUME_ERR " + t); }
+    }
+
+    /**
+     * Tap on a COMPLETE Core: open the Vault at the file (the peek, sheet C5). The media
+     * reference is parked for the web layer, which opens the Vault and the player on resume.
+     * The activity launch is best-effort — a vendor block on background activity starts
+     * demotes the peek to a notification instead of ever failing silently.
+     */
+    private void peekTracked(String url) {
+        try {
+            org.json.JSONObject row = JobSnapshot.newestRowFor(this, url, "done");
+            long mediaId = row == null ? 0 : row.optLong("mediaId", 0);
+            boolean isVideo = row == null || row.optBoolean("isVideo", true);
+            getSharedPreferences("downi_settings", MODE_PRIVATE).edit()
+                    .putString("openVaultPending", new org.json.JSONObject()
+                            .put("mediaId", mediaId).put("isVideo", isVideo).toString()).apply();
+            log("CORE_PEEK mediaId=" + mediaId + " video=" + isVideo);
+            try {
+                android.content.Intent open = new android.content.Intent(this, MainActivity.class);
+                open.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        | android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                startActivity(open);
+            } catch (Throwable blocked) {
+                log("CORE_PEEK_BLOCKED " + blocked);   // the web consumes the pending flag on next open
+            }
+        } catch (Throwable t) { log("CORE_PEEK_ERR " + t); }
     }
 
     /**
