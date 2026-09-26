@@ -545,6 +545,47 @@
           </div>
         </div>
 
+        <!-- DOWNI Fetcher (the Core) -->
+        <div class="card p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-2xl bg-accent-soft border border-accent-soft flex items-center justify-center text-accent">
+                <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/></svg>
+              </div>
+              <div>
+                <p class="text-[12px] font-extrabold text-white">DOWNI Fetcher</p>
+                <p class="text-[10px] mt-0.5" style="color:var(--muted)">The Core over Instagram & TikTok</p>
+              </div>
+            </div>
+            <span id="fetcherBadge" class="chip px-3 py-1 text-[9px] font-mono font-bold">…</span>
+          </div>
+
+          <div id="fetcherStats" class="text-[10px] font-mono" style="color:var(--muted)">…</div>
+
+          <button id="fetcherToggleBtn" onclick="toggleFetcher()" class="btn-hero w-full py-2.5 text-[11px] font-extrabold">…</button>
+
+          <div class="border-t border-white/5 pt-3">
+            <p class="text-[10px] font-bold text-zinc-200 mb-2">Core size</p>
+            <div class="flex gap-2" id="fetcherSizes">
+              <button onclick="setCoreSize(48)" class="btn flex-1 py-2 text-[11px] font-bold text-zinc-300">48</button>
+              <button onclick="setCoreSize(56)" class="btn flex-1 py-2 text-[11px] font-bold text-zinc-300">56</button>
+              <button onclick="setCoreSize(64)" class="btn flex-1 py-2 text-[11px] font-bold text-zinc-300">64</button>
+            </div>
+            <button onclick="resetCorePosition()" class="btn w-full mt-2 py-2 text-[11px] font-bold text-zinc-300">Reset Core position</button>
+          </div>
+
+          <div class="border-t border-white/5 pt-3 space-y-2">
+            <p class="text-[10px] font-bold text-zinc-200">Keep it alive on vivo</p>
+            <ol class="text-[10px] leading-relaxed list-decimal list-inside" style="color:var(--muted)">
+              <li>Settings → Apps → <b>Autostart</b> → allow DOWNI</li>
+              <li>Settings → Battery → <b>Background power</b> → allow DOWNI + unrestricted</li>
+              <li>Recents → long-press DOWNI → <b>Lock</b></li>
+            </ol>
+            <button onclick="openBatterySettings()" class="btn w-full py-2 text-[11px] font-bold text-zinc-300">Open battery settings</button>
+            <p class="text-[9px]" style="color:var(--muted)">vivo hides the real switch — steps 1 and 3 are manual.</p>
+          </div>
+        </div>
+
         <!-- Appearance -->
         <div class="card p-4 space-y-1">
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">Appearance</p>
@@ -926,6 +967,7 @@
       ['navGrab', 'navQueue', 'navVault', 'navSettings'].forEach(id => {
         document.getElementById(id)?.classList.remove('on');
       });
+      if (tab === 'settings') loadFetcherCard();
       const view = { grab: 'viewGrab', queue: 'viewQueue', vault: 'viewVault', settings: 'viewSettings' }[tab];
       const nav = { grab: 'navGrab', queue: 'navQueue', vault: 'navVault', settings: 'navSettings' }[tab];
       const el = document.getElementById(view);
@@ -3146,6 +3188,50 @@
       // handleSharedIntent() — a second registration here double-opened the
       // Inspector for every share (B9).
     });
-  </script>
+  
+    // ---------- DOWNI Fetcher settings card ----------
+    let fetcherState = { armed: false, canToggle: false };
+    async function loadFetcherCard() {
+      try {
+        const res = await getEngine()?.fetcherStatus();
+        if (!res) return;
+        fetcherState = res;
+        const badge = document.getElementById('fetcherBadge');
+        const btn = document.getElementById('fetcherToggleBtn');
+        const stats = document.getElementById('fetcherStats');
+        if (res.armed) { badge.textContent = 'ARMED'; badge.style.color = '#22D3EE'; }
+        else { badge.textContent = 'OFF'; badge.style.color = '#FB7185'; }
+        btn.textContent = res.armed ? 'Turn Fetcher off' : 'Turn Fetcher on';
+        const mb = (res.bytesToday / 1048576).toFixed(1);
+        stats.textContent = 'today: ' + res.grabsToday + ' grabs · ' + mb + ' MB'
+            + (res.pausedCount > 0 ? ' · ' + res.pausedCount + ' paused' : '')
+            + (res.canToggle ? '' : ' · toggle needs the adb grant');
+        document.querySelectorAll('#fetcherSizes button').forEach(b => {
+          const on = parseInt(b.textContent) === res.sizeDp;
+          b.style.borderColor = on ? 'var(--accent)' : 'rgba(255,255,255,0.06)';
+          b.style.color = on ? 'var(--accent)' : '';
+        });
+      } catch (e) {}
+    }
+    async function toggleFetcher() {
+      try {
+        const res = await getEngine()?.setFetcherEnabled({ enabled: !fetcherState.armed });
+        if (res && res.needsPermission) {
+          alert('One-time setup - run once from a PC: adb shell pm grant com.omnidownloader.app android.permission.WRITE_SECURE_SETTINGS');
+        }
+      } catch (e) {}
+      loadFetcherCard();
+    }
+    async function setCoreSize(dp) {
+      try { await getEngine()?.setCoreSize({ dp }); } catch (e) {}
+      loadFetcherCard();
+    }
+    async function resetCorePosition() {
+      try { await getEngine()?.resetCorePosition(); } catch (e) {}
+    }
+    async function openBatterySettings() {
+      try { await getEngine()?.openBatterySettings(); } catch (e) {}
+    }
+</script>
 </body>
 </html>

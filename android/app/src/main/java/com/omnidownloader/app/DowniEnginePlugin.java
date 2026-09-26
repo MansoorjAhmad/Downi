@@ -426,6 +426,129 @@ public class DowniEnginePlugin extends Plugin {
         });
     }
 
+    // ---------- DOWNI Fetcher (the Core over IG/TikTok) — settings card bridge ----------
+
+    private static final String FETCHER_COMPONENT =
+            "com.omnidownloader.app/com.omnidownloader.app.FetchSpikeService";
+
+    private boolean fetcherArmed() {
+        try {
+            String cur = android.provider.Settings.Secure.getString(
+                    getContext().getContentResolver(),
+                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            return cur != null && cur.contains(FETCHER_COMPONENT);
+        } catch (Exception e) { return false; }
+    }
+
+    private boolean canToggleFetcher() {
+        return getContext().checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
+    @PluginMethod
+    public void fetcherStatus(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("armed", fetcherArmed());
+        r.put("canToggle", canToggleFetcher());
+        try {
+            org.json.JSONObject paused = new org.json.JSONObject(getContext()
+                    .getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
+                    .getString("pausedGrabs", "{}"));
+            r.put("pausedCount", paused.length());
+        } catch (Exception e) { r.put("pausedCount", 0); }
+        int grabs = 0; long bytes = 0;
+        try {
+            String today = new java.text.SimpleDateFormat("yyyyMMdd", Locale.US)
+                    .format(new java.util.Date());
+            org.json.JSONArray hist = new org.json.JSONArray(getContext()
+                    .getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
+                    .getString("dropHistory", "[]"));
+            for (int i = 0; i < hist.length(); i++) {
+                org.json.JSONObject o = hist.optJSONObject(i);
+                if (o == null) continue;
+                String day = new java.text.SimpleDateFormat("yyyyMMdd", Locale.US)
+                        .format(new java.util.Date(o.optLong("ts", 0)));
+                if (day.equals(today)) { grabs++; bytes += Math.max(0, o.optLong("bytes", 0)); }
+            }
+        } catch (Exception ignored) {}
+        r.put("grabsToday", grabs);
+        r.put("bytesToday", bytes);
+        r.put("sizeDp", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
+                .getInt("core_size_dp", 64));
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void setFetcherEnabled(PluginCall call) {
+        boolean enabled = call.getBoolean("enabled", true);
+        JSObject r = new JSObject();
+        if (!canToggleFetcher()) { r.put("ok", false); r.put("needsPermission", true); call.resolve(r); return; }
+        try {
+            android.content.ContentResolver cr = getContext().getContentResolver();
+            String cur = android.provider.Settings.Secure.getString(cr,
+                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            String others = cur == null ? "" : (cur.contains(FETCHER_COMPONENT)
+                    ? cur.replace(FETCHER_COMPONENT, "").replace("::", ":") : cur);
+            if (others.startsWith(":")) others = others.substring(1);
+            if (others.endsWith(":")) others = others.substring(0, others.length() - 1);
+            String next = enabled
+                    ? (others.isEmpty() ? FETCHER_COMPONENT : others + ":" + FETCHER_COMPONENT)
+                    : others;
+            android.provider.Settings.Secure.putString(cr,
+                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next);
+            android.provider.Settings.Secure.putInt(cr,
+                    android.provider.Settings.Secure.ACCESSIBILITY_ENABLED, next.isEmpty() ? 0 : 1);
+            // The owner's toggle wins over every auto-recovery path.
+            getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
+                    .edit().putBoolean("userEnabled", enabled).apply();
+            r.put("ok", true);
+        } catch (Exception e) { r.put("ok", false); r.put("error", String.valueOf(e)); }
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void setCoreSize(PluginCall call) {
+        Integer dp = call.getInt("dp", 64);
+        int want = dp == null ? 64 : dp;
+        int best = 64, bd = Integer.MAX_VALUE;
+        for (int v : new int[]{48, 56, 64}) {
+            int d = Math.abs(v - want);
+            if (d < bd) { bd = d; best = v; }
+        }
+        getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
+                .edit().putInt("core_size_dp", best).apply();
+        FetchSpikeService.applyCoreSizeLive(best);
+        JSObject r = new JSObject(); r.put("ok", true); r.put("sizeDp", best);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void resetCorePosition(PluginCall call) {
+        FetchSpikeService.resetCorePositionLive();
+        JSObject r = new JSObject(); r.put("ok", true);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void openBatterySettings(PluginCall call) {
+        JSObject r = new JSObject();
+        try {
+            android.content.Intent i = new android.content.Intent();
+            i.setClassName("com.android.settings", "com.android.settings.Settings$HighPowerApplicationsActivity");
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            r.put("ok", true);
+        } catch (Exception e) {
+            try {
+                getContext().startActivity(new android.content.Intent(
+                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+                r.put("ok", true); r.put("fallback", true);
+            } catch (Exception e2) { r.put("ok", false); }
+        }
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void getClipboardText(PluginCall call) {
         ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);

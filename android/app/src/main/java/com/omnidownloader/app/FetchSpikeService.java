@@ -73,6 +73,21 @@ public class FetchSpikeService extends AccessibilityService {
     private static final String POISON = new String("close"); // writer queue stop marker
 
     private static final Set<String> TARGETS = new HashSet<>();
+
+    /** Live instance for same-process control hooks (settings card size/position calls). */
+    private static volatile FetchSpikeService live;
+
+    /** Settings-card hook: apply a new Core size to the live Core, if it is running. */
+    public static void applyCoreSizeLive(int dp) {
+        FetchSpikeService s = live;
+        if (s != null && s.core != null) s.core.setSizeDp(dp);
+    }
+
+    /** Settings-card hook: put the Core back at its default spot. */
+    public static void resetCorePositionLive() {
+        FetchSpikeService s = live;
+        if (s != null && s.core != null) s.core.resetPosition();
+    }
     static {
         TARGETS.add("com.instagram.android");
         TARGETS.add("com.zhiliaoapp.musically"); // TikTok (global)
@@ -410,6 +425,7 @@ public class FetchSpikeService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        live = this;
 
         // The user chose this service once; record that so MainActivity may RE-arm it after a
         // vendor wipe (vivo's ABE clears enabled_accessibility_services when it force-stops us).
@@ -1747,6 +1763,7 @@ public class FetchSpikeService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
+        live = null;
         log("SERVICE_DESTROY");
         main.removeCallbacks(chainPoll);
         main.removeCallbacks(coreTickPoll);

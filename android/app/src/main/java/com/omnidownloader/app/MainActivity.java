@@ -96,6 +96,7 @@ public class MainActivity extends BridgeActivity {
         try {
             android.content.SharedPreferences prefs = getSharedPreferences("downi_fetcher", MODE_PRIVATE);
             if (!prefs.getBoolean("wasArmed", false)) return;
+            if (!prefs.getBoolean("userEnabled", true)) return;   // the owner disabled it on purpose
             if (checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
                     != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
             android.content.ContentResolver cr = getContentResolver();

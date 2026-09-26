@@ -181,6 +181,17 @@ public final class DowniCore {
         persistPosition();
     }
 
+    /** Settings-card hook: forget the remembered spot and return to the default position. */
+    public void resetPosition() {
+        prefs().edit().remove(KEY_X).remove(KEY_Y).apply();
+        if (lp == null) return;
+        int px = Math.round(sizeDp * dp);
+        lp.x = clamp(Math.max(0, screenW() - px - Math.round(8 * dp)), 0, Math.max(0, screenW() - px));
+        lp.y = clamp(Math.round(screenH() * 0.62f), 0, Math.max(0, screenH() - px));
+        try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
+        listener.onCoreLog("CORE_POSITION_RESET x=" + lp.x + " y=" + lp.y);
+    }
+
     public void show() {
         if (destroyed) return;
         if (attached && !windowAlive()) {                 // the ROM dropped the window
