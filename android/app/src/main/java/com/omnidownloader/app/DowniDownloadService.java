@@ -262,6 +262,11 @@ public class DowniDownloadService extends Service {
         instance = this;
         shareExecutor = Executors.newSingleThreadExecutor();
         ensureChannels();
+        // Wave 3 ("never stranded"): a download starting means DOWNI is alive — the moment
+        // to re-arm the Fetcher's binding (if the vendor wiped it) and schedule the
+        // self-healing keep-alive. Both are guarded no-ops when the guards say no.
+        FetcherRecovery.ensureArmed(this);
+        FetcherRecovery.scheduleKeepAlive(this);
         // D3: a paused grab survives process death — resurrect its paused set so resume works
         // after the vivo killer (or a reboot). The notification row is re-posted on the next
         // pause/resume/progress event; a quiet resume path exists via the Core's debug channel

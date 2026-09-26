@@ -16,6 +16,10 @@ public class GrabTileService extends TileService {
     @Override
     public void onClick() {
         super.onClick();
+        // Wave 3: the tile is an entry point — the re-arm ride-along costs nothing when the
+        // guards say no.
+        FetcherRecovery.ensureArmed(this);
+        FetcherRecovery.scheduleKeepAlive(this);
         try {
             Intent intent = new Intent(this, MainActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);

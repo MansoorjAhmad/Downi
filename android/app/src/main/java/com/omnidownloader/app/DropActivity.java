@@ -23,6 +23,11 @@ public class DropActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Wave 3: a share is an entry point too — if the vendor wiped the Fetcher's binding,
+        // this share brings it back without the user ever opening DOWNI (guarded as always).
+        FetcherRecovery.ensureArmed(this);
+        FetcherRecovery.scheduleKeepAlive(this);
+
         String url = extractUrl(extractSharedText(getIntent()));
 
         if (url == null) {

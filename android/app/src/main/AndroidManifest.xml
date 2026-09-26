@@ -93,6 +93,16 @@
             </intent-filter>
         </service>
 
+        <!-- Wave 3 (D-V2-4 experiment): the Fetcher's self-healing heartbeat — every ~30 min
+             it re-applies the accessibility binding if the vendor wiped it. Framework
+             JobScheduler (no new dependency), guarded by wasArmed + userEnabled + the
+             WRITE_SECURE_SETTINGS grant and battery-not-low. The service is started only by
+             the system's own scheduler, hence the standard BIND_JOB_SERVICE permission. -->
+        <service
+            android:name=".FetcherKeepAliveJob"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -1441,6 +1441,42 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve();
     }
 
+    /** Wave 3: resume one PAUSED grab from the Queue — the same byte-continuation as the
+     *  notification's Resume action and the paused Core's tap (one mechanism, three doors). */
+    @PluginMethod
+    public void resumeDropJob(PluginCall call) {
+        String jobId = call.getString("jobId");
+        if (jobId != null && !jobId.trim().isEmpty()) {
+            Intent intent = new Intent(getContext(), DowniDownloadService.class);
+            intent.setAction("shared_resume");
+            intent.putExtra("jobId", jobId);
+            try { getContext().startService(intent); } catch (Exception ignored) {}
+        }
+        call.resolve();
+    }
+
+    /** Wave 3: resume EVERY paused grab (the settings card's "Resume all"). */
+    @PluginMethod
+    public void resumeAllPaused(PluginCall call) {
+        int resumed = 0;
+        try {
+            android.content.SharedPreferences prefs = getContext()
+                .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+            org.json.JSONObject paused = new org.json.JSONObject(prefs.getString("pausedGrabs", "{}"));
+            java.util.Iterator<String> it = paused.keys();
+            while (it.hasNext()) {
+                String jobId = it.next();
+                Intent intent = new Intent(getContext(), DowniDownloadService.class);
+                intent.setAction("shared_resume");
+                intent.putExtra("jobId", jobId);
+                try { getContext().startService(intent); resumed++; } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+        JSObject r = new JSObject();
+        r.put("resumed", resumed);
+        call.resolve(r);
+    }
+
     /** v3.1.1 (defect N7): true exactly once after the user tapped a grab notification.
      *  Wave 2: also carries the completed Core's PEEK request — the Vault item to open. */
     @PluginMethod

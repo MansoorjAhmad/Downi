@@ -561,6 +561,8 @@
           </div>
 
           <div id="fetcherStats" class="text-[10px] font-mono" style="color:var(--muted)">…</div>
+          <div id="fetcherRoutes" class="hidden text-[10px] font-mono space-y-0.5" style="color:var(--muted)"></div>
+          <button id="fetcherResumeAll" class="hidden w-full py-2 text-[11px] font-extrabold text-white rounded-xl" style="background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.35)" onclick="resumeAllPausedGrabs()">▶ Resume all paused grabs</button>
 
           <button id="fetcherToggleBtn" onclick="toggleFetcher()" class="btn-hero w-full py-2.5 text-[11px] font-extrabold">…</button>
 
@@ -1647,6 +1649,7 @@
               <span class="jspark">${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}</span>
               <span class="jspeed text-emerald-300 font-bold">${job.speed ? escapeHtml(job.speed) : ''}</span>
               <span class="jeta text-accent">${job.eta ? escapeHtml(job.eta) : ''}</span>
+              ${job.paused ? `<button onclick="resumeOneDownload('${id}')" class="tap44 font-sans font-extrabold text-[11px]" style="color:var(--accent)">▶ Resume</button>` : ''}
               ${(job.done || job.failed) ? '' : `<button onclick="cancelOneDownload('${id}')" class="tap44 font-sans font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
             </div>
           </div>
@@ -1718,6 +1721,14 @@
       updateQueueBadge();
       engine?.cancelDownload?.({ jobId: jobId });
       if (job) showToast('Cancelled', job.label, 'info', 'Undo', () => { if (job.url) initiateDownload(job.url, job.formatId || 'best'); });
+    }
+
+    // Wave 3: resume a PAUSED background grab from the Queue — the transfer continues from
+    // the bytes on disk (D3). The card flips back to live on the next snapshot read.
+    function resumeOneDownload(jobId) {
+      const nativeId = jobId.startsWith('bg_') ? bgNativeId(jobId) : jobId;
+      getEngine()?.resumeDropJob?.({ jobId: nativeId });
+      showToast('Resuming', 'Continuing from where it stopped.', 'info');
     }
 
     function cancelAllDownloads() {
@@ -1809,7 +1820,9 @@
         job.percent = pct;
         job.done = state === 'done';
         job.failed = state === 'failed';
-        job.status = job.failed ? 'Failed' : (job.done ? 'Saved to your Vault' : 'Grabbing…');
+        job.paused = state === 'paused';
+        job.status = job.paused ? 'Paused — tap ▶ to continue from here'
+            : (job.failed ? 'Failed' : (job.done ? 'Saved to your Vault' : 'Grabbing…'));
         // N8: a finished card must never keep the last phase sentence ("Merging video + audio…")
         // as its sub-line — show real byte totals when known, else the state copy. Phase text
         // is only meaningful while the grab is still running.
@@ -3213,6 +3226,23 @@
         stats.textContent = 'today: ' + res.grabsToday + ' grabs · ' + mb + ' MB'
             + (res.pausedCount > 0 ? ' · ' + res.pausedCount + ' paused' : '')
             + (res.canToggle ? '' : ' · toggle needs the adb grant');
+        // Wave 3: paused grabs are actionable here — one tap resumes every one of them.
+        const resumeAll = document.getElementById('fetcherResumeAll');
+        if (resumeAll) resumeAll.classList.toggle('hidden', !(res.pausedCount > 0));
+        // Wave 3: route health — the resolver's measured truth (session rates).
+        const routesEl = document.getElementById('fetcherRoutes');
+        if (routesEl) {
+          const routes = (res.routes && res.routes.length) ? res.routes : [];
+          if (routes.length) {
+            routesEl.classList.remove('hidden');
+            routesEl.innerHTML = routes.map(rt => {
+              const pct = Math.round((rt.rate >= 0 ? rt.rate : 0) * 100);
+              const color = rt.rate >= 0.6 ? '#34D399' : (rt.rate >= 0.3 ? '#FBBF24' : '#FB7185');
+              return '<div>' + rt.platform + ' · ' + rt.route + ': <span style="color:' + color + '">'
+                  + pct + '% (' + rt.samples + ')</span></div>';
+            }).join('');
+          } else { routesEl.classList.add('hidden'); routesEl.innerHTML = ''; }
+        }
         document.querySelectorAll('#fetcherSizes button').forEach(b => {
           const on = parseInt(b.textContent) === res.sizeDp;
           b.style.borderColor = on ? 'var(--accent)' : 'rgba(255,255,255,0.06)';
@@ -3235,6 +3265,13 @@
     }
     async function resetCorePosition() {
       try { await getEngine()?.resetCorePosition(); } catch (e) {}
+    }
+    async function resumeAllPausedGrabs() {
+      try {
+        const res = await getEngine()?.resumeAllPaused?.();
+        if (res) showToast('Resuming', (res.resumed || 0) + ' paused grab(s) continuing.', 'success');
+      } catch (e) {}
+      loadFetcherCard();
     }
     async function openBatterySettings() {
       try { await getEngine()?.openBatterySettings(); } catch (e) {}
