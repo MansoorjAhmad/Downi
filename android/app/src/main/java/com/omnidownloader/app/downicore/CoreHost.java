@@ -73,6 +73,8 @@ public final class CoreHost extends View {
     private float markScale = DEFAULT_MARK_SCALE;
 
     private String state = CoreStates.IDLE;
+    private boolean readyGrade = true;      // the wake grade (sheet C2): READY vs AWARE
+    private boolean unsupported;            // FAILED's neutral variant (sheet C6)
     private float progress = 0f;
     private float animT = 0f;                        // 0..1 transition progress
     private ValueAnimator anim;
@@ -84,7 +86,7 @@ public final class CoreHost extends View {
     private float squashX = 1f, squashY = 1f;        // edge-snap gel deformation (V-3)
     private boolean animCancelled;                   // a cancelled transition must never settle
 
-    private Shader haloIdle, haloHot, haloErr, body, gloss, bounce, rim, rimErr, sweep;
+    private Shader haloIdle, haloHot, haloErr, haloNeutral, body, gloss, bounce, rim, rimErr, rimNeutral, sweep;
     private float cx, cy, r, blobMin, rIn;
 
     public CoreHost(Context c) {
@@ -123,9 +125,31 @@ public final class CoreHost extends View {
 
     public void setState(String s) {
         if (s == null || !CoreStates.isKnown(s)) return;
+        // Wave 2: the unsupported (neutral) tint belongs to FAILED alone — leaving FAILED
+        // clears it, so a later failure renders rose unless marked unsupported again.
+        if (!CoreStates.FAILED.equals(s)) unsupported = false;
         state = s;
         startTransition(durationOf(s));
         updateFlow();
+        invalidate();
+    }
+
+    /**
+     * The wake grade (sheet C2): READY is the approved full wake; AWARE rises to ~55%
+     * energy and settles quieter. The service computes it from measured route health.
+     */
+    public void setWakeGrade(boolean ready) {
+        if (readyGrade == ready) return;
+        readyGrade = ready;
+        // a wake already in flight re-times itself for its grade (600 vs 400 ms)
+        if (CoreStates.WAKE.equals(state)) startTransition(durationOf(state));
+        invalidate();
+    }
+
+    /** The restrained neutral response for "not this kind of thing" (sheet C6). */
+    public void setUnsupported(boolean u) {
+        if (unsupported == u) return;
+        unsupported = u;
         invalidate();
     }
 
@@ -137,8 +161,8 @@ public final class CoreHost extends View {
         invalidate();
     }
 
-    private static long durationOf(String s) {
-        if (CoreStates.WAKE.equals(s)) return CoreMotion.WAKE_MS;
+    private long durationOf(String s) {
+        if (CoreStates.WAKE.equals(s)) return readyGrade ? CoreMotion.WAKE_MS : CoreMotion.WAKE_AWARE_MS;
         if (CoreStates.PRESSED.equals(s)) return CoreMotion.PRESS_MS;
         if (CoreStates.SNAPPED.equals(s)) return CoreMotion.SNAP_MS;
         if (CoreStates.RESUMING.equals(s)) return CoreMotion.PAUSE_MS;
@@ -287,6 +311,10 @@ public final class CoreHost extends View {
                 new int[]{0x7322D3EE, 0x2422D3EE, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
         haloErr = new RadialGradient(cx, cy, r + inset + 2 * dp,
                 new int[]{0x55FB7185, 0x1AFB7185, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
+        // The UNSUPPORTED neutral mood (sheet C6): muted blue/gray energy — "not available",
+        // never red, never an alarm.
+        haloNeutral = new RadialGradient(cx, cy, r + inset + 2 * dp,
+                new int[]{0x4C8FA8B8, 0x198FA8B8, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
 
         // Deep obsidian body with real depth: darker toward the lower-right, a faint teal bounce
         // light from below (volumetric read), and one soft specular gloss top-left (sheet 1/5).
@@ -301,6 +329,8 @@ public final class CoreHost extends View {
                 new int[]{0xFF9BE8FF, 0xFF22D3EE, 0xFF3B82F6, 0xFF2DD4BF, 0xFF9BE8FF}, null);
         rimErr = new LinearGradient(cx - r, cy - r, cx + r, cy + r,
                 new int[]{0xFFFFC4D0, 0xFFFB7185, 0xFFF43F5E, 0xFFFFC4D0}, null, Shader.TileMode.CLAMP);
+        rimNeutral = new SweepGradient(cx, cy,
+                new int[]{0xFFB7C6D1, 0xFF8FA8B8, 0xFF64748B, 0xFF8FA8B8, 0xFFB7C6D1}, null);
         sweep = new SweepGradient(cx, cy,
                 new int[]{0xFF7DF9FF, 0xFF22D3EE, 0xFF3B82F6, 0xFF7DF9FF}, null);
 
@@ -314,14 +344,15 @@ public final class CoreHost extends View {
 
     @Override protected void onDraw(Canvas c) {
         if (rIn <= 0f) return;
-        CoreLook.Look L = CoreLook.of(state, animT, progress);
-        int mood = L.error > 0.25f ? 2 : (L.detected > 0.4f ? 1 : 0);
+        CoreLook.Look L = CoreLook.of(state, animT, progress, readyGrade);
+        // mood 0 idle · 1 awake · 2 rose failure · 3 NEUTRAL unsupported (sheet C6)
+        int mood = (L.error > 0.25f && unsupported) ? 3 : (L.error > 0.25f ? 2 : (L.detected > 0.4f ? 1 : 0));
         int save = c.save();
         c.scale(L.scale * squashX, L.scale * squashY, cx, cy);   // gel squash rides on state scale
 
         // 1) ambient bloom (restrained; the halo breathes with the download flow)
         p.setStyle(Paint.Style.FILL);
-        p.setShader(mood == 2 ? haloErr : (mood == 1 ? haloHot : haloIdle));
+        p.setShader(mood == 3 ? haloNeutral : (mood == 2 ? haloErr : (mood == 1 ? haloHot : haloIdle)));
         float breath = 0.85f + 0.15f * (float) Math.sin(Math.toRadians(flowDeg));
         p.setAlpha(Math.round(255f * clamp01(L.halo / 0.55f) * (CoreStates.PROGRESS.equals(state) ? breath : 1f)));
         c.drawCircle(cx, cy, r + 8 * dp, p);
@@ -343,7 +374,7 @@ public final class CoreHost extends View {
         c.drawArc(glass, 196f, 148f, false, p);
 
         // 4) the gel rim — the energy perimeter's home
-        p.setShader(mood == 2 ? rimErr : rim);
+        p.setShader(mood == 3 ? rimNeutral : (mood == 2 ? rimErr : rim));
         p.setStrokeWidth(2.2f * dp);
         p.setAlpha(Math.round(255f * clamp01(L.rim)));
         c.drawPath(blob, p);
@@ -404,7 +435,8 @@ public final class CoreHost extends View {
                     cy - side / 2f + markLagY + sink,
                     cx + side / 2f + markLagX,
                     cy + side / 2f + markLagY + sink);
-            p.setAlpha(Math.round(255f * clamp01(L.mark)));
+            float markAlpha = clamp01(L.mark) * (mood == 3 ? 0.45f : 1f);  // neutral: chevron recedes (C6)
+            p.setAlpha(Math.round(255f * markAlpha));
             c.drawBitmap(mark, null, markDst, p);
             p.setAlpha(255);
             c.restoreToCount(s2);

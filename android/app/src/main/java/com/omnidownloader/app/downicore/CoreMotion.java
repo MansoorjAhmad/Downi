@@ -15,7 +15,8 @@ public final class CoreMotion {
     public static final long QUICK_MS = 100;      // tap response / drag follow
     public static final long PRESS_MS = 100;      // compression in
     public static final long RELEASE_MS = 200;    // rebound (0.1 s in + 0.1 s out, sheet 6)
-    public static final long WAKE_MS = 600;       // rise 0.2 + expand 0.2 + settle 0.2
+    public static final long WAKE_MS = 600;       // rise 0.2 + expand 0.2 + settle 0.2 (sheet C2)
+    public static final long WAKE_AWARE_MS = 400; // the AWARE wake: one quieter rise
     public static final long WAKE_STEP_MS = 200;
     public static final long DRAG_MS = 100;       // follow the finger, no lag beyond this
     public static final long SNAP_MS = 300;       // edge magnetism — subtle, never forced

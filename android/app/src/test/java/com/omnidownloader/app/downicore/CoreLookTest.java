@@ -56,9 +56,37 @@ public class CoreLookTest {
         CoreLook.Look start = CoreLook.of(CoreStates.WAKE, 0f, 0f);
         CoreLook.Look end = CoreLook.of(CoreStates.WAKE, 1f, 0f);
         assertEquals(0f, start.detected, EPS);
-        assertEquals(0f, start.perimeter, EPS);
         assertEquals(1f, end.detected, EPS);
-        assertEquals(1f, end.perimeter, EPS);
+        assertTrue("the membrane must brighten through the wake", end.halo > start.halo);
+        assertTrue("the rim must brighten through the wake", end.rim > start.rim);
+    }
+
+    @Test public void wakeNeverDrawsATransientRing() {
+        // Sheet C2's ruling: the surge reads as the MEMBRANE brightening — never a separate
+        // full circle appearing and vanishing. The wake's perimeter stays 0 through the whole
+        // transition, and the rim carries the surge instead.
+        for (float t = 0f; t <= 1.0001f; t += 0.1f) {
+            assertEquals("wake perimeter must be 0 at t=" + t, 0f,
+                    CoreLook.of(CoreStates.WAKE, t, 0f).perimeter, EPS);
+            assertTrue("the rim must rise through the wake",
+                    CoreLook.of(CoreStates.WAKE, t, 0f).rim >= 0.55f - EPS);
+        }
+    }
+
+    @Test public void awareIsTheQuieterHonestWake() {
+        // Sheet C2: same object, ~55% energy on every channel — READY vs AWARE.
+        CoreLook.Look ready = CoreLook.of(CoreStates.DETECTED, 0f, 0f, true);
+        CoreLook.Look aware = CoreLook.of(CoreStates.DETECTED, 0f, 0f, false);
+        assertTrue("aware halo must be quieter", aware.halo < ready.halo);
+        assertTrue("aware rim must be quieter", aware.rim < ready.rim);
+        assertTrue("aware mark must be quieter", aware.mark < ready.mark);
+        assertTrue("aware must still read as awake", aware.detected >= 0.5f);
+        assertEquals(0.30f, aware.halo, EPS);
+        assertEquals(0.78f, aware.rim, EPS);
+        // an AWARE wake ends at the AWARE settled values, never the READY ones
+        CoreLook.Look awareWakeEnd = CoreLook.of(CoreStates.WAKE, 1f, 0f, false);
+        assertEquals(0.78f, awareWakeEnd.rim, EPS);
+        assertTrue(awareWakeEnd.detected <= 0.56f);
     }
 
     @Test public void easingIsMonotonicWithCleanEndpoints() {

@@ -125,6 +125,16 @@ public final class DowniCore {
         listener.onCoreLog("CORE_MARK_SCALE " + view.markScale());
     }
 
+    /** The wake grade (sheet C2): READY = full wake, AWARE = the quieter honest rise. */
+    public void setWakeGrade(boolean ready) {
+        view.setWakeGrade(ready);
+    }
+
+    /** FAILED's neutral variant (sheet C6): "not this kind of thing", never an alarm. */
+    public void setUnsupported(boolean u) {
+        view.setUnsupported(u);
+    }
+
     /** False only while DOWNI is driving platform UI; hidden windows are always non-touchable. */
     public void setInteractive(boolean on) {
         interactive = on;
@@ -244,10 +254,13 @@ public final class DowniCore {
         int px = Math.round(sizeDp * dp);
         lp.x = clamp(lp.x, 0, Math.max(0, swpx - px));
         lp.y = clamp(lp.y, 0, Math.max(0, shpx - px));
+        // Wave 2: the object ARRIVES — a 150 ms fade instead of a pop (spec §4.14).
+        view.setAlpha(0f);
         view.setVisibility(View.VISIBLE);
         visible = true;
         applyInteractiveFlag();
         try { wm.updateViewLayout(view, lp); } catch (Throwable ignored) {}
+        view.animate().alpha(1f).setDuration(150).start();
         listener.onCoreLog("CORE_SHOW state=" + view.state());
     }
 
@@ -269,7 +282,13 @@ public final class DowniCore {
     public void hide() {
         if (!attached || !visible) return;
         visible = false;
-        view.setVisibility(View.GONE);                    // window stays; this ROM loses touch on re-add
+        // Wave 2: the object LEAVES — fade out 150 ms, then GONE (window stays attached;
+        // this ROM loses touch on re-add, so the window itself is never removed).
+        view.animate().alpha(0f).setDuration(150).withEndAction(new Runnable() {
+            @Override public void run() {
+                if (!visible) view.setVisibility(View.GONE);
+            }
+        }).start();
         if (lp != null) {
             lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                     | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;

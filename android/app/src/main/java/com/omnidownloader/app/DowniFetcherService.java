@@ -343,20 +343,48 @@ public class DowniFetcherService extends AccessibilityService {
 
     /**
      * Recomputes what the Core should show and applies it as its base state.
-     * The precedence rules live in the pure, tested {@link CoreArbiter} (Wave 0).
+     * The precedence rules live in the pure, tested {@link CoreArbiter} (Wave 0);
+     * the DETECTED look is graded READY/AWARE by measured route health (Wave 2).
      */
     private void applyCoreState() {
         if (core == null) return;
         String s = CoreArbiter.baseState(jobState, chainRunning, videoDetected);
+        if (CoreStates.DETECTED.equals(s)) core.setWakeGrade(wakeReady());
         if (CoreStates.showsProgress(jobState)) core.setProgress(jobProgress);
         core.setBaseState(s);
+    }
+
+    /** The wake grade threshold (Wave 2): degrade to AWARE only on MEASURED failure. */
+    private static final double READY_RATE_FLOOR = 0.60;
+    private static final int READY_MIN_SAMPLES = 3;
+    private static final long WAKE_TICK_MIN_GAP_MS = 4_000;
+    private long lastWakeTickAt;
+
+    /**
+     * True when a tap will plausibly land on this platform right now. The ledger's READY
+     * candidate (Instagram) is instant confidence; otherwise the platform's gesture routes
+     * must be measurably healthy. No data yet = READY — the Core never claims brokenness it
+     * has not measured (the honesty rule cuts both ways).
+     */
+    private boolean wakeReady() {
+        PlatformProfile p = profile();
+        if (p == null) return false;
+        if (p.passiveCapable && ledger.best(SystemClock.elapsedRealtime()) != null) return true;
+        boolean anyData = false;
+        for (StrategyLedger.Stat st : strategies.stats()) {
+            if (!p.key.equals(st.platform) || st.samples < READY_MIN_SAMPLES) continue;
+            anyData = true;
+            if (st.rate >= READY_RATE_FLOOR) return true;   // one healthy route is enough
+        }
+        return !anyData;                                    // unmeasured = not yet failing
     }
 
     /**
      * Detection wake (master package §9): watching signals found in the platform's tree mean a
      * video is on screen — the Core rises once (WAKE settles to DETECTED in the host view). No
      * signals (profiles, settings, DMs) → honest idle. Detection never downloads; it only wakes
-     * the Core so the user knows a tap will find something.
+     * the Core so the user knows a tap will find something. Wave 2: the wake is GRADED (sheet
+     * C2) and only the READY wake ticks — rate-limited to one per 4 s.
      */
     private void updateDetection(boolean hasSignal) {
         if (chainRunning || hasSignal == videoDetected) return;
@@ -366,25 +394,36 @@ public class DowniFetcherService extends AccessibilityService {
         videoDetected = hasSignal;
         applyCoreState();
         if (hasSignal && core != null) {
+            boolean ready = wakeReady();
+            core.setWakeGrade(ready);
             core.setState(CoreStates.WAKE);
-            if (screenOn && core.isShown()) CoreHaptics.detected(this);
+            if (ready && screenOn && core.isShown() && now - lastWakeTickAt >= WAKE_TICK_MIN_GAP_MS) {
+                lastWakeTickAt = now;
+                CoreHaptics.detected(this);
+            }
         }
-        log("CORE_DETECT detected=" + hasSignal);
+        log("CORE_DETECT detected=" + hasSignal + " grade=" + (hasSignal ? (wakeReady() ? "ready" : "aware") : "none"));
     }
 
     /**
      * The resolver could not keep its promise (no share row, empty clipboard, rejected URL,
      * refused delivery). The Core says so once — restrained error tint, retry-ready — then
      * returns to whatever is actually true (master package §15: "Something went wrong.",
-     * never "SYSTEM FAILURE!!!").
+     * never "SYSTEM FAILURE!!!"). Wave 2: an UNSUPPORTED rejection (a photo post) takes the
+     * neutral blue-gray mood instead of rose (sheet C6), with its own dull double-tap.
      */
     private void resolverFailed(String why) {
         log("CORE_RESOLVE_FAIL why=" + why);
         if (failedHold != null) main.removeCallbacks(failedHold);
         jobState = CoreStates.FAILED;
         jobProgress = 0f;
+        boolean unsupported = why != null && (why.contains("photo_post") || why.contains("unsupported"));
         applyCoreState();
-        if (screenOn && core != null && core.isShown()) CoreHaptics.failed(this);
+        if (core != null) core.setUnsupported(unsupported);
+        if (screenOn && core != null && core.isShown()) {
+            if (unsupported) CoreHaptics.unsupported(this);
+            else CoreHaptics.failed(this);
+        }
         failedHold = new Runnable() {
             @Override public void run() {
                 if (CoreStates.FAILED.equals(jobState)) {   // never clobber a newer job/run

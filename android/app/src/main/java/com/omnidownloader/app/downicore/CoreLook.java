@@ -33,6 +33,14 @@ public final class CoreLook {
      * @param progress 0..1 job progress, only meaningful in the progress-carrying states
      */
     public static Look of(String state, float t, float progress) {
+        return of(state, t, progress, true);
+    }
+
+    /**
+     * @param readyGrade true = the full wake (a tap will land); false = the AWARE grade
+     *                   (watching, but routes degraded) — sheet C2's two honest wakes
+     */
+    public static Look of(String state, float t, float progress, boolean readyGrade) {
         Look L = new Look();
         float p = progress < 0f ? 0f : (progress > 1f ? 1f : progress);
         float e = CoreMotion.easeInOut(t);
@@ -47,20 +55,40 @@ public final class CoreLook {
         L.perimeter = 0f;
 
         if (CoreStates.WAKE.equals(state)) {
-            // sheet 6 #1 / §21: energy begins to rise -> perimeter expands -> settles to detected.
+            // Sheet C2's wake storyboard: energy gathers IN THE RIM — rise, expand, settle.
+            // Wave 2: the old transient full ring is gone; the surge reads as the membrane
+            // brightening, never as a separate circle appearing and vanishing.
             L.detected = e;
             L.halo = 0.20f + 0.65f * e;
             L.rim = 0.55f + 0.45f * e;
             L.track = 0.07f + 0.09f * e;
-            L.perimeter = e;
-        } else if (CoreStates.DETECTED.equals(state)) {
-            // §9: the wake must READ as "Downi found something" without text — visibly awake,
-            // unmistakably brighter than idle, still silent.
-            L.detected = 1f;
-            L.halo = 0.85f;
-            L.rim = 1.00f;
-            L.track = 0.16f;
             L.perimeter = 0f;
+            if (!readyGrade) {                   // the AWARE wake stops at the quieter targets
+                L.halo = 0.20f + 0.10f * e;
+                L.rim = 0.55f + 0.23f * e;
+                L.mark = 0.85f - 0.05f * e;
+                L.track = 0.07f + 0.05f * e;
+                L.detected = 0.55f * e;
+            }
+        } else if (CoreStates.DETECTED.equals(state)) {
+            L.detected = 1f;
+            L.perimeter = 0f;
+            if (readyGrade) {
+                // READY: "tap me and it's yours" — the approved full wake.
+                L.halo = 0.85f;
+                L.rim = 1.00f;
+                L.mark = 0.85f;
+                L.track = 0.16f;
+            } else {
+                // AWARE: "I see what you're watching" — ~55% energy on every channel,
+                // unmistakably the same object (sheet C2). Halo 0.30 == 55% alpha after
+                // the host's /0.55 normalization.
+                L.halo = 0.30f;
+                L.rim = 0.78f;
+                L.mark = 0.80f;
+                L.track = 0.12f;
+                L.detected = 0.55f;
+            }
         } else if (CoreStates.RESOLVING.equals(state)) {
             // §M-1: the tap fired; the resolver is working. The rim carries one orbiting light
             // (the host draws it) — resolution has visible progress, never a frozen state.
@@ -101,13 +129,15 @@ public final class CoreLook {
             L.mark = 0.60f;
             L.halo = 0.50f + 0.12f * p + 0.10f * pulse;
         } else if (CoreStates.PAUSED.equals(state)) {
-            // sheet 4: "download paused — the energy freezes gently."
+            // sheet 4: "download paused — the energy freezes gently." R-C ruling (owner,
+            // sheets v2 1 & 5): the bars REPLACE the mark while paused — no chevron, fully
+            // frozen, no breath (sheet C5: "frozen state — no motion, no change").
             L.detected = 1f;
             L.perimeter = p;
             L.track = 0.18f;
             L.rim = 0.55f;
             L.halo = 0.34f;
-            L.mark = 0.60f;
+            L.mark = 0f;
             L.bars = true;
             L.barAlpha = 0.90f;
         } else if (CoreStates.RESUMING.equals(state)) {
