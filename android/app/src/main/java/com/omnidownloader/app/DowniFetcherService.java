@@ -68,24 +68,24 @@ import java.util.regex.Pattern;
  * Everything is written to files/fetch-spike/ on this device — local only, delete
  * after analysis. Debug tool; never part of a release build.
  */
-public class FetchSpikeService extends AccessibilityService {
+public class DowniFetcherService extends AccessibilityService {
     private static final String TAG = "DowniSpike";
     private static final String POISON = new String("close"); // writer queue stop marker
 
     private static final Set<String> TARGETS = new HashSet<>();
 
     /** Live instance for same-process control hooks (settings card size/position calls). */
-    private static volatile FetchSpikeService live;
+    private static volatile DowniFetcherService live;
 
     /** Settings-card hook: apply a new Core size to the live Core, if it is running. */
     public static void applyCoreSizeLive(int dp) {
-        FetchSpikeService s = live;
+        DowniFetcherService s = live;
         if (s != null && s.core != null) s.core.setSizeDp(dp);
     }
 
     /** Settings-card hook: put the Core back at its default spot. */
     public static void resetCorePositionLive() {
-        FetchSpikeService s = live;
+        DowniFetcherService s = live;
         if (s != null && s.core != null) s.core.resetPosition();
     }
     static {
@@ -282,7 +282,7 @@ public class FetchSpikeService extends AccessibilityService {
     private final DowniCore.Listener coreListener = new DowniCore.Listener() {
         @Override public void onCoreLog(String msg) { log(msg); }
         @Override public void onCoreTap() {
-            try { FetchSpikeService.this.onCoreTap(); }
+            try { DowniFetcherService.this.onCoreTap(); }
             catch (Throwable t) { log("CORE_TAP_ERR " + t); chainReset(); }
         }
         @Override public void onCoreMoved(int x, int y) { log("CORE_MOVED x=" + x + " y=" + y); }
@@ -469,8 +469,8 @@ public class FetchSpikeService extends AccessibilityService {
                 jobProgress = v.progress;
                 applyCoreState();
                 if (screenOn && core != null && core.isShown()) {
-                    if (CoreStates.COMPLETE.equals(jobState) && !wasComplete) CoreHaptics.complete(FetchSpikeService.this);
-                    if (CoreStates.FAILED.equals(jobState)) CoreHaptics.failed(FetchSpikeService.this);
+                    if (CoreStates.COMPLETE.equals(jobState) && !wasComplete) CoreHaptics.complete(DowniFetcherService.this);
+                    if (CoreStates.FAILED.equals(jobState)) CoreHaptics.failed(DowniFetcherService.this);
                 }
                 int pct = Math.round(v.progress * 100f);
                 if (!v.coreState.equals(lastLoggedJobState) || pct != lastLoggedJobPct) {
@@ -654,7 +654,7 @@ public class FetchSpikeService extends AccessibilityService {
         dumpCount++;
         sessionDumps++;
         log("DUMP_" + dumpCount + " reason=" + reason + " pkg=" + sessionPkg + " nodes=" + c.nodes);
-        log(bodyStr);                            // full tree, one chunk
+        if (BuildConfig.DEBUG) log(bodyStr);     // full tree, one chunk (debug builds only)
         extractAndVerdict(corpus.toString());
         feedLedger();                            // attention: what is on screen right now
         updateDetection(!signals.isEmpty());     // Phase 0 P0-2: watching signals = a video is on screen
@@ -976,6 +976,7 @@ public class FetchSpikeService extends AccessibilityService {
     // One command per line, `#` comments allowed. Nothing here detects or downloads.
 
     private void pollCoreCmd() {
+        if (!BuildConfig.DEBUG) return;          // Phase G: the bench channel never ships
         File f = new File(spikeDir(), "core.cmd");
         if (!f.exists()) return;
         String body = readSmallFile(f);
@@ -1061,6 +1062,7 @@ public class FetchSpikeService extends AccessibilityService {
     }
 
     private void pollChainCmd() {
+        if (!BuildConfig.DEBUG) return;          // Phase G: the bench channel never ships
         File f = new File(spikeDir(), "chain.cmd");
         if (!f.exists()) return;
         String cmd = readSmallFile(f);
@@ -1370,6 +1372,7 @@ public class FetchSpikeService extends AccessibilityService {
     // ---------- screenshots (diagnostic fallback, spike only) ----------
 
     private void maybeScreenshot(String reason) {
+        if (!BuildConfig.DEBUG) return;          // Phase G: never in a release build
         if (Build.VERSION.SDK_INT < 34) {
             log("SCREENSHOT_SKIPPED reason=" + reason + " why=sdk_below_34");
             return;
@@ -1619,6 +1622,9 @@ public class FetchSpikeService extends AccessibilityService {
     // ---------- log plumbing (writer thread keeps event handling jank-free) ----------
 
     private void startWriter() {
+        // Phase G: the forensic file log is a DEBUG-build instrument. Release builds keep only
+        // logcat breadcrumbs - accessibility data never gets written to disk in a release.
+        if (!BuildConfig.DEBUG) return;
         writer = new Thread(new Runnable() {
             @Override public void run() {
                 try {
@@ -1720,7 +1726,7 @@ public class FetchSpikeService extends AccessibilityService {
     private void log(String msg) {
         String line = ts() + " " + msg;
         Log.i(TAG, line);
-        outbox.offer(line);
+        if (BuildConfig.DEBUG) outbox.offer(line);   // no queue growth when the writer is off
     }
 
     // ---------- helpers ----------
@@ -1732,6 +1738,7 @@ public class FetchSpikeService extends AccessibilityService {
     }
 
     private boolean readHandoffGate(File dir) {
+        if (!BuildConfig.DEBUG) return false;    // Phase G: the bench gate is a debug instrument
         try {
             File cfg = new File(dir, "spike_config.properties");
             if (!cfg.exists()) return false;

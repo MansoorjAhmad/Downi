@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- V3.2 Phase 0 detectability spike: reads IG/TikTok trees on this device only.
+<!-- DOWNI Fetcher accessibility configuration: reads IG/TikTok trees on this device only.
      canTakeScreenshot is an API 34+ platform attribute: required for the diagnostic
      takeScreenshot() calls on API 34+, ignored by older OS versions. Removing it was
      one wrong hypothesis during the 2026-09-24 device hunt — the real blocker was the
@@ -12,4 +12,4 @@
     android:canRetrieveWindowContent="true"
     android:canTakeScreenshot="true"
     android:canPerformGestures="true"
-    android:description="@string/fetch_spike_desc" />
+    android:description="@string/fetcher_desc" />

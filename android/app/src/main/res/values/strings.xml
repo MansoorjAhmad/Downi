@@ -8,5 +8,5 @@
     <!-- Phase A preview string: the Core is a visual preview until Phase B/C wire interaction
          and detection. Honest on purpose — it must not promise behaviour it does not have. -->
     <string name="downi_core_desc">DOWNI Core — preview of the floating DOWNI control</string>
-<string name="fetch_spike_desc">Phase 0 detectability spike for DOWNI Fetcher: records what Instagram and TikTok show on screen while you watch, to measure whether zero-touch video detection is possible. Everything stays on this phone; nothing is ever sent anywhere.</string>
+<string name="fetcher_desc">Lets DOWNI show its Core over Instagram and TikTok so you can grab videos with one tap. Nothing is read or stored beyond what a grab needs.</string>
 </resources>

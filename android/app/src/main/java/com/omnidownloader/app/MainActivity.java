@@ -78,7 +78,7 @@ public class MainActivity extends BridgeActivity {
     // ---------- Fetcher self-recovery (vivo ABE wipes the accessibility binding) ----------
 
     private static final String A11Y_COMPONENT =
-            "com.omnidownloader.app/com.omnidownloader.app.FetchSpikeService";
+            "com.omnidownloader.app/com.omnidownloader.app.DowniFetcherService";
 
     /**
      * The vivo Application Behavior Engine force-stops the Fetcher and CLEARS
@@ -110,8 +110,16 @@ public class MainActivity extends BridgeActivity {
                 }
                 return;
             }
-            String next = (current == null || current.trim().isEmpty())
-                    ? A11Y_COMPONENT : current + ":" + A11Y_COMPONENT;
+            // Drop any stale DOWNI tokens (old component names survive a rename in the binding).
+            StringBuilder kept = new StringBuilder();
+            if (current != null) {
+                for (String t : current.split(":")) {
+                    if (t.trim().isEmpty() || t.contains("com.omnidownloader.app/")) continue;
+                    if (kept.length() > 0) kept.append(':');
+                    kept.append(t.trim());
+                }
+            }
+            String next = kept.length() > 0 ? kept + ":" + A11Y_COMPONENT : A11Y_COMPONENT;
             android.provider.Settings.Secure.putString(
                     cr, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next);
             android.provider.Settings.Secure.putInt(

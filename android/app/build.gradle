@@ -31,6 +31,11 @@ def releaseSigningAvailable = ksStoreFile != null && file(ksStoreFile).exists()
 
 android {
     namespace "com.omnidownloader.app"
+    // Phase G: BuildConfig.DEBUG gates the Fetcher's debug instruments (bench channels,
+    // forensic file log, screenshots) out of release builds.
+    buildFeatures {
+        buildConfig true
+    }
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.omnidownloader.app"

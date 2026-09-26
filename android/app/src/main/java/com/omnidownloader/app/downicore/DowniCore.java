@@ -91,7 +91,7 @@ public final class DowniCore {
     }
 
     /**
-     * The arbiter's chosen state (job > detection — see FetchSpikeService). Touch interaction
+     * The arbiter's chosen state (job > detection — see DowniFetcherService). Touch interaction
      * (pressed/dragging/snapped) still overrides it physically, but when the finger leaves,
      * the Core returns HERE instead of a hardcoded idle — so a Core that is mid-download does
      * not forget its job just because the user dragged it.

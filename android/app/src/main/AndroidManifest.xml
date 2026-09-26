@@ -68,8 +68,8 @@
              order); the service was then never discovered, never listed in Settings and
              never bound — on any device, whatever else looked correct. -->
         <service
-            android:name=".FetchSpikeService"
-            android:label="DOWNI Fetcher Spike"
+            android:name=".DowniFetcherService"
+            android:label="DOWNI Fetcher"
             android:foregroundServiceType="dataSync"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
@@ -78,7 +78,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.accessibilityservice"
-                android:resource="@xml/fetch_spike_service" />
+                android:resource="@xml/fetcher_service" />
         </service>
 
         <!-- Quick Settings tile: one tap into DOWNI's Grab screen -->

@@ -429,7 +429,7 @@ public class DowniEnginePlugin extends Plugin {
     // ---------- DOWNI Fetcher (the Core over IG/TikTok) — settings card bridge ----------
 
     private static final String FETCHER_COMPONENT =
-            "com.omnidownloader.app/com.omnidownloader.app.FetchSpikeService";
+            "com.omnidownloader.app/com.omnidownloader.app.DowniFetcherService";
 
     private boolean fetcherArmed() {
         try {
@@ -491,9 +491,15 @@ public class DowniEnginePlugin extends Plugin {
                     ? cur.replace(FETCHER_COMPONENT, "").replace("::", ":") : cur);
             if (others.startsWith(":")) others = others.substring(1);
             if (others.endsWith(":")) others = others.substring(0, others.length() - 1);
+            StringBuilder kept = new StringBuilder();
+            for (String t : others.split(":")) {
+                if (t.trim().isEmpty() || t.contains("com.omnidownloader.app/")) continue;
+                if (kept.length() > 0) kept.append(':');
+                kept.append(t.trim());
+            }
             String next = enabled
-                    ? (others.isEmpty() ? FETCHER_COMPONENT : others + ":" + FETCHER_COMPONENT)
-                    : others;
+                    ? (kept.length() > 0 ? kept + ":" + FETCHER_COMPONENT : FETCHER_COMPONENT)
+                    : kept.toString();
             android.provider.Settings.Secure.putString(cr,
                     android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next);
             android.provider.Settings.Secure.putInt(cr,
@@ -517,14 +523,14 @@ public class DowniEnginePlugin extends Plugin {
         }
         getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
                 .edit().putInt("core_size_dp", best).apply();
-        FetchSpikeService.applyCoreSizeLive(best);
+        DowniFetcherService.applyCoreSizeLive(best);
         JSObject r = new JSObject(); r.put("ok", true); r.put("sizeDp", best);
         call.resolve(r);
     }
 
     @PluginMethod
     public void resetCorePosition(PluginCall call) {
-        FetchSpikeService.resetCorePositionLive();
+        DowniFetcherService.resetCorePositionLive();
         JSObject r = new JSObject(); r.put("ok", true);
         call.resolve(r);
     }
