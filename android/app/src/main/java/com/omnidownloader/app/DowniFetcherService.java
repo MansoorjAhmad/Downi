@@ -28,6 +28,7 @@ import com.omnidownloader.app.downicore.CoreStates;
 import com.omnidownloader.app.downicore.DowniCore;
 import com.omnidownloader.app.fetcher.ChainObserver;
 import com.omnidownloader.app.fetcher.Route;
+import com.omnidownloader.app.fetcher.SheetSwipe;
 import com.omnidownloader.app.fetcher.AttentionLedger;
 import com.omnidownloader.app.fetcher.DeliveryGuard;
 import com.omnidownloader.app.fetcher.MediaUrl;
@@ -813,7 +814,14 @@ public class DowniFetcherService extends AccessibilityService {
                 && pkg != null && !pkg.equals(getPackageName())) {
             endSession("poll:" + pkg);
         }
-        boolean followTarget = (onTarget && sessionPkg != null) || chainRunning;
+        // Wave 1 (D-q, device log 18:42:48): during the clipboard-read window the focus pre-warm
+        // makes OUR OWN window the active one — that must not read as "left the target app" or
+        // the Core hides out from under the very read that needs it. While the Core's window is
+        // deliberately focusable, hold position; a user simply opening DOWNI (Core not focusable)
+        // still hides it exactly as before.
+        boolean oursFocusWindow = pkg != null && pkg.equals(getPackageName())
+                && core != null && core.isFocusableNow();
+        boolean followTarget = (onTarget && sessionPkg != null) || chainRunning || oursFocusWindow;
         boolean keep = coreManualVisibility != null ? coreManualVisibility : followTarget;
         if (keep && !core.isShown()) {
             core.show();
@@ -879,7 +887,12 @@ public class DowniFetcherService extends AccessibilityService {
         runEndPending = false;              // a newer run owns its own narration (D-i staleness)
         if (core != null) {
             core.setFocusable(false);          // clean slate; this run re-focuses at its own step 3
-            core.setInteractive(false);        // platform automation owns touch now
+            // Wave 1 (owner-reported): the Core used to go NOT_TOUCHABLE for the whole run, so
+            // the owner's second tap or a stray brush landed on the FEED, where a little vertical
+            // movement is the next-reel drag ("the link copies and the reel scrolled"). The Core
+            // now SHIELDS instead: touchable, absorbing, acting on nothing — the resolver drops
+            // touchability only for the brief moment each injected gesture is in flight.
+            core.setShielded(true);
         }
         // The arbiter now says RESOLVING (unless a real job outranks it) — apply it so the
         // rim-orbit light actually renders while the resolver works. Wave 0 audit: the run
@@ -921,6 +934,7 @@ public class DowniFetcherService extends AccessibilityService {
             observer.onRunEnded(delivered, route, ms);
         }
         if (core != null) {
+            core.setShielded(false);           // the run's gestures are done or deferred
             core.setInteractive(true);
             applyCoreState();
         }
@@ -1298,7 +1312,7 @@ public class DowniFetcherService extends AccessibilityService {
             observer.onStep("sheet_tree_hit", "");
             log("CHAIN_SHEET_TREE_DELIVER url=" + clip(cand, 200));
             chainSheetNeedsClose = false;
-            log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK) + " why=sheet_tree_route");
+            closeSheetIfOpen("sheet_tree_route");
             deliverByTap(cand, "sheet_tree");
             chainReset();
             return;
@@ -1326,11 +1340,18 @@ public class DowniFetcherService extends AccessibilityService {
             // the VIDEO away instead of the sheet. A swipe may now only ever fire when the
             // share surface is verifiably on screen as its own window; otherwise the run waits
             // once for the sheet animation and then fails honestly, never touching the feed.
+            //
+            // WAVE 1 (owner report 2026-09-26: "the reel scrolled"): the fixed screen-fraction
+            // stroke itself became suspect. Scrolling now goes through the sheet's OWN
+            // scrollable node (ACTION_SCROLL_FORWARD — coordinate-free, cannot touch the
+            // feed); the gesture is only the fallback and is clamped INSIDE the sheet
+            // window's own bounds by SheetSwipe.endpoints, never a screen fraction.
             boolean surface = shareSurfaceOpen();
             if (surface && sheetSwipes < maxSwipes) {
                 sheetSwipes++;
-                log("CHAIN_SHEET_SCROLL n=" + sheetSwipes + "/" + maxSwipes
-                        + " swipe=" + swipeSheetList());
+                boolean scrolled = scrollSheet();
+                log("CHAIN_SHEET_SCROLL n=" + sheetSwipes + "/" + maxSwipes + " scrolled=" + scrolled);
+                if (scrolled) observer.onStep("sheet_scrolled", "n=" + sheetSwipes);
                 postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 900);
                 return;
             }
@@ -1355,6 +1376,71 @@ public class DowniFetcherService extends AccessibilityService {
         postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1200);
     }
 
+    /**
+     * Scroll the share sheet one page toward "Copy link" without ever touching the feed.
+     * First choice: the sheet's own scrollable node via ACTION_SCROLL_FORWARD — pure node
+     * action, no coordinates. Fallback: a gesture whose BOTH endpoints are clamped inside
+     * the sheet window's own bounds (SheetSwipe), so even a fall-through can only land on
+     * the sheet, never on the video behind it.
+     */
+    private boolean scrollSheet() {
+        try {
+            AccessibilityNodeInfo sheetRoot = shareSurfaceRoot();
+            if (sheetRoot == null) return false;
+            java.util.ArrayList<AccessibilityNodeInfo> scrollables = new java.util.ArrayList<>();
+            collectScrollables(sheetRoot, scrollables, new Counter(), 0);
+            for (AccessibilityNodeInfo n : scrollables) {
+                try {
+                    if (n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return true;
+                } catch (Throwable ignored) {}
+            }
+            Rect b = new Rect();
+            sheetRoot.getBoundsInScreen(b);
+            float density = getResources().getDisplayMetrics().density;
+            float[] e = SheetSwipe.endpoints(b.left, b.top, b.right, b.bottom, density);
+            if (e == null) return false;
+            Path p = new Path();
+            p.moveTo(e[0], e[1]);
+            p.lineTo(e[2], e[3]);
+            return dispatchGestureGuarded(new GestureDescription.Builder()
+                    .addStroke(new GestureDescription.StrokeDescription(p, 0, 280)).build());
+        } catch (Throwable t) {
+            log("CHAIN_SHEET_SCROLL_ERR " + t);
+            return false;
+        }
+    }
+
+    /** Depth-capped walk collecting scrollable nodes of the sheet's own window. */
+    private void collectScrollables(AccessibilityNodeInfo node,
+                                    java.util.ArrayList<AccessibilityNodeInfo> out,
+                                    Counter c, int depth) {
+        if (node == null || c.nodes >= MAX_NODES || depth > MAX_DEPTH || out.size() >= 4) return;
+        if (isOurs(node)) return;
+        c.nodes++;
+        try { if (node.isScrollable()) out.add(node); } catch (Throwable ignored) {}
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = null;
+            try { child = node.getChild(i); } catch (Throwable ignored) {}
+            collectScrollables(child, out, c, depth + 1);
+        }
+    }
+
+    /**
+     * Close the platform sheet — but ONLY if it is still on screen. Wave 1 (owner report):
+     * a sheet that auto-dismissed after Copy link made this BACK press land on the FEED,
+     * where it exits/advances the reel — the second half of the "reel scrolled" report.
+     */
+    private void closeSheetIfOpen(String why) {
+        boolean open = shareSurfaceOpen();
+        if (open) {
+            log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK) + " why=" + why);
+        } else {
+            log("CHAIN_CLOSE_PANEL skipped why=" + why + " already_closed=1");
+        }
+        observer.onStep("panel_closed", open ? "" : "already_closed");
+        chainSheetNeedsClose = false;
+    }
+
     // ---------- deleted 2026-09-25 ~18:20 by owner ruling ----------
     // `findSheetShareRow()`, `chainChooser()` and `swipeChooserList()` used to click DOWNI inside the
     // system share chooser (TikTok lists it directly; Instagram's sheet has a "share" row that opens
@@ -1365,25 +1451,11 @@ public class DowniFetcherService extends AccessibilityService {
     // into calling them.
 
 
-    /** Scroll the platform's own share sheet (gentle: it is anchored to the bottom). */
-    private boolean swipeSheetList() {
-        return swipeWithinSheet(0.80f, 0.64f);
-    }
-
-    private boolean swipeWithinSheet(float fromFrac, float toFrac) {
-        try {
-            int w = getResources().getDisplayMetrics().widthPixels;
-            int h = getResources().getDisplayMetrics().heightPixels;
-            Path p = new Path();
-            p.moveTo(w / 2f, h * fromFrac);
-            p.lineTo(w / 2f, h * toFrac);
-            return dispatchGesture(new GestureDescription.Builder()
-                    .addStroke(new GestureDescription.StrokeDescription(p, 0, 280)).build(), null, null);
-        } catch (Throwable t) {
-            log("CHAIN_SWIPE_FAIL " + t);
-            return false;
-        }
-    }
+    // The fixed-fraction sheet swipe (`swipeWithinSheet(0.80f, 0.64f)`) is GONE (Wave 1,
+    // owner report "the reel scrolled"): a stroke defined by SCREEN fractions could fall
+    // through to the feed when the sheet's window didn't consume it. Scrolling now goes
+    // through the sheet's own scrollable node first (`scrollSheet`), and the gesture
+    // fallback is clamped inside the sheet window's own bounds by `SheetSwipe.endpoints`.
 
     /**
      * True when a share surface (the platform's sheet or the system chooser) is verifiably on
@@ -1464,9 +1536,16 @@ public class DowniFetcherService extends AccessibilityService {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         String pkg = root != null && root.getPackageName() != null ? root.getPackageName().toString() : "?";
         if (chainSheetNeedsClose) {
-            log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK));
+            // Wave 1: guarded — a sheet that auto-dismissed after Copy link must NOT receive
+            // a BACK press (it would land on the feed and exit/advance the reel).
+            boolean open = shareSurfaceOpen();
+            if (open) {
+                log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK));
+            } else {
+                log("CHAIN_CLOSE_PANEL skipped already_closed=1");
+            }
+            observer.onStep("panel_closed", open ? "" : "already_closed");
             chainSheetNeedsClose = false;
-            observer.onStep("panel_closed", "");
             // Wave 1 focus-overlap experiment (D-e): ask for focus NOW, while the sheet's
             // close animation plays, instead of at the first clipboard attempt. Android
             // usually grants window focus within the next ~500 ms, so the first read can
@@ -1594,6 +1673,31 @@ public class DowniFetcherService extends AccessibilityService {
         }
     }
 
+    /**
+     * Wave 1 (owner-reported): every injected gesture must reach the PLATFORM even though the
+     * Core now stays touchable (shielding) during a run — so touchability is dropped for exactly
+     * the flight of each gesture and restored from the gesture's OWN completion callback, never
+     * on a timer. Between gestures the Core keeps shielding the user's touches away from the feed.
+     */
+    private boolean dispatchGestureGuarded(GestureDescription g) {
+        try {
+            if (core != null) core.setInteractive(false);
+            boolean accepted = dispatchGesture(g, new AccessibilityService.GestureResultCallback() {
+                @Override public void onCompleted(GestureDescription gestureDescription) {
+                    if (core != null) core.setInteractive(true);   // the shield resumes
+                }
+                @Override public void onCancelled(GestureDescription gestureDescription) {
+                    if (core != null) core.setInteractive(true);
+                }
+            }, null);
+            if (!accepted && core != null) core.setInteractive(true);   // callback never fires
+            return accepted;
+        } catch (Throwable t) {
+            if (core != null) core.setInteractive(true);
+            return false;
+        }
+    }
+
     // ACTION_CLICK first (cleanest); if the app's view refuses it (custom touch
     // listeners return false), fall back to a real gesture tap at the node center.
     // IG's sheet buttons need the gesture route; TikTok's share button honors action.
@@ -1612,7 +1716,7 @@ public class DowniFetcherService extends AccessibilityService {
             Path p = new Path();
             p.moveTo(r.exactCenterX(), r.exactCenterY());
             GestureDescription.StrokeDescription s = new GestureDescription.StrokeDescription(p, 0, 60);
-            return dispatchGesture(new GestureDescription.Builder().addStroke(s).build(), null, null);
+            return dispatchGestureGuarded(new GestureDescription.Builder().addStroke(s).build());
         } catch (Throwable t) {
             return false;
         }

@@ -58,6 +58,7 @@ public final class DowniCore {
     private int sizeDp;
     private int swpx, shpx;                 // cached screen bounds
     private boolean interactive = true;
+    private boolean shielded;               // run mode: absorb touches, act on none (Wave 1 fix)
     private final int touchSlop;
     private float downRawX, downRawY;
     private int downX, downY;
@@ -133,6 +134,20 @@ public final class DowniCore {
         listener.onCoreLog("CORE_INTERACTIVE " + on);
     }
 
+    /**
+     * Run mode (Wave 1, owner-reported defect): while the resolver works the Core used to go
+     * NOT_TOUCHABLE, so any touch the user aimed at it — a second tap, a stray brush — landed
+     * on the FEED underneath, where a little vertical movement is the next-reel drag ("the
+     * link copies and the reel scrolled"). Now the run puts the Core in SHIELDED mode: it
+     * stays touchable and silently absorbs everything aimed at it, while the resolver's own
+     * injected gestures still reach the platform because {@link #setInteractive} drops the
+     * touchable flag only for the brief moment each injected gesture is in flight.
+     */
+    public void setShielded(boolean on) {
+        shielded = on;
+        listener.onCoreLog("CORE_SHIELDED " + on);
+    }
+
     /** Momentarily focusable for Android 10+ clipboard access; always restored after the read. */
     public void setFocusable(boolean on) {
         if (!attached || lp == null) return;
@@ -149,6 +164,17 @@ public final class DowniCore {
 
     public boolean hasWindowFocus() {
         try { return view != null && view.hasWindowFocus(); } catch (Throwable t) { return false; }
+    }
+
+    /**
+     * True while this Core's window is deliberately focusable — the clipboard-read window of a
+     * resolver run (Wave 1). coreTick consults it: during that window our OWN package becomes
+     * the active window (the focus pre-warm), which must not be mistaken for "left the target
+     * app" or the Core hides out from under the clipboard read (device log 18:42:48, D-q).
+     */
+    public boolean isFocusableNow() {
+        try { return lp != null && (lp.flags & WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) == 0; }
+        catch (Throwable t) { return false; }
     }
 
     /** 48 / 56 / 64 dp; the window is rebuilt because a window's size is fixed at creation. */
@@ -280,6 +306,7 @@ public final class DowniCore {
         next.setOnTouchListener(new View.OnTouchListener() {
             @Override public boolean onTouch(View v, MotionEvent e) {
                 if (!visible || !interactive || lp == null) return false;
+                if (shielded) return true;    // run mode: the Core absorbs the touch, acts on none
                 switch (e.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
                         if (edgeAnim != null) { edgeAnim.cancel(); edgeAnim = null; }
