@@ -1213,6 +1213,18 @@ public class DowniFetcherService extends AccessibilityService {
                 core.setMarkScale(Float.parseFloat(parts[1]));
                 return;
             }
+            if (parts.length >= 2 && parts[0].equals("grade")) {
+                // Wave 2 bench: drive the wake grade for the C2 gate (ready|aware).
+                core.setWakeGrade(!"aware".equals(parts[1]));
+                log("CORE_GRADE " + parts[1]);
+                return;
+            }
+            if (parts.length >= 2 && parts[0].equals("unsupported")) {
+                // Wave 2 bench: drive FAILED's neutral mood for the C6 gate.
+                core.setUnsupported("true".equals(parts[1]));
+                log("CORE_UNSUPPORTED " + parts[1]);
+                return;
+            }
             if (parts.length >= 1 && parts[0].equals("pause")) {
                 // D3 device proof: pause the Fetcher's most recent running grab — found by its
                 // delivered URL in the service's own job snapshot.
