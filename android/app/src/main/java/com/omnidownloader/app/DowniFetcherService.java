@@ -29,6 +29,7 @@ import com.omnidownloader.app.downicore.DowniCore;
 import com.omnidownloader.app.fetcher.AttentionLedger;
 import com.omnidownloader.app.fetcher.DeliveryGuard;
 import com.omnidownloader.app.fetcher.MediaUrl;
+import com.omnidownloader.app.fetcher.PlatformProfile;
 import com.omnidownloader.app.fetcher.StrategyLedger;
 
 import java.io.File;
@@ -61,8 +62,6 @@ import java.util.regex.Pattern;
 public class DowniFetcherService extends AccessibilityService {
     private static final String TAG = "DowniFetcher";
 
-    private static final Set<String> TARGETS = new HashSet<>();
-
     /** Live instance for same-process control hooks (settings card size/position calls). */
     private static volatile DowniFetcherService live;
 
@@ -77,10 +76,11 @@ public class DowniFetcherService extends AccessibilityService {
         DowniFetcherService s = live;
         if (s != null && s.core != null) s.core.resetPosition();
     }
-    static {
-        TARGETS.add("com.instagram.android");
-        TARGETS.add("com.zhiliaoapp.musically"); // TikTok (global)
-        TARGETS.add("com.ss.android.ugc.trill"); // TikTok (alternate build)
+
+    /** The current session's profile, or null outside a target app (Wave 1: one home
+     *  for everything that differs between Instagram and TikTok). */
+    private PlatformProfile profile() {
+        return PlatformProfile.forPackage(sessionPkg);
     }
 
     private static final Pattern URL_P = Pattern.compile("https?://\\S+");
@@ -142,9 +142,8 @@ public class DowniFetcherService extends AccessibilityService {
     // V3.2 Downi Core is the live Fetcher face. The resolver remains plumbing behind one tap.
     private boolean chainRunning;
     private int sheetSwipes;                         // platform-sheet scrolls used by this run
-    private static final int MAX_SHEET_SWIPES = 2;
     private int sheetWaits;                          // re-scans while the sheet is still animating
-    private int sheetScans;                          // sheet-tree fast-lane retries (IG only)
+    private int sheetScans;                          // sheet-tree fast-lane retries (budget: profile)
     private static final int MAX_SHEET_WAITS = 1;
     // D-e (2026-09-25): the clipboard read is a *race* — our window must actually hold focus, and
     // setFocusable(true) alone does not grant it. So the read is retried a few times behind the tap.
@@ -183,11 +182,12 @@ public class DowniFetcherService extends AccessibilityService {
     private void feedLedger() {
         long now = SystemClock.elapsedRealtime();
         ledger.beginDump(now);
+        PlatformProfile p = profile();       // Wave 1: ledger eligibility is the profile's call
         for (String[] s : urlSightings) {
             String url = s[0];
             boolean visible = "1".equals(s[1]);
             String why = MediaUrl.reason(url);
-            if (why == null && url.contains("instagram.")) ledger.offer(url, visible, now);
+            if (why == null && p != null && p.passiveCapable) ledger.offer(url, visible, now);
         }
         urlSightings.clear();
     }
@@ -228,10 +228,8 @@ public class DowniFetcherService extends AccessibilityService {
 
     /** Platform short name from the foreground session package (for records without a URL). */
     private String sessionShort() {
-        String p = sessionPkg == null ? "" : sessionPkg;
-        if (p.contains("instagram")) return "instagram";
-        if (p.contains("musically") || p.contains("trill")) return "tiktok";
-        return "other";
+        PlatformProfile p = profile();
+        return p != null ? p.key : "other";
     }
 
     private void recordStrategy(String route, boolean ok, String url) {
@@ -504,7 +502,7 @@ public class DowniFetcherService extends AccessibilityService {
                 // mistaken for "another app came to the front" (it killed the IG session
                 // on device 2026-09-25, leaving every tap with no session to act on).
                 if (pkg != null && pkg.equals(getPackageName())) return;
-                if (pkg != null && TARGETS.contains(pkg)) {
+                if (pkg != null && PlatformProfile.isTarget(pkg)) {
                     if (!pkg.equals(sessionPkg)) startSession(pkg);
                     dump("window_state:" + clip(classNameOf(event), 60));
                 } else if (sessionPkg != null) {
@@ -757,7 +755,7 @@ public class DowniFetcherService extends AccessibilityService {
         if (core == null) return;
         String pkg = foregroundPkg();
         if (pkg == null) pkg = sessionPkg;
-        boolean onTarget = pkg != null && TARGETS.contains(pkg);
+        boolean onTarget = pkg != null && PlatformProfile.isTarget(pkg);
         if (onTarget && sessionPkg == null) {
             startSession(pkg);
         } else if (!onTarget && sessionPkg != null && !chainRunning
@@ -1101,7 +1099,7 @@ public class DowniFetcherService extends AccessibilityService {
             }
             if (pkg.equals("android") || pkg.contains("intentresolver")) {
                 if (chooser == null) chooser = r;
-            } else if (app == null && (pkg.equals(sessionPkg) || TARGETS.contains(pkg))) {
+            } else if (app == null && (pkg.equals(sessionPkg) || PlatformProfile.isTarget(pkg))) {
                 app = r;
             }
         }
@@ -1213,10 +1211,13 @@ public class DowniFetcherService extends AccessibilityService {
             chainReset();
             return;
         }
-        // Instagram only: give the sheet's web content one extra beat (350 ms) to expose its URL
-        // before falling to the copy-link click — the tree lane saves the click AND the focus
-        // dance. TikTok skips this entirely (its sheet tree never holds a URL).
-        if ("instagram".equals(sessionShort()) && shareSurfaceOpen() && sheetScans < 1) {
+        // Wave 1: the sheet-tree retry beat and the swipe budget are the profile's call —
+        // Instagram's sheet web content needs one extra beat to expose its URL; TikTok's
+        // sheet tree never holds a URL and skips this entirely (measured, see PlatformProfile).
+        PlatformProfile p = profile();
+        int sheetTreeRetries = p != null ? p.sheetTreeRetries : 0;
+        int maxSwipes = p != null ? p.maxSheetSwipes : 2;
+        if (sheetTreeRetries > 0 && shareSurfaceOpen() && sheetScans < sheetTreeRetries) {
             sheetScans++;
             log("CHAIN_SHEET_TREE_RETRY n=" + sheetScans + " why=awaiting_sheet_webview");
             postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 350);
@@ -1234,9 +1235,9 @@ public class DowniFetcherService extends AccessibilityService {
             // share surface is verifiably on screen as its own window; otherwise the run waits
             // once for the sheet animation and then fails honestly, never touching the feed.
             boolean surface = shareSurfaceOpen();
-            if (surface && sheetSwipes < MAX_SHEET_SWIPES) {
+            if (surface && sheetSwipes < maxSwipes) {
                 sheetSwipes++;
-                log("CHAIN_SHEET_SCROLL n=" + sheetSwipes + "/" + MAX_SHEET_SWIPES
+                log("CHAIN_SHEET_SCROLL n=" + sheetSwipes + "/" + maxSwipes
                         + " swipe=" + swipeSheetList());
                 postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 900);
                 return;
@@ -1307,7 +1308,7 @@ public class DowniFetcherService extends AccessibilityService {
                 String wp = r.getPackageName().toString();
                 if (wp.equals(getPackageName())) continue;                  // our overlay
                 if (wp.equals("com.android.systemui")) continue;            // shade / keys
-                if (wp.equals(sessionPkg) || TARGETS.contains(wp)) continue; // the platform app itself
+                if (wp.equals(sessionPkg) || PlatformProfile.isTarget(wp)) continue; // the platform app itself
                 return true;                                                // a share surface exists
             }
         } catch (Throwable ignored) {}
@@ -1323,7 +1324,7 @@ public class DowniFetcherService extends AccessibilityService {
                 if (r == null || r.getPackageName() == null) continue;
                 String wp = r.getPackageName().toString();
                 if (wp.equals(getPackageName()) || wp.equals("com.android.systemui")) continue;
-                if (wp.equals(sessionPkg) || TARGETS.contains(wp)) continue;
+                if (wp.equals(sessionPkg) || PlatformProfile.isTarget(wp)) continue;
                 return r;
             }
         } catch (Throwable ignored) {}
