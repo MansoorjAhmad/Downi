@@ -492,7 +492,11 @@ public class DowniFetcherService extends AccessibilityService {
         if (!pollersArmed) {
             pollersArmed = true;
             main.postDelayed(chainPoll, 2000);
-            main.postDelayed(coreTickPoll, 1200);
+            // Perceived speed (owner report 2026-09-26): the Core must be on screen as soon as
+            // the service exists - the first visibility tick runs NOW, the loop then steadies
+            // at its 900 ms cadence.
+            main.post(new Runnable() { @Override public void run() { coreTick(); } });
+            main.postDelayed(coreTickPoll, 900);
             main.postDelayed(corePoll, 1500);
             main.postDelayed(heartbeat, HEARTBEAT_MS);
         }
@@ -602,6 +606,10 @@ public class DowniFetcherService extends AccessibilityService {
         ledger.clear();                      // a new app context: attention resets
         log("SESSION_START pkg=" + pkg);
         maybeScreenshot("session_start");
+        // Perceived speed: the Core appears WITH the session - a target app coming to the
+        // foreground triggers the visibility tick immediately instead of waiting up to 900 ms
+        // for the next poll. Idempotent: coreTick only acts when something changed.
+        main.post(new Runnable() { @Override public void run() { coreTick(); } });
     }
 
     private void endSession(String why) {
