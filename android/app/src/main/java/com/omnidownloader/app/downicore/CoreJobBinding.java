@@ -1,11 +1,9 @@
 package com.omnidownloader.app.downicore;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -44,8 +42,8 @@ public final class CoreJobBinding {
         }
     }
 
-    /** Terminal snapshot rows expire after this — mirrors DowniDownloadService's card TTL. */
-    public static final long TERMINAL_TTL_MS = 20_000L;
+    /** Terminal snapshot rows expire after this — the shared contract lives in JobSnapshot. */
+    public static final long TERMINAL_TTL_MS = com.omnidownloader.app.JobSnapshot.TERMINAL_TTL_MS;
     /** How long a just-delivered URL may sit without a snapshot row before "job vanished". */
     static final long START_GRACE_MS = 12_000L;
     /** Poll cadence — the service writes on an 800 ms floor, so this reads every write. */
@@ -133,21 +131,8 @@ public final class CoreJobBinding {
     }
 
     private JSONObject newestRowFor(String url) {
-        try {
-            SharedPreferences prefs = context.getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
-            String raw = prefs.getString("dropLive", "");
-            if (raw == null || raw.isEmpty()) return null;
-            JSONArray list = new JSONArray(raw);
-            JSONObject found = null;
-            for (int i = 0; i < list.length(); i++) {
-                JSONObject o = list.optJSONObject(i);
-                if (o == null) continue;
-                if (url.equals(o.optString("url"))) found = o;   // rows are appended newest-last
-            }
-            return found;
-        } catch (Throwable t) {
-            return null;
-        }
+        // The row-scanning rule is the shared bus contract (Wave 0).
+        return com.omnidownloader.app.JobSnapshot.newestRowFor(context, url);
     }
 
     /** Pure mapping: one snapshot row → what the Core shows. Unit-tested. */
@@ -188,24 +173,6 @@ public final class CoreJobBinding {
 
     /** Which job snapshot state an URL currently has, or null — the pre-tap duplicate check. */
     public static String activeStateFor(Context context, String url) {
-        if (url == null || url.isEmpty()) return null;
-        try {
-            SharedPreferences prefs = context.getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
-            String raw = prefs.getString("dropLive", "");
-            if (raw == null || raw.isEmpty()) return null;
-            JSONArray list = new JSONArray(raw);
-            long now = System.currentTimeMillis();
-            String state = null;
-            for (int i = 0; i < list.length(); i++) {
-                JSONObject o = list.optJSONObject(i);
-                if (o == null || !url.equals(o.optString("url"))) continue;
-                String s = o.optString("state", "running");
-                if ("running".equals(s)) return s;                        // a live job wins outright
-                if (now - o.optLong("ts", now) <= TERMINAL_TTL_MS) state = s;
-            }
-            return state;
-        } catch (Throwable t) {
-            return null;
-        }
+        return com.omnidownloader.app.JobSnapshot.activeStateFor(context, url);
     }
 }

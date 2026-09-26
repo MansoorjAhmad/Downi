@@ -64,11 +64,8 @@ public class DowniDownloadService extends Service {
     private static final String CHANNEL_PROGRESS = "downi_progress";
     private static final String CHANNEL_ALERTS = "downi_alerts";
     private static final int FG_NOTIFICATION_ID = 4811;
-    /**
-     * v3.1.1 (defect N8): how long a finished/failed DowniDrop card stays in the app snapshot.
-     * Shared contract — DowniEnginePlugin.getDropJobs() prunes with the same window on read.
-     */
-    static final long DROP_LIVE_TERMINAL_TTL_MS = 20000L;
+    // The terminal-card TTL and the snapshot cap live in JobSnapshot — the one contract
+    // shared with the app's read (DowniEnginePlugin.getDropJobs) and the Core's binding.
     private static volatile DowniDownloadService instance;
     private static volatile int completionSeq = 0;
 
@@ -1143,11 +1140,11 @@ public class DowniDownloadService extends Service {
                 JSONObject o = list.optJSONObject(i);
                 if (o == null) continue;
                 boolean running = "running".equals(o.optString("state"));
-                if (!running && now - o.optLong("ts", now) > DROP_LIVE_TERMINAL_TTL_MS) continue;
+                if (!running && now - o.optLong("ts", now) > JobSnapshot.TERMINAL_TTL_MS) continue;
                 kept.put(o);
             }
             JSONArray capped = new JSONArray();
-            int start = Math.max(0, kept.length() - 8);
+            int start = Math.max(0, kept.length() - JobSnapshot.MAX_ROWS);
             for (int i = start; i < kept.length(); i++) capped.put(kept.optJSONObject(i));
             prefs.edit().putString("dropLive", capped.toString()).apply();
         } catch (Exception ignored) {}

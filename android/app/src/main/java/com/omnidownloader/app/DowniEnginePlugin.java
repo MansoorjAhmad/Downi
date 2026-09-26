@@ -1373,37 +1373,23 @@ public class DowniEnginePlugin extends Plugin {
         try {
             android.content.SharedPreferences prefs = getContext()
                 .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
-            String raw = prefs.getString("dropLive", "[]");
-            JSONArray list = new JSONArray(raw == null || raw.isEmpty() ? "[]" : raw);
-            // v3.1.1 (defect N8): re-apply the terminal-entry window here, because the service
-            // only writes this snapshot while a grab runs. Without this, a done/failed card stayed
-            // in Active downloads until the next grab happened (seen on device: a failed card from
-            // 12:47 and a done card still rendered at 13:05 with nothing live).
+            JSONArray list = JobSnapshot.read(getContext());
+            // v3.1.1 (defect N8): re-apply the terminal-entry window on read, because the
+            // service only writes this snapshot while a grab runs. Without this, a done/failed
+            // card stayed in Active downloads until the next grab happened (seen on device: a
+            // failed card from 12:47 and a done card still rendered at 13:05 with nothing live).
             // v3.1.1 (defect N11): a "running" entry is only honest while the service still holds
             // that grab. Force-stopping the app mid-grab froze the entry at state=running, so the
             // app rendered a live card and counted ACTIVE 1 for a grab that no longer existed (no
             // service, no notification row) — it never expired, because only terminal entries had
             // a window (N8). Ask the service which grabs are real; null = no service alive at all.
+            // (Wave 0: the rules live in JobSnapshot.pruneForDisplay — one contract for every
+            // reader of the bus.)
             Set<String> liveJobIds = DowniDownloadService.liveJobIdsSnapshot();
-            JSONArray kept = new JSONArray();
-            long now = System.currentTimeMillis();
-            boolean pruned = false;
-            for (int i = 0; i < list.length(); i++) {
-                JSONObject o = list.optJSONObject(i);
-                if (o == null) { pruned = true; continue; }
-                boolean running = "running".equals(o.optString("state"));
-                if (running) {
-                    if (liveJobIds == null || !liveJobIds.contains(o.optString("id"))) {
-                        pruned = true;
-                        continue;
-                    }
-                } else if (now - o.optLong("ts", now) > DowniDownloadService.DROP_LIVE_TERMINAL_TTL_MS) {
-                    pruned = true;
-                    continue;
-                }
-                kept.put(o);
+            JSONArray kept = JobSnapshot.pruneForDisplay(list, liveJobIds, System.currentTimeMillis());
+            if (kept.length() != list.length()) {
+                JobSnapshot.write(getContext(), kept);
             }
-            if (pruned) prefs.edit().putString("dropLive", kept.toString()).apply();
             result.put("jobs", kept);
             // DowniDrop self-diagnosis: the last headless failure (raw engine text included),
             // written by DowniDownloadService — readable in the app, no adb needed.

@@ -224,20 +224,25 @@ public class DowniFetcherService extends AccessibilityService {
     /** The last URL this Core delivered — pause/resume debug commands target its job. */
     private String lastDeliveredUrl;
 
-    /** Newest dropLive row id matching url (when given) and state. Debug-channel helper. */
+    /** Newest dropLive row id matching url (when given) and state. Debug-channel helper.
+     *  Wave 0: the row-scanning rule lives in the shared {@link JobSnapshot} contract. */
     private String findDropJobId(String url, String stateWanted) {
         try {
-            org.json.JSONArray list = new org.json.JSONArray(getSharedPreferences("downi_settings", MODE_PRIVATE)
-                    .getString("dropLive", "[]"));
-            String found = null;
-            for (int i = 0; i < list.length(); i++) {
-                org.json.JSONObject o = list.optJSONObject(i);
-                if (o == null) continue;
-                if (url != null && !url.equals(o.optString("url"))) continue;
-                if (stateWanted != null && !stateWanted.equals(o.optString("state"))) continue;
-                found = o.optString("id");
+            if (url == null || url.isEmpty()) {          // null url = newest row of any url
+                org.json.JSONArray list = JobSnapshot.read(this);
+                String found = null;
+                for (int i = 0; i < list.length(); i++) {
+                    org.json.JSONObject o = list.optJSONObject(i);
+                    if (o == null) continue;
+                    if (stateWanted != null && !stateWanted.equals(o.optString("state"))) continue;
+                    found = o.optString("id");
+                }
+                return found;
             }
-            return found;
+            org.json.JSONObject row = JobSnapshot.newestRowFor(this, url, stateWanted);
+            if (row == null) return null;
+            String id = row.optString("id");
+            return id.isEmpty() ? null : id;
         } catch (Throwable t) {
             return null;
         }
