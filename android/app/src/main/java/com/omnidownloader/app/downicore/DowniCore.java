@@ -347,7 +347,7 @@ public final class DowniCore {
 
         if (!magnetic) {
             persistPosition();
-            view.setState(CoreStates.IDLE);
+            view.setState(baseState);        // the arbiter's truth, not a hardcoded idle (Wave 0)
             listener.onCoreMoved(lp.x, lp.y);
             return;
         }

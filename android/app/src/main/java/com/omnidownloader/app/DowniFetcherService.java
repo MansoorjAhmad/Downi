@@ -25,6 +25,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
+import com.omnidownloader.app.downicore.CoreArbiter;
 import com.omnidownloader.app.downicore.CoreHaptics;
 import com.omnidownloader.app.downicore.CoreJobBinding;
 import com.omnidownloader.app.downicore.CoreStates;
@@ -307,17 +308,11 @@ public class DowniFetcherService extends AccessibilityService {
 
     /**
      * Recomputes what the Core should show and applies it as its base state.
+     * The precedence rules live in the pure, tested {@link CoreArbiter} (Wave 0).
      */
     private void applyCoreState() {
         if (core == null) return;
-        String s;
-        if (!CoreStates.IDLE.equals(jobState)) {
-            s = jobState;                          // a real job is the loudest truth
-        } else if (chainRunning) {
-            s = CoreStates.RESOLVING;              // the tap fired; the resolver is working
-        } else {
-            s = videoDetected ? CoreStates.DETECTED : CoreStates.IDLE;
-        }
+        String s = CoreArbiter.baseState(jobState, chainRunning, videoDetected);
         if (CoreStates.showsProgress(jobState)) core.setProgress(jobProgress);
         core.setBaseState(s);
     }
@@ -854,15 +849,25 @@ public class DowniFetcherService extends AccessibilityService {
             core.setFocusable(false);          // clean slate; this run re-focuses at its own step 3
             core.setInteractive(false);        // platform automation owns touch now
         }
+        // The arbiter now says RESOLVING (unless a real job outranks it) — apply it so the
+        // rim-orbit light actually renders while the resolver works. Wave 0 audit: the run
+        // never applied its own state, so the Core sat in its previous look for the whole run.
+        applyCoreState();
     }
 
-    /** Ends a resolver run; the Core is neutral and touchable again. */
+    /**
+     * Ends a resolver run; the Core is touchable again and shows the arbiter's truth — NOT a
+     * hardcoded idle. Wave 0 audit: the old `setState(IDLE)` here clobbered a running job's
+     * PROGRESS (until the next binding poll) and a resolver failure's FAILED hold (the 3 s
+     * "something went wrong" moment never rendered on the paths that reset right after
+     * {@link #resolverFailed}). Applying the arbiter keeps both honest.
+     */
     private void chainReset() {
         chainRunning = false;
         chainDelivered = false;             // each run gets its own one-delivery budget (D-a)
         if (core != null) {
-            core.setState(CoreStates.IDLE);
             core.setInteractive(true);
+            applyCoreState();
         }
     }
 
