@@ -55,22 +55,23 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * V3.2 Phase 0 — detectability spike (owner approval 2026-09-24, HARD GATE).
+ * DOWNI Fetcher — the accessibility service that hosts the Downi Core over Instagram
+ * and TikTok (v3.2, Phase G renamed from the detectability spike).
  *
- * Answers the four spike questions by LOGGING ONLY — this service never draws a
- * bubble and never downloads anything:
- *   Q1 foreground package (SESSION_START/END)
- *   Q2 video-watching signals in the accessibility tree (STEP2)
- *   Q3 any URL/identifier for the current video (STEP3 + confidence)
- *   Q4 whether the result can reach DowniDownloadService.startShared (PIPELINE_READY;
- *      a real handoff only when fetch-spike/spike_config.properties says handoff=true)
+ * Reads the platform app's accessibility tree on this device only:
+ *   - foreground package (SESSION_START/END) → the Core appears over the target apps;
+ *   - video-watching signals (STEP2) → the Core wakes honestly, never downloads;
+ *   - any URL/identifier for the current video (STEP3) → evidence for the resolver
+ *     and the attention ledger;
+ *   - a user tap on the Core is the ONLY thing that starts a download, through the
+ *     unchanged DowniDownloadService.startShared contract.
  *
- * Screenshots (API 34+) are a diagnostic fallback only, exactly per plan §Phase 0.
- * Everything is written to files/fetch-spike/ on this device — local only, delete
- * after analysis. Debug tool; never part of a release build.
+ * Bench instruments (the forensic file log, the core.cmd/chain.cmd command channels,
+ * screenshots, the auto-handoff gate) exist for device gates only and are hard-gated
+ * to BuildConfig.DEBUG — a release build carries none of them (Phase G).
  */
 public class DowniFetcherService extends AccessibilityService {
-    private static final String TAG = "DowniSpike";
+    private static final String TAG = "DowniFetcher";
     private static final String POISON = new String("close"); // writer queue stop marker
 
     private static final Set<String> TARGETS = new HashSet<>();
@@ -441,10 +442,10 @@ public class DowniFetcherService extends AccessibilityService {
         }
         startWriter();
 
-        log("=== DOWNI FETCHER SPIKE — Phase 0 (LOCAL ONLY; delete after analysis) ===");
+        log("=== DOWNI FETCHER (debug build: bench log local only) ===");
         log("SERVICE_CONNECTED sdk=" + Build.VERSION.SDK_INT + " handoff=" + handoffEnabled);
         log("CONTRACT target=DowniDownloadService.startShared(context,url)");
-        log("CHAIN test armed: write fetch-spike/chain.cmd (dry|click) via adb");
+        log("BENCH armed: fetch-spike/chain.cmd (dry|click) + core.cmd, debug builds only");
 
         // The approved Core is now the live control over IG/TikTok. The legacy spike bubble is
         // no longer instantiated; its proven tap resolver remains unchanged underneath.
