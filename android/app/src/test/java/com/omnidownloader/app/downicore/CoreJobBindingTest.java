@@ -36,6 +36,22 @@ public class CoreJobBindingTest {
         assertEquals(0.61f, v.progress, 0.0001f);
     }
 
+    @Test public void pausedFreezesAtExactProgress() {
+        // D3: the ring freezes where the download stopped — never restarts the visual from zero.
+        CoreJobBinding.JobView v = CoreJobBinding.viewFor("paused", 43, NOW - 500, NOW);
+        assertEquals(CoreStates.PAUSED, v.coreState);
+        assertEquals(0.43f, v.progress, 0.0001f);
+        assertFalse("a paused job is alive and resumable", v.terminal);
+    }
+
+    @Test public void pausedNeverExpires() {
+        // A paused grab is a STATE, not a celebration — the Core keeps showing it (frozen ring)
+        // no matter how long the user takes to hit resume. It ends only on resume/cancel.
+        CoreJobBinding.JobView daysOld = CoreJobBinding.viewFor("paused", 43, NOW - 86_400_000L, NOW);
+        assertEquals(CoreStates.PAUSED, daysOld.coreState);
+        assertFalse(daysOld.terminal);
+    }
+
     @Test public void canceledReturnsQuietlyToIdle() {
         CoreJobBinding.JobView v = CoreJobBinding.viewFor("canceled", 30, NOW - 500, NOW);
         assertEquals(CoreStates.IDLE, v.coreState);

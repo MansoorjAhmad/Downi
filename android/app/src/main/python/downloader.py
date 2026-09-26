@@ -14,6 +14,16 @@ import certifi
 from yt_dlp import YoutubeDL
 
 
+class PausedError(Exception):
+    """Raised when the Java layer asks the transfer to pause.
+
+    Distinct from cancellation: a pause KEEPS the partial file (and its .part for yt-dlp
+    lanes) so a later resume call continues from bytes on disk. Java detects this class
+    name in the raised exception and records the job as paused instead of failed.
+    """
+    pass
+
+
 def _safe_name(value):
     """Sanitize filename to valid characters within 120 bytes."""
     if not value:
@@ -97,6 +107,8 @@ def _scaled_hook(progress_listener, lo, hi):
         if status == 'downloading':
             if hasattr(progress_listener, 'isCancelled') and progress_listener.isCancelled():
                 raise RuntimeError("Download cancelled.")
+            if hasattr(progress_listener, 'isPaused') and progress_listener.isPaused():
+                raise PausedError("Download paused.")
             now = time.time()
             if now - last[0] < 0.25:
                 return
@@ -132,6 +144,7 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
     has no separate streams (the caller then falls back / reports honestly).
     """
     os.makedirs(target_dir, exist_ok=True)
+    supports_pause = bool(progress_listener) and hasattr(progress_listener, 'isPaused')
     base = {
         'quiet': True,
         'no_warnings': True,
@@ -140,7 +153,11 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
         'outtmpl': os.path.join(target_dir, '%(title).120B-%(id)s.%(ext)s'),
         'windowsfilenames': True,
         'overwrites': True,
-        'nopart': True,
+        # Pause/resume (D3): headless jobs (Fetcher/Drop) download into .part files so a
+        # pause keeps the bytes and a later call continues them. In-app lanes keep the
+        # original behaviour — the engine change is gated, never global.
+        'nopart': not supports_pause,
+        'continuedl': supports_pause,
         'socket_timeout': 30,
         'retries': 3,
         'concurrent_fragment_downloads': 3,
@@ -173,6 +190,10 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
             except OSError:
                 pass
             return None
+    except PausedError:
+        # A pause must keep BOTH partials (video + audio) for the resume pass — fall through
+        # to nothing only for genuine failures.
+        raise
     except Exception:
         for leftover in (video_path, audio_path):
             if leftover:
@@ -219,22 +240,38 @@ def _fetch_tiktok_data(url):
 
 
 def _download_stream_direct(stream_url, target_path, referer='', progress_listener=None):
+    # D3: byte-continuation. A partial file left by a pause becomes the resume offset — the
+    # request carries a Range header, the file opens in append mode, and progress reflects
+    # offset+transfer. A server that ignores Range (plain 200) restarts clean, transparently.
+    offset = 0
+    if os.path.exists(target_path):
+        try:
+            offset = os.path.getsize(target_path)
+        except OSError:
+            offset = 0
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': '*/*',
     }
+    if offset > 0:
+        headers['Range'] = 'bytes=%d-' % offset
     if referer:
         headers['Referer'] = referer
     req = urllib.request.Request(stream_url, headers=headers)
     with urllib.request.urlopen(req, timeout=35) as resp:
-        total = int(resp.headers.get('Content-Length') or 0)
-        downloaded = 0
+        status = getattr(resp, 'status', 200) or 200
+        if offset > 0 and status != 206:
+            offset = 0                       # Range unsupported - restart clean, honestly
+        total = (int(resp.headers.get('Content-Length') or 0) + offset) if offset > 0 else int(resp.headers.get('Content-Length') or 0)
+        downloaded = offset
         last_cb = 0.0
         start = time.time()
-        with open(target_path, 'wb') as f:
+        with open(target_path, 'ab' if offset > 0 else 'wb') as f:
             while True:
                 if progress_listener and hasattr(progress_listener, 'isCancelled') and progress_listener.isCancelled():
                     raise RuntimeError("Download cancelled.")
+                if progress_listener and hasattr(progress_listener, 'isPaused') and progress_listener.isPaused():
+                    raise PausedError("Download paused.")
                 chunk = resp.read(128 * 1024)
                 if not chunk:
                     break
@@ -244,7 +281,7 @@ def _download_stream_direct(stream_url, target_path, referer='', progress_listen
                 if progress_listener and (now - last_cb > 0.25):
                     last_cb = now
                     elapsed = max(0.001, now - start)
-                    speed = downloaded / elapsed
+                    speed = (downloaded - offset) / elapsed if downloaded > offset else 0.0
                     eta = int((total - downloaded) / speed) if (total > downloaded and speed > 0) else 0
                     pct = (downloaded / total * 100.0) if total > 0 else 50.0
                     try:
@@ -430,6 +467,8 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
         if status == 'downloading':
             if hasattr(progress_listener, 'isCancelled') and progress_listener.isCancelled():
                 raise RuntimeError("Download cancelled.")
+            if hasattr(progress_listener, 'isPaused') and progress_listener.isPaused():
+                raise PausedError("Download paused.")
             now = time.time()
             if now - last_callback_time[0] < 0.25:
                 return
@@ -449,6 +488,7 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
             except Exception:
                 pass
 
+    supports_pause = bool(progress_listener) and hasattr(progress_listener, 'isPaused')
     options = {
         'quiet': True,
         'no_warnings': True,
@@ -459,7 +499,9 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
         'restrictfilenames': False,
         'windowsfilenames': True,
         'overwrites': True,
-        'nopart': True,
+        # D3: headless jobs download into .part and resume from them; in-app lanes unchanged.
+        'nopart': not supports_pause,
+        'continuedl': supports_pause,
         'socket_timeout': 30,
         'retries': 3,
         'concurrent_fragment_downloads': 3,
@@ -513,6 +555,8 @@ def download(url, target_dir, format_id='best', progress_listener=None):
     """
     try:
         return _download_lanes(url, target_dir, format_id, progress_listener)
+    except PausedError:
+        raise                                  # a pause must never trigger a lane fallback
     except Exception as exc:
         if str(format_id).lower() in ('audio', 'mp3', 'm4a'):
             raise

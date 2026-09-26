@@ -78,6 +78,16 @@ public class DowniDownloadService extends Service {
     /** Cancel flags for DowniDrop headless jobs, keyed by job id. */
     private static final Map<String, AtomicBoolean> sharedJobs = new ConcurrentHashMap<>();
 
+    /**
+     * D3 (pause/resume): job ids whose transfer was PAUSED — the Python engine raised
+     * PausedError, the partial file(s) stay in the job's work dir, and a later
+     * {@link #resumePausedJob(String)} continues from bytes on disk. Mirrored to prefs so a
+     * paused grab survives process death (the vivo killer strikes mid-download).
+     */
+    private static final Set<String> pausedJobs = ConcurrentHashMap.newKeySet();
+    private static final String PAUSED_KEY = "pausedGrabs";
+    private static final String ACTIVE_KEY = "activeGrabs";
+
     /** Source url per DowniDrop job — the in-app snapshot needs it (v3.1.1, defect N4). */
     private static final Map<String, String> dropUrls = new ConcurrentHashMap<>();
 
@@ -255,6 +265,92 @@ public class DowniDownloadService extends Service {
         instance = this;
         shareExecutor = Executors.newSingleThreadExecutor();
         ensureChannels();
+        // D3: a paused grab survives process death — resurrect its paused set so resume works
+        // after the vivo killer (or a reboot). The notification row is re-posted on the next
+        // pause/resume/progress event; a quiet resume path exists via the Core's debug channel
+        // until the Queue grows its own resume button (Wave 3).
+        try {
+            JSONObject m = new JSONObject(getSharedPreferences("downi_settings", MODE_PRIVATE)
+                    .getString(PAUSED_KEY, "{}"));
+            java.util.Iterator<String> it = m.keys();
+            while (it.hasNext()) pausedJobs.add(it.next());
+            if (!pausedJobs.isEmpty()) Log.i("DOWNI", "paused grabs restored: " + pausedJobs);
+        } catch (Exception ignored) {}
+        // D3, the last mile: the vendor killer strikes mid-TRANSFER. Interrupted grabs are found
+        // via the activeGrabs registry (NOT dropLive - the app's honest-UI read expires running
+        // rows whose service died, defect N11, which would erase our evidence before we see it).
+        sweepInterrupted(this);
+    }
+
+    /** Register a running headless grab so a process death can find its bytes later. */
+    private void registerActiveGrab(String jobId, String url) {
+        try {
+            JSONObject m = new JSONObject(getSharedPreferences("downi_settings", MODE_PRIVATE)
+                    .getString(ACTIVE_KEY, "{}"));
+            JSONObject j = new JSONObject();
+            j.put("url", url == null ? "" : url);
+            m.put(jobId, j);
+            getSharedPreferences("downi_settings", MODE_PRIVATE)
+                    .edit().putString(ACTIVE_KEY, m.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    private void unregisterActiveGrab(String jobId) {
+        try {
+            JSONObject m = new JSONObject(getSharedPreferences("downi_settings", MODE_PRIVATE)
+                    .getString(ACTIVE_KEY, "{}"));
+            m.remove(jobId);
+            getSharedPreferences("downi_settings", MODE_PRIVATE)
+                    .edit().putString(ACTIVE_KEY, m.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Any registered grab that is not active and not paused was interrupted mid-transfer - its
+     * partial bytes are on disk. If bytes exist, the job becomes a resumable paused grab;
+     * otherwise it was a no-byte stub and is dropped. Static + context: callable from app open
+     * (plugin init) as well as service start.
+     */
+    static void sweepInterrupted(Context context) {
+        boolean added = false;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+            JSONObject active = new JSONObject(prefs.getString(ACTIVE_KEY, "{}"));
+            java.util.Iterator<String> it = active.keys();
+            while (it.hasNext()) {
+                String jobId = it.next();
+                if (activeJobs.contains(jobId) || pausedJobs.contains(jobId)) continue;
+                JSONObject a = active.optJSONObject(jobId);
+                String url = a == null ? "" : a.optString("url", "");
+                File dir = new File(new File(context.getCacheDir(), "DowniEngine"), jobId);
+                File[] leftovers = dir.listFiles();
+                long bytes = 0;
+                if (leftovers != null) for (File f : leftovers) bytes += f.length();
+                it.remove();   // handled either way: it is no longer an active transfer
+                if (bytes <= 0 || url.isEmpty()) continue;
+                pausedJobs.add(jobId);
+                JSONObject pm = new JSONObject(prefs.getString(PAUSED_KEY, "{}"));
+                JSONObject entry = new JSONObject();
+                entry.put("url", url);
+                entry.put("workDir", dir.getAbsolutePath());
+                entry.put("ts", System.currentTimeMillis());
+                pm.put(jobId, entry);
+                prefs.edit().putString(ACTIVE_KEY, active.toString())
+                        .putString(PAUSED_KEY, pm.toString()).apply();
+                added = true;
+                Log.i("DOWNI", "interrupted grab made resumable " + jobId + " (" + bytes + "B on disk)");
+            }
+            if (added) {
+                DowniDownloadService inst = instance;
+                if (inst != null) {
+                    for (String jobId : pausedJobs) {
+                        JSONObject pm = new JSONObject(prefs.getString(PAUSED_KEY, "{}"));
+                        if (pm.optJSONObject(jobId) != null) inst.writeDropSnapshot(jobId, "paused", null, null);
+                    }
+                }
+                Log.i("DOWNI", "paused grabs after interruption sweep: " + pausedJobs);
+            }
+        } catch (Exception ignored) {}
     }
 
     @Override public void onDestroy() { instance = null; super.onDestroy(); }
@@ -344,6 +440,7 @@ public class DowniDownloadService extends Service {
                         startForeground(FG_NOTIFICATION_ID, ownerRow);
                     }
                 }
+                registerActiveGrab(jobId, url == null ? "" : url);
                 if (shareExecutor != null) shareExecutor.execute(() -> runSharedDownload(jobId, url));
                 break;
             }
@@ -351,7 +448,70 @@ public class DowniDownloadService extends Service {
                 String jobId = intent.getStringExtra("jobId");
                 AtomicBoolean flag = sharedJobs.get(jobId);
                 if (flag != null) flag.set(true);
-                Log.i("DOWNI", "drop cancel requested " + jobId); // (D) logcat breadcrumb
+                // D3: cancelling a PAUSED job — nothing is running to poll the flag, so clean up
+                // immediately: read the persisted entry (work dir), delete bytes, drop the row.
+                if (jobId != null && pausedJobs.remove(jobId)) {
+                    String workDirPath = null;
+                    try {
+                        SharedPreferences prefs = getSharedPreferences("downi_settings", MODE_PRIVATE);
+                        JSONObject m = new JSONObject(prefs.getString(PAUSED_KEY, "{}"));
+                        JSONObject entry = m.optJSONObject(jobId);
+                        if (entry != null) workDirPath = entry.optString("workDir", null);
+                        m.remove(jobId);
+                        JSONObject am = new JSONObject(prefs.getString(ACTIVE_KEY, "{}"));
+                        am.remove(jobId);
+                        prefs.edit().putString(PAUSED_KEY, m.toString()).putString(ACTIVE_KEY, am.toString()).apply();
+                    } catch (Exception ignored) {}
+                    if (workDirPath != null) {
+                        File wd = new File(workDirPath);
+                        File[] leftovers = wd.listFiles();
+                        if (leftovers != null) for (File f : leftovers) f.delete();
+                    }
+                    live.remove(jobId);
+                    releaseJobRow(jobId);
+                    dropUrls.remove(jobId);
+                    writeDropSnapshot(jobId, "canceled", null, null);
+                    Log.i("DOWNI", "drop canceled while paused " + jobId); // (D) breadcrumb
+                    maybeStop();
+                } else {
+                    Log.i("DOWNI", "drop cancel requested " + jobId); // (D) logcat breadcrumb
+                }
+                break;
+            }
+            case "shared_pause": {
+                // D3: sets the pause flag; the transfer raises PausedError within a chunk and
+                // handlePaused records it. No-op for jobs whose listener doesn't support pause.
+                String jobId = intent.getStringExtra("jobId");
+                if (jobId != null && activeJobs.contains(jobId) && jobId.startsWith("drop")) {
+                    pausedJobs.add(jobId);
+                    Log.i("DOWNI", "drop pause requested " + jobId); // (D) breadcrumb
+                }
+                maybeStop();
+                break;
+            }
+            case "shared_resume": {
+                String jobId = intent.getStringExtra("jobId");
+                resumePausedJob(jobId);
+                break;
+            }
+            case "shared_resume_latest": {
+                // D3: called right after a process restart - onCreate's sweep has just marked
+                // interrupted transfers resumable; resume the NEWEST paused grab.
+                String newest = null;
+                long bestTs = -1;
+                try {
+                    org.json.JSONObject m = new org.json.JSONObject(
+                            getSharedPreferences("downi_settings", MODE_PRIVATE).getString(PAUSED_KEY, "{}"));
+                    java.util.Iterator<String> it = m.keys();
+                    while (it.hasNext()) {
+                        String k = it.next();
+                        long ts = m.optJSONObject(k) == null ? 0 : m.optJSONObject(k).optLong("ts", 0);
+                        if (ts >= bestTs) { bestTs = ts; newest = k; }
+                    }
+                } catch (Exception ignored) {}
+                if (newest != null && pausedJobs.contains(newest)) resumePausedJob(newest);
+                else Log.i("DOWNI", "resume-latest miss (paused=" + pausedJobs.size() + ")");
+                maybeStop();
                 break;
             }
         }
@@ -371,9 +531,14 @@ public class DowniDownloadService extends Service {
             // warmed Python: on a cold share the whole process may have just started.
             applyPhase(jobId, "Warming up the engine…", 1);
             if (!Python.isStarted()) Python.start(new AndroidPlatform(getApplicationContext()));
+            // D3 evidence: existing partials in this work dir are what a resume continues from.
+            File[] partials = workDir.listFiles();
+            if (partials != null) for (File f : partials) {
+                Log.i("DOWNI", "drop partial " + jobId + " " + f.getName() + " " + f.length() + "B");
+            }
 
             final AtomicBoolean cancelled = sharedJobs.get(jobId);
-            String formatId = rememberedFormatFor(cleanUrl);
+            final boolean headless = jobId.startsWith("drop");
             DownloadProgressListener listener = new DownloadProgressListener() {
                 @Override
                 public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
@@ -384,7 +549,15 @@ public class DowniDownloadService extends Service {
                 public boolean isCancelled() {
                     return cancelled != null && cancelled.get();
                 }
+                // D3: headless grabs can pause; Python raises PausedError and keeps the partial.
+                @Override public boolean isPaused() {
+                    return headless && pausedJobs.contains(jobId);
+                }
+                @Override public boolean supportsPause() {
+                    return headless;
+                }
             };
+            String formatId = rememberedFormatFor(cleanUrl);
 
             PyObject response = Python.getInstance().getModule("downloader")
                 .callAttr("download", cleanUrl, workDir.getAbsolutePath(), formatId, listener);
@@ -433,6 +606,9 @@ public class DowniDownloadService extends Service {
                 return;
             }
 
+            pausedJobs.remove(jobId);
+            persistPausedRemove(jobId);
+            unregisterActiveGrab(jobId);
             writeDropSnapshot(jobId, "done", title, destination, finalBytes);
             // N9: the durable half of the accounting — recorded by the service, so the app sees the
             // grab even when it was closed the whole time.
@@ -447,12 +623,25 @@ public class DowniDownloadService extends Service {
             // The cancel flag lives in sharedJobs until finally runs, so it is still readable here.
             AtomicBoolean flag = sharedJobs.get(jobId);
             boolean userCanceled = (flag != null && flag.get()) || detail.toLowerCase(Locale.US).contains("cancel");
+            // D3: a PAUSE is neither failure nor cancel — keep the partial bytes and the work
+            // dir, record the job as paused, and let a later resume continue from disk.
+            // (The pct is read BEFORE live is cleared — the frozen ring must show the real stop.)
+            if (!userCanceled && (detail.contains("PausedError") || pausedJobs.contains(jobId))) {
+                JobProgress pj = live.get(jobId);
+                int frozenPct = pj != null ? pj.percent : 0;
+                live.remove(jobId);
+                releaseJobRow(jobId);
+                handlePaused(jobId, url, workDir, frozenPct);
+                return;                          // finally skips cleanup while paused
+            }
             live.remove(jobId);
             releaseJobRow(jobId);
             if (userCanceled) {
                 // Cancel UX: the user asked for this stop — a neutral "Grab canceled"
                 // confirmation, never the red "couldn't grab that / Download failed: …
                 // cancelled" failure the user caused themselves.
+                pausedJobs.remove(jobId);
+                persistPausedRemove(jobId);
                 writeDropSnapshot(jobId, "canceled", null, null);
                 notifySharedCanceled();
                 Log.i("DOWNI", "drop canceled " + jobId + " (user)"); // (D) logcat breadcrumb
@@ -462,7 +651,9 @@ public class DowniDownloadService extends Service {
                 // failed card carries the plain reason into the app, and the RAW engine
                 // text is parked in dropLastError so getDropJobs() can hand it back —
                 // no adb needed to name the culprit.
-                writeDropSnapshot(jobId, "failed", null, null, 0, friendly);
+                pausedJobs.remove(jobId);
+            persistPausedRemove(jobId);
+            writeDropSnapshot(jobId, "failed", null, null, 0, friendly);
                 try {
                     getSharedPreferences("downi_settings", MODE_PRIVATE).edit()
                         .putString("dropLastError", new JSONObject()
@@ -477,13 +668,79 @@ public class DowniDownloadService extends Service {
                 notifySharedFailure(url, friendly);
             }
         } finally {
+            boolean keepForResume = pausedJobs.contains(jobId);   // D3: a paused job keeps its bytes
             sharedJobs.remove(jobId);
             activeJobs.remove(jobId);
             live.remove(jobId);
-            dropUrls.remove(jobId);
-            cleanDir(workDir);
+            if (!keepForResume) { dropUrls.remove(jobId); unregisterActiveGrab(jobId); }
+            if (!keepForResume) cleanDir(workDir);
             maybeStop();
         }
+    }
+
+    // ---------- D3: pause / resume (the Core and the notification share this state) ----------
+
+    /** Called from the PausedError path: record, persist, and refresh the row to paused. */
+    private void handlePaused(String jobId, String url, File workDir, int frozenPct) {
+        pausedJobs.add(jobId);
+        try {
+            SharedPreferences prefs = getSharedPreferences("downi_settings", MODE_PRIVATE);
+            JSONObject m = new JSONObject(prefs.getString(PAUSED_KEY, "{}"));
+            JSONObject j = new JSONObject();
+            j.put("url", url == null ? "" : url);
+            j.put("workDir", workDir.getAbsolutePath());
+            j.put("ts", System.currentTimeMillis());
+            m.put(jobId, j);
+            prefs.edit().putString(PAUSED_KEY, m.toString()).apply();
+        } catch (Exception ignored) {}
+        int pct = frozenPct;
+        applyPhase(jobId, "Paused — tap resume to continue", Math.max(1, pct));
+        writeDropSnapshot(jobId, "paused", null, null);
+        Log.i("DOWNI", "drop paused " + jobId + " at " + pct + "% (bytes kept)"); // (D) breadcrumb
+    }
+
+    private void persistPausedRemove(String jobId) {
+        try {
+            SharedPreferences prefs = getSharedPreferences("downi_settings", MODE_PRIVATE);
+            JSONObject m = new JSONObject(prefs.getString(PAUSED_KEY, "{}"));
+            m.remove(jobId);
+            prefs.edit().putString(PAUSED_KEY, m.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    /** Resume a paused grab: same job id → same work dir → the engine continues from bytes. */
+    private void resumePausedJob(String jobId) {
+        if (jobId == null || !pausedJobs.remove(jobId)) { Log.i("DOWNI", "resume miss " + jobId); return; }
+        String url = dropUrls.get(jobId);
+        try {
+            JSONObject m = new JSONObject(getSharedPreferences("downi_settings", MODE_PRIVATE)
+                    .getString(PAUSED_KEY, "{}"));
+            JSONObject entry = m.optJSONObject(jobId);
+            if ((url == null || url.isEmpty()) && entry != null) url = entry.optString("url", null);
+            persistPausedRemove(jobId);
+        } catch (Exception ignored) {}
+        if (url == null || url.isEmpty()) { Log.i("DOWNI", "resume " + jobId + " has no url"); return; }
+        Log.i("DOWNI", "drop resume " + jobId + " " + url); // (D) breadcrumb
+        activeJobs.add(jobId);
+        sharedJobs.put(jobId, new AtomicBoolean(false));
+        dropUrls.put(jobId, url);
+        JobProgress start = live.computeIfAbsent(jobId, k -> new JobProgress());
+        start.status = "Resuming…";
+        start.numbers = false;
+        Notification n = buildJobNotification(jobId, start);
+        if (fgRowOwner == null || live.get(fgRowOwner) == null) {
+            fgRowOwner = jobId;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(FG_NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(FG_NOTIFICATION_ID, n);
+            }
+        } else {
+            try { NotificationManagerCompat.from(this).notify(jobNotificationId(jobId), n); } catch (Exception ignored) {}
+        }
+        final String fUrl = url;
+        registerActiveGrab(jobId, url);
+        if (shareExecutor != null) shareExecutor.execute(() -> runSharedDownload(jobId, fUrl));
     }
 
     /** Per-platform quality memory, mirrored from the web layer (q_* localStorage keys). */
@@ -997,6 +1254,23 @@ public class DowniDownloadService extends Service {
         // DowniDrop jobs get a Cancel action (v2.6.4 parity) — in-app jobs already
         // have per-job cancel buttons in the Queue UI.
         if (jobId != null && jobId.startsWith("drop")) {
+            // D3: Pause while running, Resume while paused — the notification is where the user
+            // controls the grab without leaving their video (master package §31).
+            if (pausedJobs.contains(jobId)) {
+                Intent resume = new Intent(this, DowniDownloadService.class);
+                resume.setAction("shared_resume");
+                resume.putExtra("jobId", jobId);
+                PendingIntent resumePi = PendingIntent.getService(this, jobId.hashCode() + 7, resume,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                builder.addAction(0, "Resume", resumePi);
+            } else if (activeJobs.contains(jobId)) {
+                Intent pause = new Intent(this, DowniDownloadService.class);
+                pause.setAction("shared_pause");
+                pause.putExtra("jobId", jobId);
+                PendingIntent pausePi = PendingIntent.getService(this, jobId.hashCode() + 7, pause,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                builder.addAction(0, "Pause", pausePi);
+            }
             Intent cancel = new Intent(this, DowniDownloadService.class);
             cancel.setAction("shared_cancel");
             cancel.putExtra("jobId", jobId);
@@ -1016,7 +1290,9 @@ public class DowniDownloadService extends Service {
     }
 
     private void maybeStop() {
-        if (activeJobs.isEmpty()) {
+        // D3: a paused grab holds partial bytes on disk and a live job id — the service must
+        // stay up (paused jobs are resumable from the notification until the process dies).
+        if (activeJobs.isEmpty() && pausedJobs.isEmpty()) {
             live.clear();
             fgRowOwner = null; // N10: the foreground slot dies with the service
             stopForeground(true);

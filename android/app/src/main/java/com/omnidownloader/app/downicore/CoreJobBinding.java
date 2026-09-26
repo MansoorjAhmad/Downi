@@ -164,6 +164,12 @@ public final class CoreJobBinding {
         if ("running".equals(state)) {
             return new JobView(CoreStates.PROGRESS, pct, false);
         }
+        if ("paused".equals(state)) {
+            // D3: the real paused state — the ring freezes at exact progress, bars instead of
+            // motion. NEVER ages out: a paused job is a state the user can return to, not a
+            // celebration (master package §13) — it ends only when resumed or canceled.
+            return new JobView(CoreStates.PAUSED, pct, false);
+        }
         // Terminal rows are only pruned by the service's next write, so age them out here too.
         if (nowMs - ts > TERMINAL_TTL_MS) {
             return new JobView(CoreStates.IDLE, 0f, true);

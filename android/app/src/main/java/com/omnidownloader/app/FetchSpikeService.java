@@ -204,6 +204,28 @@ public class FetchSpikeService extends AccessibilityService {
         return "other";
     }
 
+    /** The last URL this Core delivered — pause/resume debug commands target its job. */
+    private String lastDeliveredUrl;
+
+    /** Newest dropLive row id matching url (when given) and state. Debug-channel helper. */
+    private String findDropJobId(String url, String stateWanted) {
+        try {
+            org.json.JSONArray list = new org.json.JSONArray(getSharedPreferences("downi_settings", MODE_PRIVATE)
+                    .getString("dropLive", "[]"));
+            String found = null;
+            for (int i = 0; i < list.length(); i++) {
+                org.json.JSONObject o = list.optJSONObject(i);
+                if (o == null) continue;
+                if (url != null && !url.equals(o.optString("url"))) continue;
+                if (stateWanted != null && !stateWanted.equals(o.optString("state"))) continue;
+                found = o.optString("id");
+            }
+            return found;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** Platform short name from the foreground session package (for records without a URL). */
     private String sessionShort() {
         String p = sessionPkg == null ? "" : sessionPkg;
@@ -893,6 +915,7 @@ public class FetchSpikeService extends AccessibilityService {
         try {
             DowniDownloadService.startShared(this, url);
             delivery.record(url, now);
+            lastDeliveredUrl = url;
             recordStrategy(route, true, url);
             log("CHAIN_DELIVER_OK route=" + route + " tap=1 url=" + clip(url, 200));
             // The Core becomes the live visual representation of this job (master package §11).
@@ -917,6 +940,7 @@ public class FetchSpikeService extends AccessibilityService {
         try {
             DowniDownloadService.startShared(this, url);
             delivery.record(url, SystemClock.elapsedRealtime());   // bench grabs count as deliveries too
+            lastDeliveredUrl = url;
             log("PIPELINE_HANDOFF_OK url=" + clip(url, 300));
         } catch (Throwable t) {
             log("PIPELINE_HANDOFF_FAIL url=" + clip(url, 200) + " err=" + t);
@@ -973,6 +997,41 @@ public class FetchSpikeService extends AccessibilityService {
             }
             if (parts.length >= 2 && parts[0].equals("mark")) {
                 core.setMarkScale(Float.parseFloat(parts[1]));
+                return;
+            }
+            if (parts.length >= 1 && parts[0].equals("pause")) {
+                // D3 device proof: pause the Fetcher's most recent running grab — found by its
+                // delivered URL in the service's own job snapshot.
+                String job = findDropJobId(lastDeliveredUrl, "running");
+                if (job == null) { log("CORE_CMD_PAUSE miss why=no_running_job"); return; }
+                android.content.Intent i = new android.content.Intent(this, DowniDownloadService.class);
+                i.setAction("shared_pause");
+                i.putExtra("jobId", job);
+                startService(i);
+                log("CORE_CMD_PAUSE job=" + job);
+                return;
+            }
+            if (parts.length >= 1 && parts[0].equals("status")) {
+                // D3 forensics: what the paused layer actually holds right now.
+                try {
+                    android.content.SharedPreferences prefs = getSharedPreferences("downi_settings", MODE_PRIVATE);
+                    log("STATUS pausedGrabs=" + prefs.getString("pausedGrabs", "{}"));
+                    org.json.JSONArray rows = new org.json.JSONArray(prefs.getString("dropLive", "[]"));
+                    for (int i = 0; i < rows.length(); i++) {
+                        org.json.JSONObject o = rows.optJSONObject(i);
+                        if (o != null) log("STATUS row id=" + o.optString("id") + " state=" + o.optString("state")
+                                + " pct=" + o.optInt("pct") + " url=" + clip(o.optString("url"), 60));
+                    }
+                } catch (Throwable t) { log("STATUS_ERR " + t); }
+                return;
+            }
+            if (parts.length >= 1 && parts[0].equals("resume")) {
+                // Starts the service if dead (its onCreate sweeps interrupted transfers into
+                // resumable paused grabs), then resumes the newest one.
+                android.content.Intent i = new android.content.Intent(this, DowniDownloadService.class);
+                i.setAction("shared_resume_latest");
+                startService(i);
+                log("CORE_CMD_RESUME latest");
                 return;
             }
             if (parts.length >= 3 && parts[0].equals("at")) {
