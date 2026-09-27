@@ -64,6 +64,7 @@ public final class DowniCore {
     private int downX, downY;
     private boolean dragging;
     private ValueAnimator edgeAnim;
+    private ValueAnimator settleAnim;       // C3 §2's release settle (ruling R5)
     private String baseState = CoreStates.IDLE;   // the arbiter's state; touch overrides it briefly
 
     public DowniCore(AccessibilityService svc, Listener listener) {
@@ -318,6 +319,7 @@ public final class DowniCore {
     private void detach() {
         visible = false;
         if (edgeAnim != null) { edgeAnim.cancel(); edgeAnim = null; }
+        if (settleAnim != null) { settleAnim.cancel(); settleAnim = null; }
         if (attached) {
             try { wm.removeViewImmediate(view); } catch (Throwable ignored) {}
             attached = false;
@@ -342,6 +344,7 @@ public final class DowniCore {
                 switch (e.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
                         if (edgeAnim != null) { edgeAnim.cancel(); edgeAnim = null; }
+                        if (settleAnim != null) { settleAnim.cancel(); settleAnim = null; }
                         downRawX = e.getRawX();
                         downRawY = e.getRawY();
                         downX = lp.x;
@@ -407,6 +410,7 @@ public final class DowniCore {
         if (!magnetic) {
             persistPosition();
             view.setState(baseState);        // the arbiter's truth, not a hardcoded idle (Wave 0)
+            startReleaseSettle();            // C3 §2 (ruling R5): a restrained settle, never a lock
             listener.onCoreMoved(lp.x, lp.y);
             return;
         }
@@ -441,6 +445,31 @@ public final class DowniCore {
             }
         });
         edgeAnim.start();
+    }
+
+    /**
+     * C3 §2's RELEASE SETTLE (ruling R5): when the finger lets go of a Core that did NOT snap to
+     * an edge, the gel relaxes through a small restrained swell — CoreMotion.releaseSettle runs
+     * 1.00 -> at most 1.05 -> 1.00 over RELEASE_SETTLE_MS. Physical, never a spring toy, and no
+     * trace is left behind (the squash returns to exactly 1,1).
+     */
+    private void startReleaseSettle() {
+        if (settleAnim != null) { settleAnim.cancel(); settleAnim = null; }
+        settleAnim = ValueAnimator.ofFloat(0f, 1f);
+        settleAnim.setDuration(CoreMotion.RELEASE_SETTLE_MS);
+        settleAnim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override public void onAnimationUpdate(ValueAnimator a) {
+                float s = CoreMotion.releaseSettle((Float) a.getAnimatedValue());
+                view.setGelSquash(s, s);
+            }
+        });
+        settleAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator a) {
+                view.setGelSquash(1f, 1f);
+                settleAnim = null;
+            }
+        });
+        settleAnim.start();
     }
 
     private void moveTo(int x, int y) {

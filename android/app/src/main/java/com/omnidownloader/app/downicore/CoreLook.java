@@ -27,6 +27,24 @@ public final class CoreLook {
         public float barAlpha;
     }
 
+    // ---------- sheet C2's wake, per channel, at the five beats ----------
+    // awareness · energy builds · the membrane activates · the core brightens · settled
+    // The beat FRACTIONS come from CoreMotion.WAKE_BEATS_MS; every channel's settled value is
+    // exactly the DETECTED value it lands on, so the wake can never drift from the settled look.
+
+    /** READY (a tap will land): the full wake. */
+    static final float[] WAKE_READY_DETECTED = {0.35f, 0.80f, 0.90f, 0.95f, 1.00f};
+    static final float[] WAKE_READY_HALO = {0.22f, 0.35f, 0.55f, 0.75f, 0.85f};
+    static final float[] WAKE_READY_RIM = {0.62f, 0.74f, 0.86f, 0.95f, 1.00f};
+    static final float[] WAKE_READY_TRACK = {0.10f, 0.125f, 0.145f, 0.16f, 0.16f};
+
+    /** AWARE (watching, routes degraded): the same five beats, quieter ceilings (~55%). */
+    static final float[] WAKE_AWARE_DETECTED = {0.20f, 0.35f, 0.45f, 0.50f, 0.55f};
+    static final float[] WAKE_AWARE_HALO = {0.21f, 0.23f, 0.26f, 0.28f, 0.30f};
+    static final float[] WAKE_AWARE_RIM = {0.58f, 0.62f, 0.68f, 0.73f, 0.78f};
+    static final float[] WAKE_AWARE_MARK = {0.84f, 0.83f, 0.82f, 0.81f, 0.80f};
+    static final float[] WAKE_AWARE_TRACK = {0.08f, 0.095f, 0.11f, 0.12f, 0.12f};
+
     /**
      * @param state    one of {@link CoreStates}
      * @param t        0..1 transition progress for the state's own animation (0 when settled)
@@ -55,21 +73,24 @@ public final class CoreLook {
         L.perimeter = 0f;
 
         if (CoreStates.WAKE.equals(state)) {
-            // Sheet C2's wake storyboard: energy gathers IN THE RIM — rise, expand, settle.
-            // Wave 2: the old transient full ring is gone; the surge reads as the membrane
-            // brightening, never as a separate circle appearing and vanishing.
-            L.detected = e;
-            L.halo = 0.20f + 0.65f * e;
-            L.rim = 0.55f + 0.45f * e;
-            L.track = 0.07f + 0.09f * e;
-            L.perimeter = 0f;
-            if (!readyGrade) {                   // the AWARE wake stops at the quieter targets
-                L.halo = 0.20f + 0.10f * e;
-                L.rim = 0.55f + 0.23f * e;
-                L.mark = 0.85f - 0.05f * e;
-                L.track = 0.07f + 0.05f * e;
-                L.detected = 0.55f * e;
+            // Sheet C2's wake storyboard, STAGED (ruling R1, 2026-09-26): awareness at 100 ms,
+            // energy builds at 200, the membrane activates at 300, the core brightens at 400,
+            // settled at 600. Energy still gathers IN THE RIM — the old transient full ring stays
+            // gone; the surge reads as the membrane brightening, never as a circle appearing.
+            if (readyGrade) {
+                L.detected = CoreMotion.wakeStage(0f, WAKE_READY_DETECTED, t);
+                L.halo = CoreMotion.wakeStage(0.20f, WAKE_READY_HALO, t);
+                L.rim = CoreMotion.wakeStage(0.55f, WAKE_READY_RIM, t);
+                L.track = CoreMotion.wakeStage(0.07f, WAKE_READY_TRACK, t);
+            } else {
+                // the AWARE wake: the same five beats, quieter ceilings (~55% energy, sheet C2)
+                L.detected = CoreMotion.wakeStage(0f, WAKE_AWARE_DETECTED, t);
+                L.halo = CoreMotion.wakeStage(0.20f, WAKE_AWARE_HALO, t);
+                L.rim = CoreMotion.wakeStage(0.55f, WAKE_AWARE_RIM, t);
+                L.mark = CoreMotion.wakeStage(0.85f, WAKE_AWARE_MARK, t);
+                L.track = CoreMotion.wakeStage(0.07f, WAKE_AWARE_TRACK, t);
             }
+            L.perimeter = 0f;
         } else if (CoreStates.DETECTED.equals(state)) {
             L.detected = 1f;
             L.perimeter = 0f;
@@ -181,7 +202,79 @@ public final class CoreLook {
         return L;
     }
 
+    /**
+     * The RETURN fade (sheet C5 RETURN, ruling R6): COMPLETE/FAILED -> IDLE is a subtle fade, not a
+     * cut. {@code from} is the look that was being held; t=0 returns it unchanged, t=1 has fully
+     * arrived at the resting look. Pure, so the envelope is unit-tested rather than eyeballed.
+     */
+    public static Look returnFade(Look from, float t) {
+        Look idle = of(CoreStates.IDLE, 0f, 0f);
+        float k = CoreMotion.easeInOut(t);
+        Look L = new Look();
+        L.halo = blend(from.halo, idle.halo, k);
+        L.rim = blend(from.rim, idle.rim, k);
+        L.mark = blend(from.mark, idle.mark, k);
+        L.scale = blend(from.scale, idle.scale, k);
+        L.perimeter = blend(from.perimeter, idle.perimeter, k);
+        L.track = blend(from.track, idle.track, k);
+        L.error = blend(from.error, idle.error, k);
+        L.detected = blend(from.detected, idle.detected, k);
+        L.markSink = blend(from.markSink, idle.markSink, k);
+        L.barAlpha = blend(from.barAlpha, idle.barAlpha, k);
+        L.bars = from.bars && t < 0.5f;      // the paused bars leave early in the return
+        return L;
+    }
+
+    private static float blend(float a, float b, float k) {
+        return a + (b - a) * k;
+    }
+
+    /**
+     * The unsupported (neutral) mood belongs to FAILED alone (sheet C6). The flag carries over
+     * into the NEXT state only while that state IS failed; any other state clears it, so a later
+     * failure renders rose unless it is explicitly marked unsupported again. Pure + tested.
+     */
+    public static boolean unsupportedCarriesOver(String nextState, boolean current) {
+        return current && CoreStates.FAILED.equals(nextState);
+    }
+
+    // ---------- the Core's art (Fetcher 2.0, sheet C1) ----------
+    // The Core's material is authored art, so its geometry has to be *measured* rather than
+    // derived like the old procedural disc (the owner's complaint was exactly this class of silent
+    // failure — a correct-looking number drawing the wrong thing). `tools/core_sheet_extract.py`
+    // prints these two numbers from the shipping PNGs and CoreArtSpecTest guards them on the JVM.
+
+    /** The Core art's disc diameter / tile side (`core_orb.png`, the sheet's hero render). */
+    public static final float ART_TILE_RATIO = 0.8606f;
+
+    /** The same for the paused art (`core_orb_paused.png`). Smaller because C1's state row keeps
+     *  more transparent glow padding around the object than the hero crop does. */
+    public static final float ART_TILE_RATIO_PAUSED = 0.7799f;
+
+    /**
+     * The tile side in dp that puts the art's disc exactly where the Core's disc is.
+     *
+     * The disc may NOT move: `r` is the same one {@link CoreHost} and the sheets before it used
+     * (§6 small visual, §19 full touch target), so the art is scaled up by 1/ratio around it —
+     * the tile's transparent margin is the glow's room, not part of the Core.
+     */
+    public static float artTileSideDp(int sizeDp, float tileRatio) {
+        float r = (sizeDp / 2f - DISC_INSET_DP) * VISUAL_IN_WINDOW;
+        return 2f * r / tileRatio;
+    }
+
+    /** The art for a paused Core. Per sheet C1 the pause recedes the energy; the TILE RATIO of the
+     *  two assets differs, so which art decides which ratio. */
+    public static float artTileRatio(boolean paused) {
+        return paused ? ART_TILE_RATIO_PAUSED : ART_TILE_RATIO;
+    }
+
+
     // ---------- the mark's geometry (sheet 2's asset, sheets 3/4's size) ----------
+    // NOT DRAWN BY FETCHER 2.0's VIEW ANY MORE: the chevron ships inside the Core art. Everything
+    // below stays because the debug gate still drives it (`mark <scale>` on the core channel) and
+    // because the Lottie stage splits the chevron back out as its own layer, where it will need
+    // the same measured size. `downi_core_mark*.png` is therefore kept as an asset, unused.
     // The mark itself is lifted pixel-exact from sheet 2 by `tools/core_mark_from_sheet.py`; how
     // large it sits inside the disc is *measured* off sheets 3/4. That measurement lives here, in
     // the pure table, rather than in a comment inside the view: the owner's complaint was a wrong

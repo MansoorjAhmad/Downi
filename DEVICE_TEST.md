@@ -4,7 +4,48 @@
 Fill it in every time the extraction layer changes, and after any UI/wiring release like a
 hardship check. Mark ✅ / ❌ per cell.
 
-## 1. Core matrix (mandatory)
+## 0. V3.3 Core 2.0 — M1 on-device render gate (the owner's sheet-C1 art)
+
+> Device pass **2026-09-27** — vivo V2058, build **48 / v3.2.0** (spike-signed). The Core is now the
+> owner's art from sheet C1 (`core_orb.png`, `core_orb_paused.png`) drawn as **one bitmap per state**,
+> so this cell asks one question — does the art appear, per state, carrying that state's own
+> mark/energy/mood — and answers it with numbers, not a strip.
+
+| # | Check | Evidence |
+|---|---|---|
+| M1-1 | The art draws at all | ✅ `CORE_ATTACH type=2032 x=452 y=1080 size=176px size_dp=64 touchable=1`; 24 shots in `test_out\core_visual` |
+| M1-2 | The mark is the state's own | ✅ teal-mark px (share of inner disc): idle 1153 (12.3%) · wake/detected/pressed/dragging/snapped 1345 (14.4%) · resuming 1397–1398 (14.9%) · completing/complete 1305–1316 (14.0%) · **paused 857 (9.2%)** — the two-bar art, measured |
+| M1-3 | Rose only in FAILED | ✅ disc-annulus hue: idle 188° · detected 188° · paused 191° · **failed 342°** (sat 0.29). The baked art itself measures 201° / 204°, so neither tile is rose: the rose is the FAILED tint, as designed |
+| M1-4 | The render is live, not one frozen bitmap | ✅ annulus value tracks energy: idle 0.27 → detected 0.30 → paused 0.25 ("the energy receded") |
+| M1-5 | Drag / snap / overlay unchanged | ⏳ not re-run in this pass — the full matrix re-runs after M2 wires the Lottie states |
+| M1-6 | Ring = progress | ⏳ `scan_ring`'s band is derived from the *procedural* rim (it reads 0% on the baked art's ring); re-derive it before M4 claims this cell |
+
+**Harness lessons from this pass** (four runs produced nothing before it; all four are now handled by
+`tools\core_shots_live.ps1`, the driver this cell was measured with):
+
+1. **This ROM unbinds the service by itself, ~40 s after a bind** — clean `SERVICE_UNBIND` +
+   `FGS_STOP` + `SERVICE_DESTROY`, `HEARTBEAT uptime_s=30` at 10:55:28 and dead at 10:55:38, no crash
+   and no command churn. The Core window dies with the binding and the debug channel lives in the
+   service, so `tools\core_gate.ps1` (8 s of sleeps up front, 3 adb calls per shot) missed the window
+   and wrote 28 screenshots of an empty app — which look exactly like a rendering bug. The live
+   driver checks liveness before every shot and re-launches (which re-binds) when needed: the 24-shot
+   pass finished in 50 s with `SERVICE_UNBIND=0`.
+2. **Never arm by hand.** `settings delete` + `put secure enabled_accessibility_services` looks
+   healthy — `SERVICE_CONNECTED`, `CORE_READY`, even `CORE_ATTACH` — and then the framework's delayed
+   reaction to the *delete* lands ~2 s later and kills the fresh bind, while the process stays alive so
+   both `pidof` and `settings get` still report healthy (2026-09-27: 10:46:38→10:46:40,
+   10:51:05→10:51:08, 10:52:49→10:52:52). This ROM re-binds on its own when the app is launched:
+   launch it and leave the setting alone. `fetch_diag.ps1 -Arm` proves a *new* bind, but not that the
+   new bind survives.
+3. **`at x y` must be pushed after `show`.** `DowniCore.show()` rebuilds its WindowManager params from
+   the persisted prefs, so a position sent while hidden is silently discarded — the pass before this
+   one asked for `at 452 1080` and got the persisted `x=0,y=1199`.
+4. **`tools\core_state_audit.py --fixed`** (added this pass): `--at` is the window's **top-left**, and
+   the disc fit is skipped. With baked art, `fit_disc`'s edge walk finds no rim stroke to lock onto in
+   14 of 17 states, so the audit reported "no Core to measure" for a Core plainly on screen.
+
+> Sign and date here when green: ______________
+
 
 > Device pass **2026-09-24** — vivo V2058, build **46 / v3.1.1**. ✅ = seen on this device, with the
 > evidence named. ⏳ = can't be driven over adb on this ROM (no `cmd clipboard`), owner tap needed.
@@ -97,7 +138,7 @@ Device: vivo V2058, USB only.
 | C2 | `CHAIN_SHARE_CLICK` → share UI within 1.3 s | ✅ **PASS** | `CHAIN_SHARE_CLICK text=share route=action` → `CHAIN_STEP2` sees the sheet ~1.3 s later (this is the step the old "≈1.5–1.7 s" figure described) |
 | C3 | `CHAIN_BUTTON` exposes "Copy link" and/or DOWNI | ✅ **PASS** | `CHAIN_COPYLINK_CANDIDATE … text=copy link clickable=true` (16:34:58) **and** `CHAIN_CHOOSER_DOWNI text= route=action` (16:33:51, 16:34:35, 16:35:00) after `CHAIN_CHOOSER_SCROLL n=1/4`; fallback `CHAIN_CHOOSER_NO_DOWNI back=true` (09:17) |
 | C4 | `CHAIN_TARGET_CLICK ok=true`; EITHER the sheet route lands a grab (notification) OR the Copy-link route puts the deep link on the clipboard (owner-verified) | ⚠️ **latest tap-only run PASS; reliability sample still open** | Historical fixed-build rate was 2/7 before D-e's repair. On the clean 18:33 build with `handoff=false`, one physical TikTok tap reached a real URL: tries 1–4 `focus=false, got=null`, try 5 focus arrived, try 6 `got=yes`, then `CHAIN_DELIVER_OK route=clipboard tap=1`. This confirms the mechanism and fix, not yet a statistically reliable C4 rate. Engine reached 91% before the separate vivo ABE kill |
-| C5 | End-to-end ≤ ~3 s | ❌ **FAILS spec** | measured **3.2 / 3.5 / 3.7 / 4.1 / 4.1 / 4.5 / 4.6 / 5.9 s** on 8 taps (≈4.2 s avg). Decide: revise the cell or cut the delay (`postStep 1300 ms` + sheet setup) |
+| C5 | End-to-end **TikTok median ≤ ~4 s** (cell revised by ruling R3, 2026-09-26 — the old "≤ ~3 s" target was aspirational and is **not** claimed) | ✅ **PASS (revised cell)** | post-Wave-1 TikTok clipboard set **3.25 / 3.62 / 4.37 s** (median **3.6 s**); the earlier 8-tap set **3.2–5.9 s** (median **4.1 s**, ≈4.2 s avg) sits at the boundary. Further optimization stays a measured follow-up (`postStep 1300 ms`, sheet setup, scroll wait) |
 | C6 | No crash; platform app stays foreground; panel closed | ✅ | `CHAIN_STEP_ERR`/`CHAIN_ERR` fencing; no crash in the chain path |
 | B1 | Bubble over IG/TikTok ≤~1.5 s; never over DOWNI/other apps | ✅ (timing ⏳) | `test_out/bubble_ig.png`, `bubble_home_hidden.png`; ≤1.5 s **not measured** |
 | B2 | Drag moves it; a drag never fires a grab | ✅ | `bubble_dragged.png`, `BUBBLE_MOVED` |
@@ -123,7 +164,7 @@ Device: vivo V2058, USB only.
 |---|---|---|---|
 | D-a | **One tap can grab the same video twice** — the spike's own `pipeline(url)` handoff *and* the chooser click both fire for one URL | `Movies/DOWNI`: `fliqr.clips.mp4` + `fliqr.clips (1).mp4` both **2,135,039 B**; `rekrobot.mp4` + `rekrobot (1).mp4` both **3,377,818 B** | ✅ **FIXED 2026-09-25 16:47**, verified live 16:51 (tap via `input tap 961 798`): one `CHAIN_DELIVER route=clipboard` for the run, no second claim; routes now stand down (`CHAIN_CLIP_SUPPRESSED`), and the dump path skips during a run (`PIPELINE_SKIPPED chain_running`). Phase D still owns the production version of this rule |
 | D-b | **Chain can resolve a non-video URL** (a profile/bio link) | 11:06:02 `PIPELINE_HANDOFF_OK url=https://fikrfreeapp.onelink.me/xoBT/tdnrp3bc` | ✅ **FIXED 2026-09-25 16:53**: pure rule `fetcher/MediaUrl` + `MediaUrlTest` (**7 tests**; suite **26/0**). Rejects `onelink.me` (that exact link), profile paths, `linktr.ee`, YouTube; flags TikTok photo posts as `tt_photo_post`. Live 16:54: a real share link passed and delivered once |
-| D-c | **C5 exceeds spec** (3.2–5.9 s vs ≤~3 s) | 8 `BUBBLE_TAP` → `PIPELINE_HANDOFF_OK` pairs, 16:30–16:35 | Decide: revise the cell, or cut time (`postStep` 1300 ms, sheet setup, scroll wait) |
+| D-c | **C5 latency cell revised (R3, owner 2026-09-26)** — the ≤3 s target was aspirational; the honest cell is "TikTok median ≤ ~4 s" | 8 `BUBBLE_TAP` → `PIPELINE_HANDOFF_OK` pairs 16:30–16:35 (3.2–5.9 s, median 4.1 s) + the post-Wave-1 TikTok clipboard set 3.25/3.62/4.37 s (median 3.6 s) | **CLOSED as revised.** No surface claims the aspirational ≤3 s; further optimization is a measured follow-up, not a spec |
 | D-d | A chooser walk can read **quick-settings rows** instead of share targets | 16:33:51 `CHAIN_CHOOSER_BUTTON on wi-fi,cmcc-fiber … off torch … silent` | ✅ **FIXED 2026-09-25 17:02**, verified live all three walks: `pickShareRoot()` skips `com.android.systemui` (`… _WINDOW_SKIPPED pkg=com.android.systemui why=shade_cannot_hold_share_targets`) and chooses deliberately (`… _ROOT which=platform_app`). The walk no longer reads quick settings |
 | D-e | **The copy-link route is unreliable** — the sheet's Copy link is clicked but the clipboard read comes back empty, so the run delivers nothing | `CHAIN_CLIPBOARD got=null` at **17:02:05.631**, **17:12:05.631** and **18:03:34.307**; same pre-fix build delivered at 16:51/16:54. Cause isolated at 18:05: `setFocusable(true)` did not give DOWNI window focus | ✅ **FIXED + VERIFIED 2026-09-25 18:33–18:34.** `DowniBubble.requestFocus()/hasWindowFocus()` now report real focus, and `readClipAndPipe` retries six times at 250 ms. Physical proof with the gate off: tries 1–4 `focus=false, got=null`; try 5 `focus=true, got=null`; try 6 `focus=true, got=yes`; then `CHAIN_DELIVER_OK … tap=1`. A larger C4 reliability sample is still required |
 | D-f | **A miss ends the run with nothing** — no fallback when the chooser does not appear, and no retry while the sheet animates | IG 17:05: `CHAIN_TARGET_CLICK which=chooser_row` → no `android` chooser window → 4 scrolls → `CHAIN_CHOOSER_NO_DOWNI`, and **no copy-link fallback** though a clickable `copy link` row was found at 17:05:06.139. TikTok 17:04: `CHAIN_NO_TARGET neither DOWNI nor Copy link found` | **SUPERSEDED by the owner's 18:20 ruling.** The chooser/Drop route was deleted from the Fetcher. The current resolver clicks only the platform's **Copy link**, scrolls the platform sheet up to two times, then uses the focus-aware six-attempt clipboard read verified in row D-e. A platform-specific tree route remains evidence for Phase C, not a user-facing choice |
@@ -148,7 +189,7 @@ Device: vivo V2058, USB only.
 
 **Wave 1 device session (2026-09-26, vivo V2058, TikTok + Instagram, prod-signed debug install of commits 9314f00…):**
 - **The narrated run works end to end (the observer's beats, three real deliveries):** `RUN_START platform=tiktok plan=sheet_tree>copy_link` → `RUN_STEP share_found` → `sheet_open after_ms=550` → `copy_link_clicked` → `panel_closed` → `RUN_CAPTURE route=clipboard` → `CHAIN_DELIVER_OK` → `RUN_END delivered=true route=clipboard`. Route attribution C1 re-checked via `chain.cmd dry` (`share=3`, `CHAIN_DRY_DONE`).
-- **Latency samples (tap → delivery):** TikTok clipboard route **3.25 s / 3.62 s / 4.37 s** (median 3.6 s; historical average 4.2 s) — the event-driven waits plus the Wave 1 focus-overlap are trending better, n too small to conclude. Instagram baseline from the owner's own tap on the pre-Wave-1 build: **3.35 s** (17:14:33.087 → 17:14:36.439, attempt-1 clipboard read). **C5 (≤ ~3 s) remains unmet on TikTok** — the cell needs the owner's ruling: revise to "≤ ~4 s median" or keep optimizing in Wave 2.
+- **Latency samples (tap → delivery):** TikTok clipboard route **3.25 s / 3.62 s / 4.37 s** (median 3.6 s; historical average 4.2 s) — the event-driven waits plus the Wave 1 focus-overlap are trending better, n too small to conclude. Instagram baseline from the owner's own tap on the pre-Wave-1 build: **3.35 s** (17:14:33.087 → 17:14:36.439, attempt-1 clipboard read). **C5: the owner revised the cell (ruling R3, 2026-09-26) to "TikTok median ≤ ~4 s"** — this recent set (median 3.6 s) meets it; the 8-tap set (median 4.1 s) sits at the boundary. The aspirational ≤3 s is retired and is not claimed anywhere.
 - **RUN_END honesty fix (found live in the 17:53 run):** the first narrated run declared `RUN_END delivered=false ms=3447` and the delivery landed 2.2 s later — the run's end was declared while D-i's async clipboard window was still pending. Now `chainReset` marks the end pending and the clipboard attempts' terminal branch fires `RUN_END` with the true outcome (`delivered=true route=clipboard`).
 - **Route vocabulary normalized at the ledger:** the strategy ledger records `tiktok/copy_link` (the ROUTE), while logs keep the historical `route=clipboard` (the MECHANISM). Device log: `STRATEGY tiktok clipboard 100% (2/2)` under the old build → `copy_link` keys on the final build; `routeHealth()` feeds `fetcherStatus.routes` for the Wave 3 card.
 - **The vivo killer struck mid-experiment twice** (one tap died ~2.5 s in, mid-resolver-run, before any clipboard attempt; log ends abruptly, no crash marker — the documented ABE shape). Self-recovery restored the Fetcher each time. The user-side exemption walkthrough (Fetcher settings card) remains the gating lever for stable measurement sessions.

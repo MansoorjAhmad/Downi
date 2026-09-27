@@ -946,7 +946,11 @@ public class DowniFetcherService extends AccessibilityService {
             i.putExtra("jobId", jobId);
             startService(i);
             log("CORE_RESUME job=" + jobId + " url=" + clip(url, 120));
-            // the binding flips the Core to RESUMING on the service's next snapshot write
+            // R2 (approved 2026-09-26): a resume was REALLY requested at this door, so the Core
+            // may show RESUMING. The transient is protected from the job feed (setBaseState skips
+            // transients) and settles to PROGRESS on the service's next snapshot write. If the
+            // engine cannot resume, no running row ever lands and the Core returns to PAUSED.
+            core.setState(CoreStates.RESUMING);
         } catch (Throwable t) { log("CORE_RESUME_ERR " + t); }
     }
 

@@ -7,10 +7,9 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.LinearGradient;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -20,25 +19,30 @@ import android.view.View;
 import com.omnidownloader.app.R;
 
 /**
- * V3.2 Downi Core — the face (master package §4/§5/§6: identity + ambient perimeter + material).
+ * Downi Fetcher 2.0 — the Core. This view draws ONE thing: the owner's Core art from sheet C1.
  *
- * Two layers, per the master package:
- *   LAYER A  the sheet-2 identity mark, permanent, never the app icon;
- *   LAYER B  an organic, slightly asymmetric energy perimeter over a glossy obsidian body —
- *            NOT a "mathematically perfect generic circle".
+ * The v3.3 plan is explicit about why (plan §2): the obsidian gel, the cyan energy membrane, the
+ * gloss and the folded-ribbon chevron are authored material, not arithmetic. Fetcher 1.0's
+ * procedural body + rim + gloss + mark could not reach it, and every "make it glossier" tweak in
+ * code drifted the look. So the material now ships as art
+ * (`res/drawable-nodpi/core_orb.png`, lifted from the sheet by `tools/core_sheet_extract.py`)
+ * and this view only *composes* it:
  *
- * Material (sheet 1/2/5): deep smoked-black body with real depth shading, a soft specular
- * highlight top-left, a teal gel rim, and restrained bloom. Premium comes from shape +
- * proportion + material + lighting + motion — never from gamer effects.
+ *   · the art, scaled so its disc is exactly the Core's disc (measured object/tile ratio);
+ *   · the state's ambient bloom behind it (sheet C6's rose / muted blue-grey live here);
+ *   · the energy ring — the membrane also carries real download progress (sheet C5);
+ *   · the resolver's orbit light on the rim (sheet C4).
  *
- * Size (§6/§19): the visual pebble is drawn at {@link #VISUAL_IN_WINDOW} of its window, so the
- * visible Core stays small (~50 px class at the 64 dp window) while the touch target stays the
- * full window — small visual footprint, comfortable interaction area. The padding is part of the
+ * Motion (§20/§25) is unchanged: a state draws itself once, only transitions animate, and the one
+ * continuous motion is the DOWNLOADING sheen — never idle (cell K-A5).
+ *
+ * Size (§6/§19): the visual disc is {@link #VISUAL_IN_WINDOW} of its window, so the visible Core
+ * stays small while the touch target stays the full 48/56/64 dp window. The padding is part of the
  * near-Core touch zone; it does not cover any extra app surface beyond what the Core already did.
  *
- * Motion (§20/§25): a state draws itself once; only transitions animate (idle cost stays zero —
- * cell K-A5). The one continuous motion is the DOWNLOADING energy flow: a slow rotating sheen on
- * the perimeter, running only while a real job is in PROGRESS and never while idle.
+ * Since the chevron is baked into the art, the interior slosh ({@link #setMarkLag}) now reads on
+ * the Core as a whole — the chevron becomes its own layer again when the Lottie stage splits it
+ * (plan §3, milestone "Lottie plumbing").
  */
 public final class CoreHost extends View {
 
@@ -60,17 +64,19 @@ public final class CoreHost extends View {
     public static final float visualFractionOfWindow() { return VISUAL_IN_WINDOW; }
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** The art's own paint: bilinear filtering (the tile is 512 px, the disc is ~40 dp) + its tint. */
+    private final Paint artPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
     private final RectF inner = new RectF();         // perimeter track
-    private final RectF glass = new RectF();         // glass highlight arc
-    private final RectF markDst = new RectF();       // mark destination
-    private final RectF barL = new RectF(), barR = new RectF();
-    private final Path blob = new Path();            // the organic silhouette (LAYER B body)
-    private final Path clip = new Path();            // circular clip for the mark
+    private final RectF artDst = new RectF();        // where the art lands on the disc
     private final Matrix flowMatrix = new Matrix();  // rotates the downloading sheen
     private final float dp;
 
-    private final Bitmap mark;
-    private float markScale = DEFAULT_MARK_SCALE;
+    /** Fetcher 2.0: the Core IS its art (sheet C1) — no procedural body, rim, gloss or mark. */
+    private final Bitmap orb;                        // READY / IDLE look
+    private final Bitmap orbPaused;                  // PAUSED look: dimmed energy + bars
+    private int tintedAs = -1;                       // which tint artPaint currently carries
+
+    private float markScale = DEFAULT_MARK_SCALE;    // kept for the debug gate until the art splits
 
     private String state = CoreStates.IDLE;
     private boolean readyGrade = true;      // the wake grade (sheet C2): READY vs AWARE
@@ -87,23 +93,29 @@ public final class CoreHost extends View {
     private float squashX = 1f, squashY = 1f;        // edge-snap gel deformation (V-3)
     private boolean animCancelled;                   // a cancelled transition must never settle
 
-    private Shader haloIdle, haloHot, haloErr, haloNeutral, body, gloss, bounce, rim, rimErr, rimNeutral, sweep;
-    private float cx, cy, r, blobMin, rIn;
+    private Shader haloIdle, haloHot, haloErr, haloNeutral, sweep;
+    private float cx, cy, r, rIn;
 
     public CoreHost(Context c) {
         super(c);
         dp = c.getResources().getDisplayMetrics().density;
         setContentDescription(c.getString(R.string.downi_core_desc));
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
-        mark = decodeMark(c);
+        orb = decodeArt(c, R.drawable.core_orb);
+        orbPaused = decodeArt(c, R.drawable.core_orb_paused);
+        artPaint.setFilterBitmap(true);
     }
 
-    /** The sheet-2 mark, 512 px master, undecimated — density scaling is ours, not the framework's. */
-    private static Bitmap decodeMark(Context c) {
+    /**
+     * The Core's art, 512 px master, undecimated — density scaling is ours, not the framework's
+     * (the same rule the mark asset followed), and null on any failure so the Core still draws
+     * its ring + bloom instead of vanishing.
+     */
+    private static Bitmap decodeArt(Context c, int res) {
         try {
             BitmapFactory.Options o = new BitmapFactory.Options();
             o.inScaled = false;
-            return BitmapFactory.decodeResource(c.getResources(), R.drawable.downi_core_mark, o);
+            return BitmapFactory.decodeResource(c.getResources(), res, o);
         } catch (Throwable t) {
             return null;
         }
@@ -126,9 +138,16 @@ public final class CoreHost extends View {
 
     public void setState(String s) {
         if (s == null || !CoreStates.isKnown(s)) return;
-        // Wave 2: the unsupported (neutral) tint belongs to FAILED alone — leaving FAILED
-        // clears it, so a later failure renders rose unless marked unsupported again.
-        if (!CoreStates.FAILED.equals(s)) unsupported = false;
+        // R2/C6: the unsupported (neutral) tint belongs to FAILED alone — leaving FAILED clears
+        // it. The rule itself is pure and tested (CoreLook.unsupportedCarriesOver).
+        unsupported = CoreLook.unsupportedCarriesOver(s, unsupported);
+        // R6 (sheet C5 RETURN): entering IDLE from a look that was holding energy is a subtle
+        // fade, not a cut. The 20 s COMPLETE hold is untouched — it lives in the TTL, not here.
+        if (CoreStates.IDLE.equals(s) && state != null && !CoreStates.IDLE.equals(state)) {
+            startReturnFade(CoreLook.of(state, 0f, progress, readyGrade));
+        } else {
+            cancelReturnFade();
+        }
         state = s;
         startTransition(durationOf(s));
         updateFlow();
@@ -258,6 +277,7 @@ public final class CoreHost extends View {
 
     @Override protected void onDetachedFromWindow() {
         if (anim != null) { anim.cancel(); anim = null; }
+        if (fadeAnim != null) { fadeAnim.cancel(); fadeAnim = null; }
         if (flow != null) { flow.cancel(); flow = null; }
         if (orbit != null) { orbit.cancel(); orbit = null; }
         super.onDetachedFromWindow();
@@ -282,6 +302,45 @@ public final class CoreHost extends View {
         invalidate();
     }
 
+    // ---------- R6: the RETURN fade (sheet C5) ----------
+
+    private CoreLook.Look fadeFrom;        // the settled look the fade starts from
+    private float fadeT;                   // 0..1 through CoreMotion.RETURN_MS
+    private ValueAnimator fadeAnim;
+
+    /**
+     * Sheet C5 RETURN (ruling R6): the held COMPLETE/FAILED look fades into rest instead of
+     * cutting. The 20 s COMPLETE hold happens upstream (the snapshot TTL) — this is only the
+     * leaving. One-shot; idle still never animates (cell K-A5).
+     */
+    private void startReturnFade(CoreLook.Look from) {
+        cancelReturnFade();
+        fadeFrom = from;
+        fadeT = 0f;
+        fadeAnim = ValueAnimator.ofFloat(0f, 1f);
+        fadeAnim.setDuration(CoreMotion.RETURN_MS);
+        fadeAnim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override public void onAnimationUpdate(ValueAnimator a) {
+                fadeT = (Float) a.getAnimatedValue();
+                invalidate();
+            }
+        });
+        fadeAnim.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator a) {
+                fadeFrom = null;               // the state's own look takes over
+                fadeAnim = null;
+                invalidate();
+            }
+        });
+        fadeAnim.start();
+    }
+
+    private void cancelReturnFade() {
+        if (fadeAnim != null) { fadeAnim.cancel(); fadeAnim = null; }
+        fadeFrom = null;
+        fadeT = 0f;
+    }
+
     // ---------- geometry + shaders (built once per size) ----------
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
@@ -291,29 +350,10 @@ public final class CoreHost extends View {
         r = (Math.min(w, h) / 2f - inset) * VISUAL_IN_WINDOW;   // the visible pebble (§6: small)
         rIn = r - 1.6f * dp;
         inner.set(cx - rIn, cy - rIn, cx + rIn, cy + rIn);
-        float gi = 2.6f * dp;
-        glass.set(cx - r + gi, cy - r + gi, cx + r - gi, cy + r - gi);
-
-        // The organic silhouette: a softly lobed body — never a mathematically perfect circle
-        // (§6). The lobes are subtle and FIXED (no idle morphing): shape is identity, not noise.
-        float a4 = 0.032f, a2 = 0.018f, p4 = 0.55f, p2 = 1.9f;
-        blob.reset();
-        final int N = 64;
-        float[] xs = new float[N];
-        float[] ys = new float[N];
-        for (int i = 0; i < N; i++) {
-            float th = (float) (Math.PI * 2 * i / N);
-            float rb = r * (1f + a4 * (float) Math.cos(4 * th + p4) + a2 * (float) Math.cos(2 * th + p2));
-            xs[i] = cx + rb * (float) Math.cos(th);
-            ys[i] = cy + rb * (float) Math.sin(th);
-        }
-        blob.moveTo((xs[N - 1] + xs[0]) / 2f, (ys[N - 1] + ys[0]) / 2f);
-        for (int i = 0; i < N; i++) {
-            float nx = xs[(i + 1) % N], ny = ys[(i + 1) % N];
-            blob.quadTo(xs[i], ys[i], (xs[i] + nx) / 2f, (ys[i] + ny) / 2f);
-        }
-        blob.close();
-        blobMin = r * (1f - a4 - a2);
+        // Fetcher 1.0 built the silhouette here (a 64-point lobed path, body/bounce/gloss shaders,
+        // a stroked gel rim, a separate mark bitmap). Fetcher 2.0 does not: the sheet's own art
+        // carries the silhouette, the lobing, the material and the chevron, so all of that geometry
+        // and every one of those shaders is gone. What is left in this view is composition.
 
         haloIdle = new RadialGradient(cx, cy, r + inset + 2 * dp,
                 new int[]{0x2B22D3EE, 0x0F22D3EE, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
@@ -326,26 +366,10 @@ public final class CoreHost extends View {
         haloNeutral = new RadialGradient(cx, cy, r + inset + 2 * dp,
                 new int[]{0x4C8FA8B8, 0x198FA8B8, 0x00000000}, new float[]{0f, 0.62f, 1f}, Shader.TileMode.CLAMP);
 
-        // Deep obsidian body with real depth: darker toward the lower-right, a faint teal bounce
-        // light from below (volumetric read), and one soft specular gloss top-left (sheet 1/5).
-        body = new LinearGradient(cx - r, cy - r, cx + r, cy + r,
-                new int[]{0xFF1B2C48, 0xFF0B1322, 0xF9060B14}, new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP);
-        bounce = new RadialGradient(cx, cy + r * 0.62f, r * 1.05f,
-                new int[]{0x1A22D3EE, 0x00000000}, new float[]{0f, 1f}, Shader.TileMode.CLAMP);
-        gloss = new RadialGradient(cx - r * 0.34f, cy - r * 0.44f, r * 0.95f,
-                new int[]{0x3DFFFFFF, 0x14000000, 0x00000000}, new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP);
-
-        rim = new SweepGradient(cx, cy,
-                new int[]{0xFF9BE8FF, 0xFF22D3EE, 0xFF3B82F6, 0xFF2DD4BF, 0xFF9BE8FF}, null);
-        rimErr = new LinearGradient(cx - r, cy - r, cx + r, cy + r,
-                new int[]{0xFFFFC4D0, 0xFFFB7185, 0xFFF43F5E, 0xFFFFC4D0}, null, Shader.TileMode.CLAMP);
-        rimNeutral = new SweepGradient(cx, cy,
-                new int[]{0xFFB7C6D1, 0xFF8FA8B8, 0xFF64748B, 0xFF8FA8B8, 0xFFB7C6D1}, null);
+        // Only the ring's sweep is built here now: the body, gloss, bounce and rim shaders went
+        // with the procedural material (see the note above).
         sweep = new SweepGradient(cx, cy,
                 new int[]{0xFF7DF9FF, 0xFF22D3EE, 0xFF3B82F6, 0xFF7DF9FF}, null);
-
-        clip.reset();
-        clip.addCircle(cx, cy, rIn - 0.6f * dp, Path.Direction.CW);
     }
 
     private static float clamp01(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }
@@ -354,7 +378,9 @@ public final class CoreHost extends View {
 
     @Override protected void onDraw(Canvas c) {
         if (rIn <= 0f) return;
-        CoreLook.Look L = CoreLook.of(state, animT, progress, readyGrade);
+        CoreLook.Look L = fadeFrom != null
+                ? CoreLook.returnFade(fadeFrom, fadeT)                  // R6: the subtle RETURN
+                : CoreLook.of(state, animT, progress, readyGrade);
         // mood 0 idle · 1 awake · 2 rose failure · 3 NEUTRAL unsupported (sheet C6)
         int mood = (L.error > 0.25f && unsupported) ? 3 : (L.error > 0.25f ? 2 : (L.detected > 0.4f ? 1 : 0));
         int save = c.save();
@@ -367,30 +393,22 @@ public final class CoreHost extends View {
         p.setAlpha(Math.round(255f * clamp01(L.halo / 0.55f) * (CoreStates.PROGRESS.equals(state) ? breath : 1f)));
         c.drawCircle(cx, cy, r + 8 * dp, p);
 
-        // 2) the organic body — deep obsidian with depth, bounce light and gloss (sheet 1/5)
-        p.setAlpha(255);
-        p.setShader(body);
-        c.drawPath(blob, p);
-        p.setShader(bounce);
-        c.drawPath(blob, p);
-        p.setShader(gloss);
-        c.drawPath(blob, p);
-        p.setShader(null);
+        // 2) THE CORE (sheet C1): the owner's art, drawn as the disc itself. Its material — obsidian
+        //    gel, cyan membrane, gloss and folded chevron — ships as the art (see the class note),
+        //    so the whole pebble is one drawBitmap. The tile's transparent padding is the glow's
+        //    room; the art's measured object/tile ratio keeps the disc exactly where it was.
+        drawArt(c, orb, CoreLook.ART_TILE_RATIO, 1f, mood, L.error);
+        if (L.bars && L.barAlpha > 0.01f) {
+            // PAUSED (sheet C1): the same orb with its energy receded, bars instead of the chevron.
+            // RESUMING fades it back out through barAlpha — the design's "the flow returns smoothly".
+            drawArt(c, orbPaused, CoreLook.ART_TILE_RATIO_PAUSED, clamp01(L.barAlpha / 0.9f),
+                    mood, L.error);
+        }
 
-        // 3) glass accent arc (sheet 4's glass layer)
+        // 3) the energy perimeter IS the progress (sheet 4) — no percent text anywhere. The stroke
+        //    style is set unconditionally here because it used to be set by the (now removed) glass
+        //    arc, and the RESOLVING orbit below draws with the same style.
         p.setStyle(Paint.Style.STROKE);
-        p.setColor(0x40EAF9FF);
-        p.setStrokeWidth(1.1f * dp);
-        c.drawArc(glass, 196f, 148f, false, p);
-
-        // 4) the gel rim — the energy perimeter's home
-        p.setShader(mood == 3 ? rimNeutral : (mood == 2 ? rimErr : rim));
-        p.setStrokeWidth(2.2f * dp);
-        p.setAlpha(Math.round(255f * clamp01(L.rim)));
-        c.drawPath(blob, p);
-        p.setShader(null);
-
-        // 5) the energy perimeter IS the progress (sheet 4) — no percent text anywhere
         if (L.track > 0.001f || L.perimeter > 0.001f) {
             p.setColor(0xFF22D3EE);
             p.setAlpha(Math.round(255f * L.track));
@@ -424,7 +442,7 @@ public final class CoreHost extends View {
             }
         }
 
-        // 5b) the RESOLVING orbit (§M-1, sheet C4 STEPS): one light on the rim while the
+        // 4) the RESOLVING orbit (§M-1, sheet C4 STEPS): one light on the rim while the
         // resolver works. In step mode it HOLDS a named position (0/90/180/270 — the chain's
         // clock); without a fixed step it rotates continuously (the legacy read).
         if (CoreStates.RESOLVING.equals(state)) {
@@ -438,33 +456,40 @@ public final class CoreHost extends View {
             p.setStrokeCap(Paint.Cap.BUTT);
         }
 
-        p.setAlpha(255);
-        if (mark != null && L.mark > 0.01f) {            // LAYER A: the sheet-2 mark, permanent
-            int s2 = c.save();
-            c.clipPath(clip);
-            float side = 2f * rIn * markScale;
-            float sink = 0.8f * dp * L.markSink;         // pressed into the gel (§M-1)
-            markDst.set(cx - side / 2f + markLagX,
-                    cy - side / 2f + markLagY + sink,
-                    cx + side / 2f + markLagX,
-                    cy + side / 2f + markLagY + sink);
-            float markAlpha = clamp01(L.mark) * (mood == 3 ? 0.45f : 1f);  // neutral: chevron recedes (C6)
-            p.setAlpha(Math.round(255f * markAlpha));
-            c.drawBitmap(mark, null, markDst, p);
-            p.setAlpha(255);
-            c.restoreToCount(s2);
-        }
-
-        if (L.bars && L.barAlpha > 0.01f) {              // PAUSED: bars, never text
-            p.setColor(0xFFEAF9FF);
-            p.setAlpha(Math.round(255f * clamp01(L.barAlpha)));
-            float bw = 2.0f * dp, bh = 9.5f * dp, gap = 3.4f * dp, top = cy - bh / 2f;
-            barL.set(cx - gap / 2f - bw, top, cx - gap / 2f, top + bh);
-            barR.set(cx + gap / 2f, top, cx + gap / 2f + bw, top + bh);
-            c.drawRoundRect(barL, 1f * dp, 1f * dp, p);
-            c.drawRoundRect(barR, 1f * dp, 1f * dp, p);
-            p.setAlpha(255);
-        }
+        // 5) THE CHEVRON AND THE BARS ARE IN THE ART. The chevron is the sheet's own folded ribbon
+        //    inside the gel (drawn with the material in step 2), and the paused bars arrive with
+        //    the paused art. Nothing is painted over the Core here any more: the old clipPath +
+        //    drawBitmap + canvas round-trip per frame went with the separate mark, and the interior
+        //    slosh now rides the whole pebble (see the class note).
         c.restoreToCount(save);
+    }
+
+    /**
+     * Draws one of the Core's art tiles so its disc lands exactly on the Core's disc.
+     *
+     * {@code tileRatio} is the art's measured object-diameter / tile-side (printed by
+     * `tools/core_sheet_extract.py`, asserted by CoreArtSpecTest). Keeping the ratio in
+     * {@link CoreLook} — not in this view — is what stops the disc geometry drifting away from the
+     * sheet while the material changes underneath it.
+     *
+     * The state's tint (sheet C6) is applied here rather than baked into a second asset, so the
+     * rose / muted blue-grey energy shift is one pure matrix (see {@link CoreTint}).
+     */
+    private void drawArt(Canvas c, Bitmap art, float tileRatio, float alpha, int mood, float error) {
+        if (art == null || tileRatio <= 0f || alpha <= 0.001f) return;
+        float side = 2f * r / tileRatio;
+        artDst.set(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f);
+        int tint = CoreTint.stateOf(mood, error);
+        int step = Math.round(clamp01(error) * 24f);        // quantized: no per-frame allocation
+        int key = tint * 100 + step;
+        if (key != tintedAs) {
+            artPaint.setColorFilter(new ColorMatrixColorFilter(CoreTint.matrixFor(tint, step / 24f)));
+            tintedAs = key;
+        }
+        p.setShader(null);
+        p.setStyle(Paint.Style.FILL);
+        p.setAlpha(Math.round(255f * clamp01(alpha)));
+        c.drawBitmap(art, null, artDst, artPaint);
+        p.setAlpha(255);
     }
 }

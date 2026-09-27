@@ -3,6 +3,66 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.3.0 — Fetcher 2.0 ("Core" redesign) — in progress, not shipped
+
+**Milestone 1 — the Core is the owner's own art, not a re-drawing of it.** Fetcher 1.0's
+procedural pebble is *deleted*, not retuned: the lobed body path, the body/bounce/gloss shaders,
+the glass arc, the stroked gel rim, the separate mark bitmap and the drawn pause bars are all gone
+from `CoreHost`, which now composes one `drawBitmap` per state with the bloom, the ring and the
+resolver orbit. The material is the sheet's orb, lifted out of the owner's C1 by the new
+`tools/core_sheet_extract.py` — `core_orb.png` (224 737 B) and `core_orb_paused.png` (152 993 B),
+512 px RGBA, with the studio drop shadow and every annotation hairline gated out of alpha
+(colourless = shadow, saturated-or-bright = the orb's own light; the tool's own stray-island check
+reports 0). Geometry is measured rather than derived: `CoreLook.ART_TILE_RATIO = 0.8606` and
+`_PAUSED = 0.7799`, so `side × ratio` still equals the exact 2r Fetcher 1.0 drew at 48, 56 and 64 dp
+— the material changed, the size did not. The state colour shift is the pure, unit-tested `CoreTint`
+(hue rotation + desaturation, Rec. 709, no red anywhere).
+
+**The ten state animations exist — authored by the generator, no After Effects needed.**
+`tools/core_lottie_build.py` writes all ten files of the v3.3 plan (§3) as real bodymovin JSON at
+512 px / 60 fps, with the lengths the design asks for (90/36/120/24/120/18/45/30/36/30 frames), from
+a declarative state table — art, scale, rotation, opacity, cross-fade, ring and merge keyframes —
+over the sheet art. The ring is real vector geometry (an ellipse stroke with an animated trim,
+0 → 100 % linear, starting at 12 o'clock) so `core_progress.json` is scrubbed by `setProgress`; the
+comet head travels with it as a second trimmed arc; the C5 completing merge, the C3 press/rebound
+and the C6 rose → teal retry are all in the files. The two looks the sheets never exported
+separately — C6's muted rose and the muted blue/grey — are baked by the same generator using
+`CoreTint`'s own numbers, which it reads out of `CoreTint.java` and refuses to drift from.
+
+Verified: `python tools/core_lottie_build.py --check` → **10/10 states built and validated** (canvas,
+frame rate, `op` == frames, every image refId resolves to a 512 tile, keyframe times monotonic and
+inside the composition, no absolute path in any file, every state animates, and no 1-key
+"animations"), plus a five-frame QA contact sheet per state in `test_out/lottie_qa/`. The Java side
+is `CoreLottieSpecTest` (**5 tests**, with Gson added as a test-only dependency) so the contract is
+re-checked on every build → suite **103 tests / 0 failures**. `assembleDebug` + `tools/sign_spike.ps1`
+= BUILD SUCCESSFUL; `app-spike-signed.apk` is 46 084 426 B, prod-signed (`4311317…`), SHA-256
+`456938d2…`, and now packages `assets/core/*.json` + `assets/core/images/`.
+
+**Milestone 1 is verified on the phone, not just in the build — and the phone rewrote the harness.**
+On the vivo V2058 the Core draws the owner's art in all thirteen states
+(`CORE_ATTACH type=2032 x=452 y=1080 size=176px size_dp=64 touchable=1`, 24 shots in
+`test_out/core_visual`), and the state is measurable in the pixels: the teal mark is 1153 px in idle,
+1345 px across wake/detected/pressed/dragging/snapped, 1397 px in resuming, 1305–1316 px in
+completing/complete, and 857 px in PAUSED — the two-bar art, not the chevron. The disc annulus reads
+hue 188° (idle), 188° (detected), 191° (paused) and **342° rose in FAILED only** (sat 0.29), while the
+two baked tiles themselves measure 201° and 204° — so no tile ships rose, and the rose really is the
+FAILED tint. Annulus value tracks the energy channel (0.27 idle → 0.30 detected → 0.25 paused), i.e.
+"the energy receded" survives being a bitmap instead of being drawn.
+
+Getting there cost four empty runs. The causes are now in `DEVICE_TEST.md` §0 and fixed in the new
+`tools/core_shots_live.ps1`: this ROM unbinds `FetchSpikeService` by itself ~40 s after a bind (the
+driver re-launches to re-bind and checks liveness before every shot — the 24-shot pass then finished
+in 50 s with `SERVICE_UNBIND=0`); arming by hand with `settings delete` + `put` looks healthy
+(`SERVICE_CONNECTED`, `CORE_READY`, `CORE_ATTACH`) and kills the fresh bind ~2 s later while `pidof`
+and `settings get` still report healthy; `at x y` must be pushed *after* `show` because `show()`
+re-reads the persisted position; and `tools/core_state_audit.py` gained `--fixed`, because its disc
+fit is tuned to a stroked rim and had reported "no Core to measure" for 14 of 17 shots that plainly
+had one.
+
+Outstanding: the `com.airbnb.android:lottie` dependency and the `LottieAnimationView` swap
+(milestone 2) — that is the only thing left between these files and the phone — plus milestone 1's
+on-device pass, which the test device being offline blocked.
+
 ## V3.2.0 — The Fetcher (Downi Core), shipped 2026-09-26
 
 **Phase A — the Core's face.** The Core's face exists and runs on the phone: a
