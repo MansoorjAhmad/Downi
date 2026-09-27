@@ -123,12 +123,32 @@ includes the new `ip`/`op` assertion.
    previous look. `tools\core_shots_live.ps1` now pushes multi-line bodies in one write, and
    `tools\core_review_sheets.ps1` gained `-Dir` so strips can be built for the pass being reviewed.
 
-Outstanding (M3–M7 of V3.3): the state-machine rename, wiring the now-measured progress-ring band
-into `tools\core_state_audit.py` (`scan_ring` is still tuned to Fetcher 1.0's stroked rim, so it
-reads "no rim at all" on the authored ring — the band is measured now, see `DEVICE_TEST.md` §0b,
-M2-5), touch-physics polish and the final device pass — plus the owner's §6 failure/unsupported
-hexes and the strips review now waiting in `test_out\core_visual_m2b\` (states, progress, and the
-live 48/56/64 dp comparison that settled the **64 dp default** — owner ruling 2026-09-27).
+**The Core audit reads the new Core — bands re-derived, not loosened.** `tools\core_state_audit.py`
+was calibrated to Fetcher 1.0's procedural rim: it scanned radius 64.2..65.6 px (arc) and 66.8..70.7
+(rim) at 64 dp, while the baked Core's own light ends at ~57 px and the app behind starts at ~60 — so
+every state of the M1/M2 passes reported `MISMATCH: no rim at all` and the ring read 0 %, sixteen
+mismatches a pass on shots that were plainly correct. The geometry is measured now: a circle fitted
+to the closed ring of `core progress 100%` at three Core sizes gives mid = 36.5 / 45.0 / 53.6 px for
+48 / 56 / 64 dp (max error 0.03 px, the Core centred in its window to within 0.8 px), i.e.
+`mid = 0.7773 x (size_dp x density / 2) - 5.388 x density`; the arc is read at its inner edge
+(49.6..50.4 px at 64 dp) because the orb's own membrane reaches ~137 luma in the same band, and
+angular runs shorter than 25 deg are dropped as the art's speculars (at progress 0 the gloss
+fragments into nine runs, longest 24 deg, where a real arc is one long one). Result: **0 / 82 / 172 /
+262 / 360 deg of painted arc against the named 0 / 25 / 50 / 75 / 100 %** — every one inside the 6 pt
+tolerance this cell has always used, `VERDICT 5 shots / 0 mismatches`, and the state sweep
+`17 shots / 0 mismatches` (rose hue 8–9 in FAILED alone, teal 184–195 everywhere else).
+
+Two tool faults surfaced with it, both fixed: `profile --fixed` raised `TypeError` on the baked art
+(`r_edge` is `None` when the disc fit is skipped — and `profile` is the command the tool calls the
+ground truth for every band), and `tools\core_review_sheets.ps1` invoked the audit *without*
+`--fixed`, so the owner's review strips shipped carrying that false 16-mismatch log. PAUSED's
+"must draw its bars" assertion now reports that the bars are baked into the art (M1-2 measures them
+by mark px, 599 px against idle's 1153) instead of flagging a check that can no longer apply.
+
+Outstanding (M3–M7 of V3.3): the state-machine rename, touch-physics polish and the final device
+pass — plus the owner's §6 failure/unsupported hexes and the strips review now waiting in
+`test_out\core_visual_m2b\` (states, progress, and the live 48/56/64 dp comparison that settled the
+**64 dp default** — owner ruling 2026-09-27).
 
 ## V3.2.0 — The Fetcher (Downi Core), shipped 2026-09-26
 
