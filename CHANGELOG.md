@@ -79,6 +79,26 @@ log line — `detected stage=core_idle_ready` · `wake stage=core_wake` · `pres
 `stage=null` on the static art, and no line carries an `err=`. Suite: **111 tests / 0 failures**
 (`CoreLottieWiringTest` pins the table against the shipped JSON).
 
+**Then that pass caught the bug that actually mattered: every file loaded and drew nothing.** The
+twenty-four shots were honest about it — `core_complete` reported `n=3` layers and hundreds of draws
+while the window stayed empty, and the new draw-time dump said why:
+`tree=[ShapeLayer:visible=false ... ImageLayer:visible=false/core/core_orb.png]`. The cause was in
+the files, not the app: python-lottie only copies `ip`/`op` onto a layer through its own add-layer
+path, and this generator appends straight to `an.layers`, so every layer shipped without them.
+lottie-android then substitutes the composition's *end* frame for the layer's out point, which puts
+the layer's in/out keyframe exactly on progress 1.0 — the frame a settled, non-looping state holds —
+and `BaseLayer.setVisible(false)` hides it. Every gate shot is taken in precisely that state.
+`tools\core_lottie_build.py` now writes `ip = 0` / `op = <composition op>` on every layer and its
+`--check` refuses a file without them, and `CoreLottieSpecTest` re-asserts it on every build
+(`everyLayerCarriesTheCompositionInOutPoint`).
+
+Verified the same way, end to end: the ten assets read back out of `app-spike-signed.apk` itself all
+carry the layer `ip`/`op` (10/10), the device log flips to
+`tree=[ImageLayer:visible=true/core/core_orb.png]` with the state held, and re-running the identical
+24-shot pass into `test_out\core_visual_m2b` (61.9 s, `CORE_ATTACH=1`, `SERVICE_UNBIND=0`, the same
+452,1080 geometry) measures it in the pixels. Suite: **112 tests / 0 failures** — the run that
+includes the new `ip`/`op` assertion.
+
 **What the M2 gate found, fixed and gated (all in this release):**
 1. **All ten files were unloadable on the device.** python-lottie's `Color` takes its components
    positionally, and `objects.Color(colour)` with the tuple as one argument emitted
@@ -87,20 +107,27 @@ log line — `detected stage=core_idle_ready` · `wake stage=core_wake` · `pres
    back to static — silently, because logcat is filtered for this app on this ROM.
    `tools\core_lottie_build.py` now calls `Color(*colour)`; its `--check` asserts that a stroke/fill
    colour is four flat components, and `CoreLottieSpecTest` asserts the same on every build.
-2. **A silent fallback must say why.** `CoreHost` reports the refusal reason on the same
+2. **Every state settled to an empty Core.** All ten files loaded and drew nothing: the layers
+   carried no `ip`/`op`, so lottie-android gave them the composition's end frame for an out point,
+   the in/out keyframe landed on progress 1.0, and every settled state hid itself. The generator
+   writes both fields now and refuses to build a file without them; `CoreLottieSpecTest` asserts it
+   on every layer of every state, and the fix is read back out of the shipped APK (10/10 files) and
+   off the phone (`ImageLayer:visible=true` where the pre-fix log said `false`).
+3. **A silent fallback must say why.** `CoreHost` reports the refusal reason on the same
    `CORE_STATE` line (`stage=null err=<file>: <cause>`) — the datum that caught (1), which no
    phone screenshot could ever show.
-3. **Two command races in the harness.** The service's `core.cmd` poller reads at ~2 s intervals,
+4. **Two command races in the harness.** The service's `core.cmd` poller reads at ~2 s intervals,
    so the driver's `show` (600 ms before `at`) and later `state progress` (1.8 s before
    `progress 0`) were overwritten before the poller saw them — the Core stayed hidden for a whole
    pass (`CORE_ATTACH=0`, every state honestly logging `stage=null`), and the ring shots showed the
    previous look. `tools\core_shots_live.ps1` now pushes multi-line bodies in one write, and
    `tools\core_review_sheets.ps1` gained `-Dir` so strips can be built for the pass being reviewed.
 
-Outstanding (M3–M7 of V3.3): the state-machine rename, the progress-ring audit band re-derivation
-(`scan_ring` is still tuned to Fetcher 1.0's stroked rim — M1-6), touch-physics polish and the final
-device pass — plus the owner's two §6 decisions and the strips review now waiting in
-`test_out\core_visual_m2\_review_states.jpg`.
+Outstanding (M3–M7 of V3.3): the state-machine rename, wiring the now-measured progress-ring band
+into `tools\core_state_audit.py` (`scan_ring` is still tuned to Fetcher 1.0's stroked rim, so it
+reads "no rim at all" on the authored ring — the band is measured now, see `DEVICE_TEST.md` §0b,
+M2-5), touch-physics polish and the final device pass — plus the owner's two §6 decisions and the
+strips review now waiting in `test_out\core_visual_m2b\_review_states.jpg`.
 
 ## V3.2.0 — The Fetcher (Downi Core), shipped 2026-09-26
 

@@ -227,6 +227,32 @@ public class CoreLottieSpecTest {
         }
     }
 
+    /**
+     * Every layer needs the composition's ip/op. Without them lottie-android substitutes the
+     * composition's *end frame* for the layer's out point, which lands the layer's in/out keyframe
+     * exactly on progress 1.0 -- the frame a non-looping animation holds -- and then
+     * BaseLayer.setVisible(false) hides the layer in every settled state, which is exactly when the
+     * device gates photograph it. The M2 pass measured the consequence: `core_complete n=3` loaded,
+     * drew 276 frames, and put nothing on screen.
+     */
+    @Test public void everyLayerCarriesTheCompositionInOutPoint() {
+        for (int i = 0; i < STATES.length; i++) {
+            JsonObject an = load(STATES[i]);
+            int op = num(an, "op");
+            assertEquals(STATES[i] + ": composition must start at frame 0", 0, num(an, "ip"));
+            for (JsonElement le : an.getAsJsonArray("layers")) {
+                JsonObject lay = le.getAsJsonObject();
+                String where = STATES[i] + "/" + lay.get("nm").getAsString();
+                assertNotNull(where + ": layer has no in point", lay.get("ip"));
+                assertNotNull(where + ": layer has no out point", lay.get("op"));
+                assertEquals(where + ": layer in point", 0, lay.get("ip").getAsInt());
+                assertEquals(where + ": layer out point must equal the composition length (" + op
+                        + "), or the layer is hidden the instant the state settles",
+                        op, lay.get("op").getAsInt());
+            }
+        }
+    }
+
     /** A state that animates nothing would freeze on the device; times must be sane too. */
     @Test public void everyStateAnimatesWithMonotonicTimesInsideTheComposition() {
         for (String state : STATES) {

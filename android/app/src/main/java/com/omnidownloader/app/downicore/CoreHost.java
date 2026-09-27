@@ -11,18 +11,27 @@ import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.SweepGradient;
 import android.util.Log;
 import android.view.View;
 
+import java.lang.reflect.Field;
+import java.util.List;
+
 import com.airbnb.lottie.ImageAssetDelegate;
 import com.airbnb.lottie.LottieComposition;
 import com.airbnb.lottie.LottieCompositionFactory;
 import com.airbnb.lottie.LottieDrawable;
 import com.airbnb.lottie.LottieImageAsset;
+import com.airbnb.lottie.LottieProperty;
 import com.airbnb.lottie.LottieResult;
+import com.airbnb.lottie.model.KeyPath;
+import com.airbnb.lottie.model.layer.Layer;
+import com.airbnb.lottie.value.LottieFrameInfo;
+import com.airbnb.lottie.value.SimpleLottieValueCallback;
 
 import com.omnidownloader.app.R;
 
@@ -110,6 +119,16 @@ public final class CoreHost extends View {
      * DowniCore's CORE_STATE line, via {@link #stageNote()}.
      */
     private String stageError;
+    /**
+     * How many layers the loaded composition actually parsed to (-1 = none loaded). A composition
+     * that loads but parses to zero layers draws nothing at all, which looks exactly like a
+     * rendering failure — this number is the discriminator.
+     */
+    private int stageLayers = -1;
+    /** Draw-time diagnostics: a stage that reports success and then paints nothing is invisible to
+     *  every gate otherwise, and the CORE_STATE line is the only channel this ROM leaves open. */
+    private int stageDraws;
+    private String stageDrawFirst, stageDrawErr;
     /** The baked C6 looks, decoded only if a cross-fade state asks (lazy: a megabyte each). */
     private Bitmap orbRose, orbNeutral;
     /** Supplies the JSON's image assets from drawable-nodpi, so the art ships in the APK once. */
@@ -551,9 +570,17 @@ public final class CoreHost extends View {
     /** Which file the stage is drawing — null while the static art carries the state (log/debug). */
     public String stageAsset() { return stageAsset; }
 
-    /** `stage=<file>` when the authored stage owns the state, else `stage=null err=<why>`. */
+    /**
+     * `stage=<file> n=<layers> draws=<n> <state of the first draw>` while the stage owns the state,
+     * else `stage=null err=<why>`. The draw half exists because "loaded but paints nothing" — a
+     * wrong bounds, an invisible drawable, an image asset that never resolves — looks identical to
+     * "never loaded" from outside.
+     */
     public String stageNote() {
         return "stage=" + stageAsset
+                + (stageAsset != null ? " n=" + stageLayers : "")
+                + (stageDrawFirst != null ? " draws=" + stageDraws + " " + stageDrawFirst : "")
+                + (stageDrawErr != null ? " err=" + stageDrawErr : "")
                 + (stageAsset == null && stageError != null ? " err=" + stageError : "");
     }
 
@@ -578,6 +605,7 @@ public final class CoreHost extends View {
             }
             stageAsset = null;
             stageError = null;
+            stageLayers = -1;
             return;
         }
         boolean same = want.equals(stageAsset) && stage != null;
@@ -589,11 +617,15 @@ public final class CoreHost extends View {
                     stage = null;
                 }
                 stageAsset = null;
+                stageLayers = -1;
                 return;
             }
             stage = loaded;
             stageAsset = want;
             stageError = null;
+            stageDraws = 0;
+            stageDrawFirst = null;
+            stageDrawErr = null;
         }
         placeStage();
         stage.setAlpha(255);
@@ -624,15 +656,35 @@ public final class CoreHost extends View {
             LottieDrawable d = new LottieDrawable();
             d.setImageAssetDelegate(artDelegate);
             d.setComposition(comp);
+            // Lottie holds playAnimation() (and resumeAnimation()) back while the drawable is not
+            // visible, and a Drawable only becomes visible when something calls setVisible: drawn by
+            // hand into this view's canvas there is no View system to flip that bit, so without this
+            // the animator never ticks and the stage stays frozen on its first frame (the M2 pass:
+            // a loaded core_complete n=3 showed no ring, because its trim was still at frame 0).
+            d.setVisible(true, false);
             d.setCallback(this);
+            // Pin the tile to the layer itself as well: ImageLayer checks a value callback before it
+            // asks the composition for an asset, so the authored orb is what draws even if an asset
+            // lookup fails on the way (image layers are the one thing Lottie resolves at draw time).
+            d.addValueCallback(new KeyPath("core"), LottieProperty.IMAGE,
+                    new SimpleLottieValueCallback<Bitmap>() {
+                        @Override public Bitmap getValue(LottieFrameInfo<Bitmap> frameInfo) {
+                            return orb;
+                        }
+                    });
             // Resolve the file's image layers now: a missing tile must be a fallback, not a hole in
-            // the art, and the first frame must never decode a megabyte mid-draw.
+            // the art, and the first frame must never decode a megabyte mid-draw. Pinning the tile
+            // onto the asset as well means ImageLayer finds it on the composition itself, without a
+            // trip through the drawable's image-asset manager.
             for (LottieImageAsset image : comp.getImages().values()) {
-                if (artDelegate.fetchBitmap(image) == null) {
+                Bitmap tile = artDelegate.fetchBitmap(image);
+                if (tile == null) {
                     return refuse(asset, "unresolved_image " + image.getFileName());
                 }
+                image.setBitmap(tile);
             }
             stageError = null;
+            stageLayers = comp.getLayers().size();
             return d;
         } catch (Throwable t) {                    // a malformed file must never take the Core down
             return refuse(asset, t.toString());
@@ -646,6 +698,7 @@ public final class CoreHost extends View {
      */
     private LottieDrawable refuse(String asset, String why) {
         stageError = asset + ": " + why;
+        stageLayers = -1;
         Log.w(TAG, "CORE_STAGE_REFUSED " + asset + " (" + why + ")");
         return null;
     }
@@ -664,9 +717,88 @@ public final class CoreHost extends View {
     }
 
     /** Draws the authored state animation into this canvas. False = the static art should draw. */
+    /**
+     * TEMP DIAGNOSTIC (remove when the image layer is known to draw): walks the layer tree Lottie
+     * actually built with reflection, because {@code CompositionLayer.layers} and
+     * {@code BaseLayer.visible} are package-private. It answers the one question the public API
+     * cannot: is the image layer in the tree, and is its own visibility flag on?
+     */
+    private String stageTreeDump() {
+        try {
+            Field clF = LottieDrawable.class.getDeclaredField("compositionLayer");
+            clF.setAccessible(true);
+            Object root = clF.get(stage);
+            if (root == null) return "tree=no_comp_layer";
+            Field lsF = root.getClass().getDeclaredField("layers");
+            lsF.setAccessible(true);
+            List<?> kids = (List<?>) lsF.get(root);
+            if (kids == null) return "tree=no_layers_field";
+            StringBuilder b = new StringBuilder("tree=[");
+            for (Object kid : kids) {
+                b.append(kid.getClass().getSimpleName()).append(':');
+                for (Class<?> c = kid.getClass(); c != null; c = c.getSuperclass()) {
+                    try {
+                        Field vf = c.getDeclaredField("visible");
+                        vf.setAccessible(true);
+                        b.append("visible=").append(vf.getBoolean(kid));
+                        break;
+                    } catch (NoSuchFieldException ignored) {
+                        // keep walking up the class chain
+                    }
+                }
+                for (Class<?> c = kid.getClass(); c != null; c = c.getSuperclass()) {
+                    try {
+                        Field mf = c.getDeclaredField("layerModel");
+                        mf.setAccessible(true);
+                        Layer m = (Layer) mf.get(kid);
+                        b.append('/').append(m.getName()).append('/').append(m.getRefId());
+                        break;
+                    } catch (NoSuchFieldException ignored) {
+                        // keep walking up the class chain
+                    }
+                }
+                b.append(' ');
+            }
+            return b.append(']').toString();
+        } catch (Throwable t) {
+            return "tree_err=" + t;
+        }
+    }
+
     private boolean drawStage(Canvas c) {
         if (stage == null || stageAsset == null) return false;
-        stage.draw(c);                             // the drawable invalidates this view via its callback
+        try {
+            stage.draw(c);                         // the drawable invalidates this view via its callback
+        } catch (Throwable t) {                    // a broken file must never take the Core down
+            if (stageDrawErr == null) stageDrawErr = t.toString();
+            return false;                          // ...and the static art draws instead of a hole
+        }
+        stageDraws++;
+        if (stageDrawFirst == null) {
+            Rect b = stage.getBounds();
+            LottieComposition comp = stage.getComposition();
+            String bmp = "no_image_layers";
+            if (comp != null && !comp.getImages().isEmpty()) {
+                String id = comp.getImages().keySet().iterator().next();
+                Bitmap one = stage.getBitmapForId(id);
+                bmp = id + (one == null ? "=null" : "=" + one.getWidth() + "x" + one.getHeight());
+            }
+            // The layer list is the one thing that separates "the file has no image layer" from "the
+            // image layer's refId does not match the assets map" — both look like an orb-less Core.
+            StringBuilder ls = new StringBuilder();
+            if (comp != null) {
+                for (Layer l : comp.getLayers()) {
+                    ls.append(l.getName()).append('/').append(l.getLayerType()).append('/')
+                            .append(l.getRefId() == null ? "-" : l.getRefId())
+                            .append(comp.getImages().containsKey(l.getRefId()) ? "(in_map)" : "(NO_IMAGE_ASSET)")
+                            .append(l.isHidden() ? "(hidden)" : "").append(' ');
+                }
+            }
+            stageDrawFirst = "p=" + stage.getProgress() + " vis=" + stage.isVisible() + " al=" + stage.getAlpha()
+                    + " b=" + b.left + "," + b.top + "," + b.right + "," + b.bottom
+                    + " comp=" + (comp == null ? "null" : comp.getBounds().width() + "x" + comp.getBounds().height())
+                    + " " + bmp + " layers=[" + ls.toString().trim() + "] " + stageTreeDump();
+        }
         return true;
     }
 

@@ -48,16 +48,20 @@ hardship check. Mark ✅ / ❌ per cell.
 
 > Device pass **2026-09-27** — vivo V2058, spike-signed debug build, `tools\core_shots_live.ps1`,
 > 24 shots in `test_out\core_visual_m2` (51.7 s, `CORE_ATTACH=2`, `SERVICE_UNBIND=0`).
+>
+> **Re-run after bug 2 below** (the layer `ip`/`op` fix) — same rig, same ROM, same 452,1080
+> geometry: 24 shots in `test_out\core_visual_m2b` (61.9 s, `CORE_ATTACH=1`, `SERVICE_UNBIND=0`).
+> The cells below measure that pass; where a number is written `a → b` it is before → after the fix.
 
 | # | Check | Evidence |
 |---|---|---|
 | M2-1 | Every wired state loads its authored file on the phone | ✅ `CORE_STATE` carries `stage=` now: detected `core_idle_ready` · wake `core_wake` · pressed `core_press` · paused `core_pause` · complete `core_complete` · failed `core_failure` · progress `core_progress` — all seven match `CoreLottie`'s table exactly |
 | M2-2 | The states with no file keep the verified static art | ✅ idle / dragging / snapped / resuming / completing log `stage=null` with no `err=`; the idle look stays the M1 art |
 | M2-3 | A refusal is never silent | ✅ the reason travels on the same line (`stage=null err=<file>: <cause>`) — this is what caught the colour bug below; logcat is filtered for this app on this ROM, so the spike file is the only channel |
-| M2-4 | The stage renders, not just loads | ⏳ the owner's eye on `_review_states.jpg` / `_review_progress.jpg` in `test_out\core_visual_m2` (the timings are still Cline's reading of the sheets) |
-| M2-5 | Ring = progress, numerically | ⏳ still M1-6's open item: `scan_ring`'s bands are tuned to Fetcher 1.0's stroked rim, so the audit reads "no rim" on the authored vector ring — re-derive the band before M4 claims this cell |
+| M2-4 | The stage renders, not just loads | ✅ measured in pixels, pre-fix → post-fix: `core_state_complete` **0 → 1085** cyan px inside the 176 px window, `core_state_wake_mid` 0 → 837, `core_state_pressed_mid` 98 → 838, `core_state_detected` 98 → 709, `core_progress_000` 10 → 979. The control holds too: the states the stage does *not* own are pixel-identical across the two passes (idle 847 → 847, dragging/snapped/paused 927 → 927, resuming 957 → 957), so the window did not move and the change is the stage's. The owner's eye on `test_out\core_visual_m2b\_review_states.jpg` / `_review_progress.jpg` is still the aesthetic half of this cell (the timings remain Cline's reading of the sheets) |
+| M2-5 | Ring = progress, numerically | ✅ measured independently of `scan_ring` (whose bands are tuned to Fetcher 1.0's stroked rim and read "no rim at all" on the authored vector ring — the M1-6 item). The authored ring's band is **r = 50–56 px at 64 dp**, and the longest contiguous lit run on that band is **82–85° at 25 %** (want 90), **174–176° at 50 %** (180), **264–266° at 75 %** (270) and a full circle at 100 % — where the pre-fix static ring reached only 266° at "100 %". The ~55° floor at 0 % is the orb's own rim light, so the *longest run* is the metric, not the total lit degrees. Wiring this derived band into `tools\core_state_audit.py` is M4's first task |
 
-**Two bugs this pass found and fixed** (each now gated so it cannot return):
+**Three bugs this pass found and fixed** (each now gated so it cannot return):
 
 1. **All ten JSONs were unloadable on the device.** python-lottie's `Color` is positional
    (`Color(r, g, b[, a])`), and `Color(colour)` with one tuple emitted `[[r,g,b],0,0,1]`;
@@ -65,7 +69,19 @@ hardship check. Mark ✅ / ❌ per cell.
    state silently fell back to static art. `tools\core_lottie_build.py` now calls `Color(*colour)`,
    its `--check` asserts "four flat components", and `CoreLottieSpecTest` asserts the same on every
    build.
-2. **The `core.cmd` poller races pushes.** It reads at ~2 s intervals, so two pushes closer than
+2. **The stage loaded every file and painted nothing — the one that mattered.** The layers carried no
+   `ip`/`op` (python-lottie only writes them through its own add-layer path, and the generator appends
+   straight to `an.layers`), so lottie-android gave each layer the composition's *end* frame as its
+   out point. That lands the layer's in/out keyframe on progress 1.0 — the frame a settled,
+   non-looping state holds — where `BaseLayer.setVisible(false)` hides it. Every gate shot is taken in
+   exactly that state, so all 24 shots of the first pass photographed an empty window over a Core that
+   honestly reported `n=3` layers and hundreds of draws. `tools\core_lottie_build.py` now writes
+   `ip = 0` / `op = <composition op>` on every layer and its `--check` refuses a file without them;
+   `CoreLottieSpecTest.everyLayerCarriesTheCompositionInOutPoint` re-asserts it on every build. The
+   fix is verified in the shipped APK (the ten assets read back out of `app-spike-signed.apk`, 10/10
+   carrying it) and on the phone (`tree=[ImageLayer:visible=true/core/core_orb.png]` where the
+   pre-fix log said `visible=false`).
+3. **The `core.cmd` poller races pushes.** It reads at ~2 s intervals, so two pushes closer than
    that lose the first: the driver's `show` → `at` (600 ms apart) and `state progress` →
    `progress 0` (1.8 s). A hidden Core then looks exactly like a rendering failure (`CORE_ATTACH=0`,
    every state `stage=null`). `tools\core_shots_live.ps1` pushes `show` + `at` and `state progress`
