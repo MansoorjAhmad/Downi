@@ -58,6 +58,8 @@ public final class ReachLayer {
     private float captureT = -1f;                   // 0..1 capture flash envelope
     private float layerAlpha = 1f;
     private ValueAnimator anim;
+    private ValueAnimator nodeAnim;                 // the traveling node's own animation (cancelled with the tether)
+    private boolean drawFaultLogged;                // one honest line, never a log storm per frame
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path tether = new Path();
@@ -99,7 +101,7 @@ public final class ReachLayer {
             captureT = -1f;
             layerAlpha = 1f;
             view.setAlpha(1f);
-            view.invalidate();
+            invalidate();
             listener.onLog("REACH_BEGIN core=" + Math.round(coreX) + "," + Math.round(coreY));
         } catch (Throwable t) {
             listener.onLog("REACH_BEGIN_FAIL " + t);
@@ -127,11 +129,11 @@ public final class ReachLayer {
             anim.setDuration(CoreMotion.REACH_GROW_MS);
             anim.addUpdateListener(a -> {
                 grow = (Float) a.getAnimatedValue();
-                view.invalidate();
+                invalidate();
             });
             anim.start();
             sendNode();
-            view.invalidate();
+            invalidate();
             listener.onLog("REACH_TO " + target.centerX() + "," + target.centerY());
         } catch (Throwable t) {
             listener.onLog("REACH_TO_FAIL " + t);
@@ -140,16 +142,24 @@ public final class ReachLayer {
 
     /** One bright node travels Core -> target (the resolver "sending" a step). */
     private void sendNode() {
-        ValueAnimator n = ValueAnimator.ofFloat(0f, 1f);
-        n.setDuration(CoreMotion.TETHER_SEND_MS);
-        n.addUpdateListener(a -> {
+        if (nodeAnim != null) { nodeAnim.cancel(); nodeAnim = null; }
+        nodeAnim = ValueAnimator.ofFloat(0f, 1f);
+        nodeAnim.setDuration(CoreMotion.TETHER_SEND_MS);
+        nodeAnim.addUpdateListener(a -> {
             nodeT = (Float) a.getAnimatedValue();
-            view.invalidate();
+            invalidate();
         });
-        n.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(android.animation.Animator a) { nodeT = -1f; view.invalidate(); }
+        nodeAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator a) {
+                nodeAnim = null; nodeT = -1f; invalidate();
+            }
         });
-        n.start();
+        nodeAnim.start();
+    }
+
+    /** One place for the window's repaint, and one guard: it may already be gone. */
+    private void invalidate() {
+        if (view != null) view.invalidate();
     }
 
     /** Capture: the node returns to the Core and the rim flashes once (sheet C4 CAPTURE). */
@@ -168,11 +178,11 @@ public final class ReachLayer {
                     nodeT = -1f;
                     captureT = (t - 0.625f) / 0.375f; // the rim flash (150 ms)
                 }
-                view.invalidate();
+                invalidate();
             });
             anim.addListener(new android.animation.AnimatorListenerAdapter() {
                 @Override public void onAnimationEnd(android.animation.Animator a) {
-                    nodeT = -1f; captureT = -1f; retract(); view.invalidate();
+                    nodeT = -1f; captureT = -1f; retract(); invalidate();
                 }
             });
             anim.start();
@@ -192,7 +202,7 @@ public final class ReachLayer {
                 grow = (Float) a.getAnimatedValue();
                 layerAlpha = grow;
                 view.setAlpha(layerAlpha);
-                view.invalidate();
+                invalidate();
             });
             anim.addListener(new android.animation.AnimatorListenerAdapter() {
                 @Override public void onAnimationEnd(android.animation.Animator a) {
@@ -215,6 +225,7 @@ public final class ReachLayer {
 
     private void cancelAnim() {
         if (anim != null) { anim.cancel(); anim = null; }
+        if (nodeAnim != null) { nodeAnim.cancel(); nodeAnim = null; }
     }
 
     private void detach() {
@@ -226,7 +237,26 @@ public final class ReachLayer {
 
     private View createView() {
         View v = new View(svc) {
-            @Override protected void onDraw(Canvas c) { draw(c); }
+            // DEFECT (device 2026-09-27, found in this session's crash log): a bare `draw(c)`
+            // here resolved to the INHERITED `View.draw(Canvas)`, not this class's painter —
+            // Java picks the innermost enclosing member, and the anonymous subclass inherits
+            // one. `View.draw` calls `onDraw`, which called `View.draw`… an infinite recursion
+            // on the main thread that ends in StackOverflowError. Every Core tap then killed
+            // the whole app right after the share row was clicked (the share sheet opened, the
+            // Reach attached, and the process died mid-frame — "nothing happens after that").
+            // The qualified call is what makes this the layer's painter, and nothing else.
+            // And a paint fault must never again kill the process mid-frame (this window is
+            // drawn on the main thread, where no resolver try/catch can reach it): it is
+            // reported once, then the layer goes quiet.
+            @Override protected void onDraw(Canvas c) {
+                try { ReachLayer.this.draw(c); }
+                catch (Throwable t) {
+                    if (!drawFaultLogged) {
+                        drawFaultLogged = true;
+                        listener.onLog("REACH_DRAW_FAULT " + t);
+                    }
+                }
+            }
         };
         v.setWillNotDraw(false);
         return v;

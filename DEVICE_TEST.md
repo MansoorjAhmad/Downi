@@ -235,7 +235,61 @@ python tools\core_state_audit.py hues test_out\core_c6\frames --at 452,1080 --si
 
 > Sign and date here when green: ______________
 
-## 2. v3.0 features matrix
+## 0f. V3.3 Core 2.0 — M7 full Core regression gate (C5 + C3 + C6 + M1/M2 sweep)
+
+> Device pass **2026-09-27** — vivo V2058, build **48 / v3.2.0** (spike-signed). Full regression
+> over all Core contracts on the finalized build:
+> - **C5 Motion:** `test_out\core_motion` (869 frames at 30 fps), `tools\core_state_audit.py frames` → **`VERDICT 0 of the C5 motion claims failed`** (exit code 0; freeze 5.5 s at 61 %, resume 220°, completion ring close at 22 633 ms, merge bloom at 25 367 ms).
+> - **C3 Touch:** `test_out\core_touch` (388 frames at 30 fps), `tools\core_state_audit.py touch` → **`VERDICT 0 of the C3 touch claims failed`** (exit code 0; rest baseline ring 53.0 px, edge 56.0 px, centre x 539.0; press compression to 50.0 px = 10.7 % at 2967 ms with rebound to 55.0 px; drag followed finger 539 → 307 px; settle back to ring 53.0 px and aspect 1.000). Evaluated at resting center `cx0` during in-place press to eliminate false specular peak drift.
+> - **C6 Recovery:** `test_out\core_c6` (262 frames at 30 fps), `tools\core_state_audit.py hues` → **`VERDICT 0 of the C6 recovery claims failed`** (exit code 0; rose 1.57 s at hue 10°, retry back to teal at hue 195° in 633 ms with C3 press/rebound 55.0 → 50.0 → 57.0 px, 0 rose frames remaining after recovery).
+> - **M1/M2 State Sweep:** `test_out\core_visual_m7` (17 shots), `tools\core_state_audit.py dir` → **`VERDICT 17 shot(s), 0 mismatch(es)`** (exit code 0; all states draw appropriate geometry, mark, rim hue, and ring progress).
+> - **JVM Test Suite:** **114 tests / 0 failures** across 17 test suites (`./gradlew testDebugUnitTest`).
+
+| # | Check | Evidence |
+|---|---|---|
+| M7-1 | C5 Motion contract | ✅ `test_out\core_motion`: freeze (5.5 s), resume (220°), completion bloom — `VERDICT 0 of the C5 motion claims failed` (exit 0) |
+| M7-2 | C3 Touch contract | ✅ `test_out\core_touch`: in-place press (10.7 % compression + rebound), drag follow (539 → 307), clean settle — `VERDICT 0 of the C3 touch claims failed` (exit 0) |
+| M7-3 | C6 Recovery contract | ✅ `test_out\core_c6`: rose failure (1.57 s, hue 10°), retry teal recovery (hue 195°), press/rebound, clean settle — `VERDICT 0 of the C6 recovery claims failed` (exit 0) |
+| M7-4 | M1/M2 Visual sweep | ✅ `test_out\core_visual_m7`: 17 shots across all states, 0 mismatches — `VERDICT 17 shot(s), 0 mismatch(es)` (exit 0) |
+| M7-5 | JVM Unit test suite | ✅ 114 tests passed, 0 failures across 17 suites (`./gradlew testDebugUnitTest`) |
+
+> Sign and date here when green: ______________
+
+
+## 0g. V3.3 Core 2.0 — the Core tap path (defect: the Reach killed the app on the first frame)
+
+> Device pass **2026-09-27** — vivo V2058, build **48 / v3.2.0** (spike-signed), the owner's own
+> report: *"when I tap the bubble the share menu opens and then nothing happens after that."*
+
+**The defect.** `ReachLayer.createView()`'s anonymous `View` called a bare `draw(c)` from its
+`onDraw`. Inside that subclass, `draw(Canvas)` resolves to the **inherited `View.draw`**, not
+`ReachLayer`'s painter — so `View.draw` → `onDraw` → `View.draw` → … An infinite recursion on the
+main thread, which the platform ends in `StackOverflowError` and the whole process with it. It
+fired on the **first frame** of the layer, i.e. the instant the resolver engaged — right after the
+share row had been clicked, which is exactly the owner's "nothing happens after that". `logcat -b
+crash` proves it on every tap since the layer shipped: `FATAL EXCEPTION: main` /
+`java.lang.StackOverflowError: stack size 8188KB`, alternating
+`ReachLayer$4.onDraw(ReachLayer.java:229)` ↔ `android.view.View.draw(View.java:23560)`, at
+13:31:14, 14:30:02, 14:31:01, 15:54:43, 15:54:53 and 20:16:21.
+
+Fixed with the qualified call (`ReachLayer.this.draw(c)`) plus a one-shot `REACH_DRAW_FAULT` guard:
+this window is painted on the main thread, where no resolver `try/catch` can reach, so a paint
+fault must report and stay quiet instead of taking the app down. Same pass, same class: the
+traveling node's `ValueAnimator` was never tracked, so it kept invalidating after the layer had
+detached — it is `nodeAnim` now, cancelled by `cancelAnim()` on every `reachTo` / `capture` / `end`
+/ `destroy` path, and every repaint goes through one guarded `invalidate()`.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0g-1 | A Core tap no longer kills the app | ✅ `logcat -d -b crash -T '09-27 21:03:00.000' \| grep -c AndroidRuntime` → **0**, against six `StackOverflowError` crashes on the same path before the fix |
+| 0g-2 | The tap runs the whole chain again | ✅ `spike_20260927-210335.log`: `CORE_TAP action=FETCH state=detected` → `REACH_BEGIN core=88,1261` → `CHAIN_SCAN share=1` → `CHAIN_SHARE_CLICK route=action` → `CHAIN_SURFACE_OPEN after_ms=300 content=ready` → `CHAIN_COPYLINK_CANDIDATE text=copy link clickable=true` → `CHAIN_TARGET_CLICK route=gesture` → `CHAIN_CLOSE_PANEL back=true` → `CHAIN_CLIP_TRY n=1/6 focus=true got=yes` |
+| 0g-3 | The run delivers and the job is real | ✅ `CHAIN_DELIVER_OK route=clipboard tap=1` \| `RUN_END delivered=true route=clipboard ms=3909`, then `CORE_JOB progress pct=1 → 23 → 47 → 92 → 98 → completing 100`, and the file on disk: `/sdcard/Movies/DOWNI/Video by memsgram9.mp4` (1 096 714 B, 21:05) |
+| 0g-4 | A screen with nothing to grab still fails honestly | ✅ tap on a home-feed preview (no share row in the tree): `CHAIN_SCAN share=0` → `CHAIN_NO_SHARE_CLICK` → `CORE_RESOLVE_FAIL why=no_share_row` → `RUN_END delivered=false ms=127`, app alive, nothing downloaded |
+| 0g-5 | Build and suite | ✅ `assembleDebug` green, `tools\sign_spike.ps1` → prod cert SHA-256 `4311317…`, `adb install -r` over the prod-signed build; **114 tests / 0 failures** across 17 suites |
+
+> Sign and date here when green: ______________
+
+
 
 | Feature | Check |
 |---|---|

@@ -240,13 +240,58 @@ hands over. The gate itself also had to be taught honesty: its first run reporte
 read rose" while the trace showed 1.6 s of it, because a window anchored on the command *push* measures
 the previous phase when the poller is 1.9 s late. `hues` now reads its phases off the trace itself.
 
-Outstanding (M3, the rest of M5, M7 of V3.3): the state-machine rename, the snap's flatten/bulge
-measurement (the last unmeasured C3 deformation), and the final device
-pass — plus the owner's §6 failure/unsupported hexes and the strips review now waiting in
-`test_out\core_visual_m2b\` (states, progress, and the live 48/56/64 dp comparison that settled the
-**64 dp default** — owner ruling 2026-09-27).
+**Milestone 7 — full Core regression verified across all contracts on-device.** The complete Core 2.0
+test matrix ran against the build on the vivo V2058:
+- **C5 Motion Contract:** `test_out\core_motion` (869 frames at 30 fps), `tools\core_state_audit.py frames`
+  reports **`VERDICT 0 of the C5 motion claims failed`** (exit code 0; control motion 32.9 >= 5.0,
+  paused freeze held 5.5 s at 61 %, resume arc matched 220°, ring closed at 22 633 ms, merge bloom at
+  25 367 ms).
+- **C3 Touch Contract:** `test_out\core_touch` (388 frames at 30 fps), `tools\core_state_audit.py touch`
+  reports **`VERDICT 0 of the C3 touch claims failed`** (exit code 0; rest baseline ring 53.0 px, edge
+  56.0 px, centre x 539.0; press compression to 50.0 px = 10.7 % at 2967 ms with rebound to 55.0 px; drag
+  followed finger 539 -> 307 px; settle back to ring 53.0 px and aspect 1.000). A tracking issue where the
+  ring's specular highlights during press latched `cx` off-center was fixed by pinning `cx` to the resting
+  center `cx0` during in-place press intervals.
+- **C6 Recovery Contract:** `test_out\core_c6` (262 frames at 30 fps), `tools\core_state_audit.py hues`
+  reports **`VERDICT 0 of the C6 recovery claims failed`** (exit code 0; rose failure 1.57 s at hue 10°,
+  retry back to teal at hue 195° in 633 ms with C3 press/rebound 55.0 -> 50.0 -> 57.0 px, 0 rose frames
+  after recovery).
+- **M1/M2 State Visual Sweep:** `test_out\core_visual_m7` (17 shots across all states),
+  `tools\core_state_audit.py dir` reports **`VERDICT 17 shot(s), 0 mismatch(es)`** (exit code 0; all states
+  correctly match geometry, rim hue, mark area, and ring progress).
+- **JVM Unit Test Suite:** **114 tests / 0 failures** across 17 test suites (`./gradlew testDebugUnitTest`).
 
-## V3.2.0 — The Fetcher (Downi Core), shipped 2026-09-26
+Outstanding (M3, the rest of M5 of V3.3): the state-machine rename, the snap's flatten/bulge
+measurement (the last unmeasured C3 deformation) — plus the owner's §6 failure/unsupported hexes and
+the strips review now waiting in `test_out\core_visual_m2b\` (states, progress, and the live 48/56/64 dp
+comparison that settled the **64 dp default** — owner ruling 2026-09-27).
+
+**Defect, fixed on the phone 2026-09-27 — the Reach's own window was killing the app on its first
+frame.** The owner's report was blunt: *"when I tap the bubble the share menu opens and then nothing
+happens after that."* `logcat -b crash` agreed six times over: `FATAL EXCEPTION: main`,
+`java.lang.StackOverflowError: stack size 8188KB`, alternating
+`ReachLayer$4.onDraw(ReachLayer.java:229)` and `android.view.View.draw(View.java:23560)`. The
+anonymous `View` the Reach draws into called a bare `draw(c)` from its `onDraw`, and inside that
+subclass the name resolves to the **inherited `View.draw`** — so `View.draw` called `onDraw`, which
+called `View.draw`, until the stack ended. It fired on the layer's first frame, which is the instant
+a Core tap engages the resolver: the share row had already been clicked, the sheet was already open,
+and the process died behind it. Every tap since the layer shipped died this way (13:31:14, 14:30:02,
+14:31:01, 15:54:43, 15:54:53, 20:16:21) — a "the Fetcher is not working" that was in fact one wrong
+identifier in a painter. The qualified call (`ReachLayer.this.draw(c)`) fixes it, and a one-shot
+`REACH_DRAW_FAULT` guard makes a paint fault report itself instead of taking the app down, because
+this window is drawn on the main thread where no resolver `try/catch` can reach. The same class
+carried a second fault: the traveling node's `ValueAnimator` was never held, so it kept invalidating
+a window that had already detached — it is `nodeAnim` now, cancelled on every
+`reachTo`/`capture`/`end`/`destroy` path alongside the tether, and every repaint goes through one
+guarded `invalidate()`. Verified on the phone (vivo V2058, 21:04 tap, Reels viewer): `CORE_TAP →
+REACH_BEGIN → CHAIN_SCAN share=1 → CHAIN_SHARE_CLICK route=action → CHAIN_SURFACE_OPEN
+content=ready → CHAIN_COPYLINK_CANDIDATE text=copy link → CHAIN_TARGET_CLICK → CHAIN_CLOSE_PANEL →
+CHAIN_CLIP_TRY n=1/6 focus=true got=yes → CHAIN_DELIVER_OK route=clipboard` in **3.9 s**, the job
+ran 1 → 23 → 47 → 92 → 98 % → completing, and `/sdcard/Movies/DOWNI/Video by memsgram9.mp4`
+(1 096 714 B) is on disk. The crash buffer holds **0** entries after that tap. A tap on a screen with
+no share row still fails honestly (`CHAIN_NO_SHARE_CLICK`, `CORE_RESOLVE_FAIL why=no_share_row`,
+`RUN_END delivered=false ms=127`) instead of dying. Suite **114 / 0**; the gate is `DEVICE_TEST.md` §0g.
+
 
 **Phase A — the Core's face.** The Core's face exists and runs on the phone: a
 `TYPE_ACCESSIBILITY_OVERLAY` window that draws idle / detected / pressed / dragging / snapped /
