@@ -89,7 +89,7 @@ public final class DowniCore {
 
     public void setState(String s) {
         view.setState(s);
-        listener.onCoreLog("CORE_STATE " + view.state());
+        listener.onCoreLog("CORE_STATE " + view.state() + " " + view.stageNote());
     }
 
     /**
@@ -105,7 +105,7 @@ public final class DowniCore {
         if (!interacting && view.state() != null && !view.state().equals(s)
                 && !CoreStates.isTransient(view.state())) {
             view.setState(s);
-            listener.onCoreLog("CORE_STATE " + view.state());
+            listener.onCoreLog("CORE_STATE " + view.state() + " " + view.stageNote());
         }
     }
 

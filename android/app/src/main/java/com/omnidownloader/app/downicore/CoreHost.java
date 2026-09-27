@@ -14,7 +14,15 @@ import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.SweepGradient;
+import android.util.Log;
 import android.view.View;
+
+import com.airbnb.lottie.ImageAssetDelegate;
+import com.airbnb.lottie.LottieComposition;
+import com.airbnb.lottie.LottieCompositionFactory;
+import com.airbnb.lottie.LottieDrawable;
+import com.airbnb.lottie.LottieImageAsset;
+import com.airbnb.lottie.LottieResult;
 
 import com.omnidownloader.app.R;
 
@@ -40,9 +48,20 @@ import com.omnidownloader.app.R;
  * stays small while the touch target stays the full 48/56/64 dp window. The padding is part of the
  * near-Core touch zone; it does not cover any extra app surface beyond what the Core already did.
  *
- * Since the chevron is baked into the art, the interior slosh ({@link #setMarkLag}) now reads on
- * the Core as a whole — the chevron becomes its own layer again when the Lottie stage splits it
- * (plan §3, milestone "Lottie plumbing").
+ * Motion is now authored, not arithmetic (§3/§20/§25): a state that has a bodymovin file (see
+ * {@link CoreLottie}) draws that file into this same canvas through a {@link LottieDrawable}, so
+ * the JSON owns the art's own motion — the wake swell, the press compression, the ring climbing
+ * with real progress, the C5 merge flash. The states with no file keep the static art the M1 device
+ * gate measured, and if a composition is ever missing or malformed this view falls back to that
+ * same static art rather than drawing nothing: **the animation is never the only path to a Core**.
+ *
+ * The Java overlays stay Java, because they are live touch/state data and not animation: the
+ * ambient bloom (sheet C6's rose / muted blue-grey), the rim's own progress arc, the resolver's
+ * orbit and the gel squash. The authored ring sits just outside the disc while the rim arc sits on
+ * it, so the two read as membrane + halo rather than drawing the same thing twice.
+ *
+ * Since the chevron is baked into the art, the interior slosh ({@link #setMarkLag}) still reads on
+ * the Core as a whole: the gel deforms, the authored art inside it goes with it.
  */
 public final class CoreHost extends View {
 
@@ -76,6 +95,28 @@ public final class CoreHost extends View {
     private final Bitmap orbPaused;                  // PAUSED look: dimmed energy + bars
     private int tintedAs = -1;                       // which tint artPaint currently carries
 
+    // ---------- the authored motion stage (V3.3 §3) ----------
+
+    /**
+     * The state animation the current state draws, or null while the static art carries it. One
+     * drawable, reused: a state change swaps the composition, never stacks views.
+     */
+    private LottieDrawable stage;
+    /** Which file {@link #stage} holds (null when the static path is drawing). Logged per state. */
+    private String stageAsset;
+    /**
+     * Why the last stage load was refused (null after a good load). logcat is filtered for this
+     * app by this ROM, so the refusal is reported through the one channel the harness reads —
+     * DowniCore's CORE_STATE line, via {@link #stageNote()}.
+     */
+    private String stageError;
+    /** The baked C6 looks, decoded only if a cross-fade state asks (lazy: a megabyte each). */
+    private Bitmap orbRose, orbNeutral;
+    /** Supplies the JSON's image assets from drawable-nodpi, so the art ships in the APK once. */
+    private ImageAssetDelegate artDelegate;
+
+    private static final String TAG = "DOWNI";
+
     private float markScale = DEFAULT_MARK_SCALE;    // kept for the debug gate until the art splits
 
     private String state = CoreStates.IDLE;
@@ -104,6 +145,28 @@ public final class CoreHost extends View {
         orb = decodeArt(c, R.drawable.core_orb);
         orbPaused = decodeArt(c, R.drawable.core_orb_paused);
         artPaint.setFilterBitmap(true);
+        // The JSON's image layers each name a sheet tile, and the tiles live ONCE, in
+        // res/drawable-nodpi. Supplying them here (rather than shipping a second copy inside
+        // assets/core/images/) is what keeps one file the single source of truth for the material --
+        // the same reason CoreTint owns the rose/blue-grey numbers. An unknown name is a generator
+        // bug: it returns null so the whole stage is refused, and the static art draws instead of a
+        // Core with a missing body.
+        artDelegate = new ImageAssetDelegate() {
+            @Override public Bitmap fetchBitmap(LottieImageAsset asset) {
+                String name = asset == null ? null : asset.getFileName();
+                if ("core_orb.png".equals(name)) return orb;
+                if ("core_orb_paused.png".equals(name)) return orbPaused;
+                if ("core_orb_rose.png".equals(name)) {
+                    if (orbRose == null) orbRose = decodeArt(getContext(), R.drawable.core_orb_rose);
+                    return orbRose;
+                }
+                if ("core_orb_neutral.png".equals(name)) {
+                    if (orbNeutral == null) orbNeutral = decodeArt(getContext(), R.drawable.core_orb_neutral);
+                    return orbNeutral;
+                }
+                return null;
+            }
+        };
     }
 
     /**
@@ -151,6 +214,7 @@ public final class CoreHost extends View {
         state = s;
         startTransition(durationOf(s));
         updateFlow();
+        updateStage(true);          // the state's authored file plays from its first frame
         invalidate();
     }
 
@@ -170,6 +234,7 @@ public final class CoreHost extends View {
     public void setUnsupported(boolean u) {
         if (unsupported == u) return;
         unsupported = u;
+        updateStage(false);         // FAILED swaps file with its mood: failure <-> unsupported art
         invalidate();
     }
 
@@ -187,6 +252,9 @@ public final class CoreHost extends View {
         if (Math.abs(next - progress) < 0.0005f) return;
         progress = next;
         if (CoreStates.PROGRESS.equals(state)) startTransition(CoreMotion.PROGRESS_MS);
+        // V3.3 §3: the authored ring is SCRUBBED with the real fraction, never autoplayed, so the
+        // animation and the download are the same number (sheet 4: no percent text, no timer).
+        if (stage != null && CoreLottie.isScrubbed(stageAsset)) stage.setProgress(progress);
         invalidate();
     }
 
@@ -280,6 +348,7 @@ public final class CoreHost extends View {
         if (fadeAnim != null) { fadeAnim.cancel(); fadeAnim = null; }
         if (flow != null) { flow.cancel(); flow = null; }
         if (orbit != null) { orbit.cancel(); orbit = null; }
+        if (stage != null) { stage.cancelAnimation(); stage = null; stageAsset = null; }
         super.onDetachedFromWindow();
     }
 
@@ -370,6 +439,10 @@ public final class CoreHost extends View {
         // with the procedural material (see the note above).
         sweep = new SweepGradient(cx, cy,
                 new int[]{0xFF7DF9FF, 0xFF22D3EE, 0xFF3B82F6, 0xFF7DF9FF}, null);
+
+        // the stage's canvas follows the disc, so a resize re-places the composition (no restart:
+        // a size change is not a state change)
+        updateStage(false);
     }
 
     private static float clamp01(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }
@@ -384,7 +457,12 @@ public final class CoreHost extends View {
         // mood 0 idle · 1 awake · 2 rose failure · 3 NEUTRAL unsupported (sheet C6)
         int mood = (L.error > 0.25f && unsupported) ? 3 : (L.error > 0.25f ? 2 : (L.detected > 0.4f ? 1 : 0));
         int save = c.save();
-        c.scale(L.scale * squashX, L.scale * squashY, cx, cy);   // gel squash rides on state scale
+        // The authored stage owns the state's own size motion, so when one is drawing the canvas is
+        // NOT state-scaled: otherwise the JSON's press compression and this view's would multiply
+        // (0.90 x 0.90 on a press). Gel squash still rides on top — that is touch physics, not
+        // animation, and it is the one deformation the Core always applies itself.
+        float artScale = (stage != null && fadeFrom == null) ? 1f : L.scale;
+        c.scale(artScale * squashX, artScale * squashY, cx, cy);
 
         // 1) ambient bloom (restrained; the halo breathes with the download flow)
         p.setStyle(Paint.Style.FILL);
@@ -393,16 +471,20 @@ public final class CoreHost extends View {
         p.setAlpha(Math.round(255f * clamp01(L.halo / 0.55f) * (CoreStates.PROGRESS.equals(state) ? breath : 1f)));
         c.drawCircle(cx, cy, r + 8 * dp, p);
 
-        // 2) THE CORE (sheet C1): the owner's art, drawn as the disc itself. Its material — obsidian
-        //    gel, cyan membrane, gloss and folded chevron — ships as the art (see the class note),
-        //    so the whole pebble is one drawBitmap. The tile's transparent padding is the glow's
-        //    room; the art's measured object/tile ratio keeps the disc exactly where it was.
-        drawArt(c, orb, CoreLook.ART_TILE_RATIO, 1f, mood, L.error);
-        if (L.bars && L.barAlpha > 0.01f) {
-            // PAUSED (sheet C1): the same orb with its energy receded, bars instead of the chevron.
-            // RESUMING fades it back out through barAlpha — the design's "the flow returns smoothly".
-            drawArt(c, orbPaused, CoreLook.ART_TILE_RATIO_PAUSED, clamp01(L.barAlpha / 0.9f),
-                    mood, L.error);
+        // 2) THE CORE (sheet C1 / V3.3 §3): the owner's art, drawn as the disc itself. When the state
+        //    has an authored file the composition draws the material AND its own motion; otherwise the
+        //    static tile does, exactly as the M1 device gate measured it. Either path lands the disc
+        //    on 2r by the same object/tile ratio, so the two can be compared shot for shot -- and if a
+        //    file is ever missing or refused, the second path is what draws.
+        if (!drawStage(c)) {
+            drawArt(c, orb, CoreLook.ART_TILE_RATIO, 1f, mood, L.error);
+            if (L.bars && L.barAlpha > 0.01f) {
+                // PAUSED (sheet C1): the same orb with its energy receded, bars instead of the
+                // chevron. RESUMING fades it back out through barAlpha — "the flow returns smoothly".
+                // A staged PAUSED carries its own bars, so this is the no-file path.
+                drawArt(c, orbPaused, CoreLook.ART_TILE_RATIO_PAUSED, clamp01(L.barAlpha / 0.9f),
+                        mood, L.error);
+            }
         }
 
         // 3) the energy perimeter IS the progress (sheet 4) — no percent text anywhere. The stroke
@@ -462,6 +544,130 @@ public final class CoreHost extends View {
         //    drawBitmap + canvas round-trip per frame went with the separate mark, and the interior
         //    slosh now rides the whole pebble (see the class note).
         c.restoreToCount(save);
+    }
+
+    // ---------- the authored stage (V3.3 §3) ----------
+
+    /** Which file the stage is drawing — null while the static art carries the state (log/debug). */
+    public String stageAsset() { return stageAsset; }
+
+    /** `stage=<file>` when the authored stage owns the state, else `stage=null err=<why>`. */
+    public String stageNote() {
+        return "stage=" + stageAsset
+                + (stageAsset == null && stageError != null ? " err=" + stageError : "");
+    }
+
+    /**
+     * Points the stage at the current state's file, or clears it when the state has none.
+     *
+     * {@code restart} is what a *state change* means: the state's animation plays from its first
+     * frame (re-setting a state restarts it, exactly as the Java transition always has), while a
+     * re-place (a resize, a mood switch) leaves the animation where it is.
+     *
+     * Drawn into this view's own canvas rather than added as a child view on purpose: the Core's
+     * touch handling — press, finger-follow, slop, edge snap — is the part of Fetcher 2.0 that must
+     * NOT change, and {@code ViewGroup} would put a second touch target inside it.
+     */
+    private void updateStage(boolean restart) {
+        if (rIn <= 0f) return;                     // no geometry yet; onSizeChanged calls back
+        String want = CoreLottie.assetFor(state, unsupported);
+        if (want == null) {
+            if (stage != null) {
+                stage.cancelAnimation();
+                stage = null;
+            }
+            stageAsset = null;
+            stageError = null;
+            return;
+        }
+        boolean same = want.equals(stageAsset) && stage != null;
+        if (!same) {
+            LottieDrawable loaded = loadStage(want);
+            if (loaded == null) {
+                if (stage != null) {               // never draw a Core with a missing body
+                    stage.cancelAnimation();
+                    stage = null;
+                }
+                stageAsset = null;
+                return;
+            }
+            stage = loaded;
+            stageAsset = want;
+            stageError = null;
+        }
+        placeStage();
+        stage.setAlpha(255);
+        if (CoreLottie.isScrubbed(want)) {
+            stage.setProgress(progress);           // sheet 4: the ring IS the fraction
+        } else if (restart || !same) {
+            stage.setRepeatCount(CoreLottie.loops(want) ? LottieDrawable.INFINITE : 0);
+            stage.setProgress(0f);
+            stage.playAnimation();
+        }
+    }
+
+    /**
+     * Parses one of the shipped compositions — synchronously, and once per state per process
+     * (Lottie caches by key). Synchronous on purpose: the first frame after a state change must
+     * already be the new state, and an async load would draw the previous look for a frame or two.
+     * The files are 4-19 KB, and refusal is cheap: every path out of here that is not a fully
+     * resolved composition returns null, which puts the verified static art back on screen.
+     */
+    private LottieDrawable loadStage(String asset) {
+        try {
+            LottieResult<LottieComposition> result = LottieCompositionFactory
+                    .fromAssetSync(getContext(), CoreLottie.pathFor(asset));
+            LottieComposition comp = result.getValue();
+            if (comp == null) {
+                return refuse(asset, "no_composition " + result.getException());
+            }
+            LottieDrawable d = new LottieDrawable();
+            d.setImageAssetDelegate(artDelegate);
+            d.setComposition(comp);
+            d.setCallback(this);
+            // Resolve the file's image layers now: a missing tile must be a fallback, not a hole in
+            // the art, and the first frame must never decode a megabyte mid-draw.
+            for (LottieImageAsset image : comp.getImages().values()) {
+                if (artDelegate.fetchBitmap(image) == null) {
+                    return refuse(asset, "unresolved_image " + image.getFileName());
+                }
+            }
+            stageError = null;
+            return d;
+        } catch (Throwable t) {                    // a malformed file must never take the Core down
+            return refuse(asset, t.toString());
+        }
+    }
+
+    /**
+     * Records why a file was refused and returns null. This ROM filters the app's logcat, so the
+     * reason travels on the CORE_STATE log line (`err=...`) — a refusal must be diagnosable from
+     * the spike file alone, which is what the device gate reads.
+     */
+    private LottieDrawable refuse(String asset, String why) {
+        stageError = asset + ": " + why;
+        Log.w(TAG, "CORE_STAGE_REFUSED " + asset + " (" + why + ")");
+        return null;
+    }
+
+    /**
+     * Lands the composition's 512 px canvas so its disc sits exactly on the Core's disc — the same
+     * object/tile ratio {@link #drawArt} uses, which is why a comp built on the two-bar tile goes
+     * through {@link CoreLottie#usesPausedTile}: the two tiles pad the canvas differently.
+     */
+    private void placeStage() {
+        float ratio = CoreLottie.usesPausedTile(stageAsset)
+                ? CoreLook.ART_TILE_RATIO_PAUSED : CoreLook.ART_TILE_RATIO;
+        float side = 2f * r / ratio;
+        stage.setBounds(Math.round(cx - side / 2f), Math.round(cy - side / 2f),
+                Math.round(cx + side / 2f), Math.round(cy + side / 2f));
+    }
+
+    /** Draws the authored state animation into this canvas. False = the static art should draw. */
+    private boolean drawStage(Canvas c) {
+        if (stage == null || stageAsset == null) return false;
+        stage.draw(c);                             // the drawable invalidates this view via its callback
+        return true;
     }
 
     /**

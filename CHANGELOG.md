@@ -59,9 +59,48 @@ re-reads the persisted position; and `tools/core_state_audit.py` gained `--fixed
 fit is tuned to a stroked rim and had reported "no Core to measure" for 14 of 17 shots that plainly
 had one.
 
-Outstanding: the `com.airbnb.android:lottie` dependency and the `LottieAnimationView` swap
-(milestone 2) — that is the only thing left between these files and the phone — plus milestone 1's
-on-device pass, which the test device being offline blocked.
+**Milestone 2 — the Core's motion is the sheet's own animation, running on the phone.** The ten
+authored files no longer sit unused in the APK: `CoreLottie` is the one table mapping a state to its
+file (`core_wake`, `core_idle_ready`, `core_press`, `core_progress`, `core_pause`, `core_complete`,
+`core_failure`/`core_unsupported`; `core_dormant` and `core_retry` shipped but intentionally
+unwired), and `CoreHost` draws the current state's composition through a `LottieDrawable` inside its
+own canvas — no child view, because the Core's touch handling is the part of Fetcher 2.0 that must
+not change. The JSON's image layers resolve through an `ImageAssetDelegate` over the *existing*
+`drawable-nodpi` tiles, so the material still lives in exactly one place; `core_progress` is never
+played but scrubbed with the real fraction; READY is the only file that loops; and a composition
+that is missing or refused falls back to the exact static art the M1 gate measured — **the
+animation is never the only path to a Core**. Pinned on purpose: `com.airbnb.android:lottie:6.6.10`.
+
+Verified on the vivo V2058 (`tools\core_shots_live.ps1`, 24 shots in `test_out\core_visual_m2`,
+51.7 s, `CORE_ATTACH=2`, `SERVICE_UNBIND=0`): every wired state reports its file on the `CORE_STATE`
+log line — `detected stage=core_idle_ready` · `wake stage=core_wake` · `pressed stage=core_press` ·
+`paused stage=core_pause` · `complete stage=core_complete` · `failed stage=core_failure` ·
+`progress stage=core_progress` — while idle / dragging / snapped / resuming / completing stay
+`stage=null` on the static art, and no line carries an `err=`. Suite: **111 tests / 0 failures**
+(`CoreLottieWiringTest` pins the table against the shipped JSON).
+
+**What the M2 gate found, fixed and gated (all in this release):**
+1. **All ten files were unloadable on the device.** python-lottie's `Color` takes its components
+   positionally, and `objects.Color(colour)` with the tuple as one argument emitted
+   `[[r,g,b],0,0,1]`; lottie-android refused every file with `JsonDataException: Expected
+   BEGIN_OBJECT but was BEGIN_ARRAY at $.layers[0].shapes[0].it[1].c.k[0]`, and every state fell
+   back to static — silently, because logcat is filtered for this app on this ROM.
+   `tools\core_lottie_build.py` now calls `Color(*colour)`; its `--check` asserts that a stroke/fill
+   colour is four flat components, and `CoreLottieSpecTest` asserts the same on every build.
+2. **A silent fallback must say why.** `CoreHost` reports the refusal reason on the same
+   `CORE_STATE` line (`stage=null err=<file>: <cause>`) — the datum that caught (1), which no
+   phone screenshot could ever show.
+3. **Two command races in the harness.** The service's `core.cmd` poller reads at ~2 s intervals,
+   so the driver's `show` (600 ms before `at`) and later `state progress` (1.8 s before
+   `progress 0`) were overwritten before the poller saw them — the Core stayed hidden for a whole
+   pass (`CORE_ATTACH=0`, every state honestly logging `stage=null`), and the ring shots showed the
+   previous look. `tools\core_shots_live.ps1` now pushes multi-line bodies in one write, and
+   `tools\core_review_sheets.ps1` gained `-Dir` so strips can be built for the pass being reviewed.
+
+Outstanding (M3–M7 of V3.3): the state-machine rename, the progress-ring audit band re-derivation
+(`scan_ring` is still tuned to Fetcher 1.0's stroked rim — M1-6), touch-physics polish and the final
+device pass — plus the owner's two §6 decisions and the strips review now waiting in
+`test_out\core_visual_m2\_review_states.jpg`.
 
 ## V3.2.0 — The Fetcher (Downi Core), shipped 2026-09-26
 

@@ -18,6 +18,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Fetcher 2.0's ten state animations must be *structurally* correct, because a broken Lottie file
@@ -30,6 +32,9 @@ import java.util.Set;
  *   · every image layer's asset resolves, is 512x512, and carries no absolute path (a leaked
  *     "C:\..." would work on the build machine and fail on the phone);
  *   · every state actually animates, with keyframe times increasing and inside the composition;
+ *   · every stroke/fill colour is four flat components — the one property lottie-android parses
+ *     positionally, where a tuple-built Color ships `[[r,g,b],0,0,1]` and every file is refused
+ *     on the device (found 2026-09-27, the M2 gate);
  *   · core_progress.json is scrubbable by setProgress (a trim running 0 -> 100%), not autoplayed;
  *   · the baked rose/blue-grey art is CoreTint's own matrix applied to the shipped orb, so the
  *     Lottie cross-fade and the Java static path cannot drift apart.
@@ -255,6 +260,51 @@ public class CoreLottieSpecTest {
                 keys.get(1).getAsJsonObject().get("s").getAsDouble(), 0.001);
         assertEquals("trim offset, degrees", -90.0,
                 trim.getAsJsonObject("o").get("k").getAsDouble(), 0.001);
+    }
+
+    /**
+     * Every stroke/fill colour must be exactly four flat JSON numbers. This is the shape
+     * lottie-android's parser reads; anything else (notably python-lottie's `Color` built from one
+     * tuple argument, which emits `[[r,g,b],0,0,1]`) throws a JsonDataException at `c.k[0]` on the
+     * phone and the state silently renders nothing. All ten files shipped that way until the M2
+     * gate's `err=` channel on the device said so (2026-09-27); the generator asserts the same rule
+     * at author time — this is the half that runs on every build. Five of the ten states carry no
+     * ring at all (art, scale, opacity only), so an empty colour list is fine.
+     */
+    @Test public void everyStrokeAndFillColourIsFourFlatComponents() {
+        for (String state : STATES) {
+            JsonObject an = load(state);
+            List<String> problems = new ArrayList<>();
+            colourProblems(an.getAsJsonArray("layers"), problems);
+            assertTrue(state + ": " + problems, problems.isEmpty());
+        }
+    }
+
+    /** Collects colour-shape problems from a shape tree (the shape lottie's parser demands). */
+    private static void colourProblems(JsonElement node, List<String> out) {
+        if (node == null) return;
+        if (node.isJsonArray()) {
+            for (JsonElement child : node.getAsJsonArray()) colourProblems(child, out);
+            return;
+        }
+        if (!node.isJsonObject()) return;
+        JsonObject o = node.getAsJsonObject();
+        String ty = o.has("ty") ? o.get("ty").getAsString() : null;
+        if (("st".equals(ty) || "fl".equals(ty)) && o.has("c")) {
+            JsonObject c = o.getAsJsonObject("c");
+            JsonElement k = c == null ? null : c.get("k");
+            boolean ok = k != null && k.isJsonArray() && k.getAsJsonArray().size() == 4;
+            if (ok) {
+                for (JsonElement v : k.getAsJsonArray()) {
+                    ok = v.isJsonPrimitive() && v.getAsJsonPrimitive().isNumber();
+                    if (!ok) break;
+                }
+            }
+            if (!ok) out.add(ty + " colour is not four flat components: " + k);
+        }
+        for (java.util.Map.Entry<String, JsonElement> e : o.entrySet()) {
+            colourProblems(e.getValue(), out);
+        }
     }
 
     /**
