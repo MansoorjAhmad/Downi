@@ -907,6 +907,11 @@ public class DowniFetcherService extends AccessibilityService {
                 return;
             case RETRY:
                 if (tracked != null) {
+                    // C6: the Core acknowledges the tap FIRST — the rose reads back to teal through
+                    // the C3 press/rebound (core_retry), and settles into RESOLVING after RETRY_MS.
+                    // Nothing below can cut it short: RETRY is a transient, and
+                    // DowniCore.setBaseState refuses to clobber one (the same guard the drag uses).
+                    if (core != null) core.setState(CoreStates.RETRY);
                     // The engine failed this URL — failures may retry freely (master package §33).
                     try { beginChainRun(); deliverByTap(tracked, "retry"); } catch (Throwable t) { log("CHAIN_ERR " + t); }
                     chainReset();

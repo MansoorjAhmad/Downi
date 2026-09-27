@@ -59,6 +59,13 @@ public final class CoreMotion {
     public static final long PROGRESS_MS = 400;   // a progress step eases in over this
     public static final long PAUSE_MS = 400;      // the energy freezes gently
     public static final long COMPLETE_MS = 400;   // success pulse, then a calm return
+    /**
+     * C6's recovery: `core_retry` is 36 frames at 60 fps — the rose reads back to teal through the
+     * C3 press/rebound — so the RETRY state lasts exactly as long as its own animation and then
+     * settles into RESOLVING ("as it re-resolves"). Derived from the composition, not chosen here:
+     * tools\core_lottie_build.py's retry spec is frames=36 at 60 fps.
+     */
+    public static final long RETRY_MS = 600;
     public static final long ERROR_MS = 300;      // restrained error pulse
     // The Reach (sheet C4): tether growth, node travel, capture flash, retraction.
     public static final long REACH_GROW_MS = 200;

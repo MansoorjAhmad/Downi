@@ -214,8 +214,34 @@ found by cyan-ness and paired at the expected radius, and the tool prints "NOT D
 claims it cannot settle (position — the service's `CORE_MOVED` line is exact — and the snap's
 flatten/bulge, whose vertical extent no scan can measure on this look).
 
-Outstanding (M3, the rest of M5, M6–M7 of V3.3): the state-machine rename, the press/snap
-deformation measurements, failure/retry/unsupported and the final device
+**Milestone 6 — the failure, the recovery and the neutral reads are wired, and the phone watched the
+retry happen.** `core_retry.json` — the rose → teal crossfade *with* C3's press/rebound — had been
+authored, baked, shipped in the APK and **wired to nothing**: a tap on a FAILED Core went straight to
+the resolver's orbit, so sheet C6's "tap-to-retry does a press/rebound and transitions rose → teal as
+it re-resolves" simply never occurred. `CoreStates` gains `RETRY`, `CoreLottie` maps it to that file,
+`CoreMotion.RETRY_MS` is 600 ms (the file's own 36 frames at 60 fps), `CoreHost` settles it into
+`RESOLVING` ("as it re-resolves"), and the tap branch in `DowniFetcherService` enters it *before* the
+chain starts. The one subtlety is precedence: `RETRY` is a **transient**, so the arbiter's immediate
+`RESOLVING` push cannot cut the acknowledgement short — `DowniCore.setBaseState` already refused to
+clobber a transient (the guard the drag uses), which is exactly the behaviour the recovery needed.
+
+Measured on the phone (`tools\core_c6.ps1` + `core_state_audit.py hues`, `DEVICE_TEST.md` §0e, 262
+frames, `VERDICT 0 of the C6 recovery claims failed`): the failure reads **rose for 1.57 s (hue 10°)**;
+the retry's log line is `CORE_STATE retry stage=core_retry n=2 run=true` with the crossfade's own two
+layers (the teal fading in over the rose fading out); **633 ms later the Core is teal (hue 195°)**; the
+retry carries the press/rebound (**the art's edge 55.0 → 50.0 px = 9.1 % down, then 57.0 px = 3.6 %
+over**); and **0 of 115 frames afterwards read rose** — no trace left behind.
+
+Two contracts had to be updated deliberately, and both caught the change on the first run: the unwired
+list shrank from two files to one (only `core_dormant` is still an owner decision — it would breathe on
+a loop, which cell K-A5 forbids while idle), and `roseTintBelongsToFailureAlone` now allows exactly one
+exception — a retry *starts* rose, because it recovers from a failure, and must be teal by the time it
+hands over. The gate itself also had to be taught honesty: its first run reported "the failure does not
+read rose" while the trace showed 1.6 s of it, because a window anchored on the command *push* measures
+the previous phase when the poller is 1.9 s late. `hues` now reads its phases off the trace itself.
+
+Outstanding (M3, the rest of M5, M7 of V3.3): the state-machine rename, the snap's flatten/bulge
+measurement (the last unmeasured C3 deformation), and the final device
 pass — plus the owner's §6 failure/unsupported hexes and the strips review now waiting in
 `test_out\core_visual_m2b\` (states, progress, and the live 48/56/64 dp comparison that settled the
 **64 dp default** — owner ruling 2026-09-27).

@@ -284,6 +284,7 @@ public final class CoreHost extends View {
         if (CoreStates.SNAPPED.equals(s)) return CoreMotion.SNAP_MS;
         if (CoreStates.RESUMING.equals(s)) return CoreMotion.PAUSE_MS;
         if (CoreStates.COMPLETING.equals(s)) return CoreMotion.COMPLETE_MS;
+        if (CoreStates.RETRY.equals(s)) return CoreMotion.RETRY_MS;   // its own 600 ms composition
         if (CoreStates.FAILED.equals(s)) return CoreMotion.ERROR_MS;
         return 0L;
     }
@@ -359,6 +360,11 @@ public final class CoreHost extends View {
         if (CoreStates.WAKE.equals(state)) state = CoreStates.DETECTED;
         else if (CoreStates.RESUMING.equals(state)) state = CoreStates.PROGRESS;
         else if (CoreStates.COMPLETING.equals(state)) state = CoreStates.COMPLETE;
+        // C6: the retry acknowledgement hands over to the resolver's own orbit ("as it re-resolves").
+        // If the retry's run has ALREADY reported a job state by then, the arbiter's next push
+        // corrects this within a beat — and because RETRY is a transient, that push could not cut the
+        // acknowledgement short in the first place (DowniCore.setBaseState's transient guard).
+        else if (CoreStates.RETRY.equals(state)) state = CoreStates.RESOLVING;
         updateFlow();
         // An auto-settle IS a state change, so it picks the promoted state's file up exactly like
         // setState does — otherwise the state changes under a stage that still belongs to the old

@@ -40,8 +40,8 @@ public final class CoreLottie {
     public static final String DORMANT = "core_dormant";
 
     /**
-     * Authored but unwired: there is no RETRY state in {@link CoreStates} — the recovery path is
-     * FAILED -> (tap) -> RESOLVING, which the Java rim orbit already draws.
+     * C6's recovery file: rose -> teal with the C3 press/rebound. Wired to the RETRY state, which the
+     * tap that retries a failed grab enters — see {@link CoreStates#RETRY}.
      */
     public static final String RETRY = "core_retry";
 
@@ -66,6 +66,7 @@ public final class CoreLottie {
         if (CoreStates.PROGRESS.equals(state)) return PROGRESS_FILE;
         if (CoreStates.PAUSED.equals(state)) return "core_pause";
         if (CoreStates.COMPLETE.equals(state)) return "core_complete";
+        if (CoreStates.RETRY.equals(state)) return RETRY;         // C6: rose -> teal, re-resolving
         return null;
     }
 

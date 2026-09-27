@@ -118,16 +118,25 @@ public class CoreLookTest {
         assertEquals(300L, CoreMotion.ERROR_MS);
     }
 
-    @Test public void roseTintBelongsToFailedAlone() {
+    @Test public void roseTintBelongsToFailureAlone() {
         // The device audit (tools/core_state_audit.py, cell K-A3) reads the rim's hue off a
         // screenshot and calls any state but `failed` rose a defect - that only holds while
         // CoreLook sets L.error in the FAILED branch alone (CoreHost picks the rose rim at
         // error > 0.25). Locked here so a mood tweak cannot make PAUSED look like an error.
+        //
+        // C6 added exactly one exception, and it is the recovery itself: a RETRY starts rose (it
+        // recovers FROM a failure) and must be teal by the end - the fade is asserted in
+        // `retryReadsRoseBackToTealThenHandsOverToTheResolver`. Nothing else may be tinted.
         for (String s : CoreStates.ALL) {
             for (float t = 0f; t <= 1.0001f; t += 0.25f) {
                 float error = CoreLook.of(s, t, 0.5f).error;
                 if (CoreStates.FAILED.equals(s)) {
                     assertTrue("failed must stay tinted (t=" + t + ")", error > 0.25f);
+                } else if (CoreStates.RETRY.equals(s)) {
+                    assertTrue("a retry may START rose (t=" + t + ")", error >= 0f && error <= 1f);
+                    if (t >= 1f) {
+                        assertEquals("...and must end teal", 0f, error, EPS);
+                    }
                 } else {
                     assertEquals(s + " must not carry the error tint (t=" + t + ")", 0f, error, EPS);
                 }
@@ -136,7 +145,7 @@ public class CoreLookTest {
     }
 
     @Test public void stateVocabularyIsClosedAndHonest() {
-        assertEquals(13, CoreStates.ALL.length);
+        assertEquals(14, CoreStates.ALL.length);
         assertTrue(CoreStates.isKnown(CoreStates.DETECTED));
         assertTrue(CoreStates.isKnown(CoreStates.RESOLVING));
         assertFalse("there is no 'armed' state — a video is either detected or it is not",
@@ -147,6 +156,33 @@ public class CoreLookTest {
                 CoreStates.isTransient(CoreStates.RESOLVING));
         assertTrue(CoreStates.showsProgress(CoreStates.PAUSED));
         assertFalse(CoreStates.showsProgress(CoreStates.IDLE));
+        // C6's recovery: a transient (so no arbiter push can cut the acknowledgement short) and not
+        // a download, so it must never claim the perimeter.
+        assertTrue(CoreStates.isKnown(CoreStates.RETRY));
+        assertTrue(CoreStates.isTransient(CoreStates.RETRY));
+        assertFalse("a retry is not a download", CoreStates.showsProgress(CoreStates.RETRY));
+    }
+
+    @Test public void retryReadsRoseBackToTealThenHandsOverToTheResolver() {
+        // Sheet C6: "tap-to-retry does a press/rebound and transitions rose -> teal as it
+        // re-resolves". The look owns the mood (the authored core_retry file owns the crossfade and
+        // the press/rebound), so error must run exactly 1 -> 0, once, and the ring must stay dark.
+        assertEquals(600L, CoreMotion.RETRY_MS);          // 36 frames at 60 fps, from the composition
+        CoreLook.Look start = CoreLook.of(CoreStates.RETRY, 0f, 0f);
+        CoreLook.Look end = CoreLook.of(CoreStates.RETRY, 1f, 0f);
+        assertEquals("a retry starts as rose as the failure it recovers from", 1f, start.error, EPS);
+        assertEquals("...and ends teal", 0f, end.error, EPS);
+        assertEquals(0f, start.perimeter, EPS);
+        assertEquals(0f, end.perimeter, EPS);
+        assertFalse(start.bars);
+        assertTrue("the energy comes back up as the answer arrives", end.rim > start.rim);
+        assertTrue(end.mark > start.mark);
+        float prev = 2f;
+        for (float t = 0f; t <= 1.0001f; t += 0.05f) {
+            float err = CoreLook.of(CoreStates.RETRY, t, 0f).error;
+            assertTrue("the rose only ever fades (t=" + t + "): " + err, err <= prev + EPS);
+            prev = err;
+        }
     }
 
     @Test public void downloadingLendsLightToTheRing() {

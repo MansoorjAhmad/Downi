@@ -193,6 +193,48 @@ the expected radius, while the *press* is measured on the whole art's edge inste
 
 > Sign and date here when green: ______________
 
+## 0e. V3.3 Core 2.0 — M6 on-device C6 recovery gate (the rose → teal retry)
+
+> Device pass **2026-09-27** — vivo V2058, the debug APK built/signed/installed that evening,
+> `tools\core_c6.ps1` → `test_out\core_c6` (262 frames at 30 fps from a 9 s recording,
+> `CORE_ATTACH=2`, `SERVICE_UNBIND=0`), verdict from `tools\core_state_audit.py hues`
+> (`VERDICT 0 of the C6 recovery claims failed`).
+>
+> **What was wrong before this milestone.** `core_retry.json` (the rose → teal crossfade *with* C3's
+> press/rebound) shipped in the APK and was wired to **nothing**: FAILED → (tap) → RESOLVING jumped
+> straight to the resolver's orbit, so sheet C6's "tap-to-retry does a press/rebound and transitions
+> rose → teal as it re-resolves" never happened. The Core now has a `RETRY` state — a transient, so
+> the arbiter's `RESOLVING` push cannot cut the 600 ms acknowledgement short
+> (`DowniCore.setBaseState`'s transient guard, the one the drag already used) — which plays that file
+> and then settles into RESOLVING.
+
+| # | Check | Evidence |
+|---|---|---|
+| M6-1 | The failure reads rose | ✅ **47 frames of rose, 1.57 s (t=1833…3367 ms), hue 10°** in the pass's colour trace |
+| M6-2 | The retry's authored file actually plays | ✅ `CORE_STATE retry stage=core_retry n=2 f=0 run=true`, and its layer tree is the crossfade itself: `core_in/IMAGE/core_orb.png` (the teal fading in) over `core/IMAGE/core_orb_rose.png` (the rose fading out) |
+| M6-3 | …and it reads back to teal | ✅ **633 ms after the rose ends the Core is teal, hue 195°** |
+| M6-4 | The retry carries C3's press/rebound | ✅ the art's edge measured **55.0 → 50.0 px (9.1 % down), then 57.0 px (3.6 % over)** inside the file's own 600 ms — the composition authors 92 % → 104 % over 36 frames, so the device agrees with the sheet's "press/rebound" wording |
+| M6-5 | No trace of the rose afterwards | ✅ **0 of 115 frames after the recovery read rose** (hue 195°, the resting look) |
+| M6-6 | The unsupported read is still neutral, not rose | ✅ gated earlier: the M1/M2 sweeps measure the neutral mood (`core_unsupported`, `CoreTint`'s muted blue-grey) and `CoreLookTest.roseTintBelongsToFailureAlone` locks the rule that only FAILED — and the *start* of a RETRY — may carry the error tint. An unsupported link is deliberately **not** retried: `CoreTapAction` sends it to a fresh fetch |
+
+**Rig lesson (applies to any state-colour pass).** The first run of this gate reported "the failure
+does not read rose" while the trace plainly showed 1.6 s of it: `segments.csv` stamps each step
+`push + 450 ms`, but the poller serves a push 0.4–2 s later (measured here: **1.9 s**), so a window
+anchored on the push measures the *previous* phase. `hues` therefore reads its phases off the trace
+itself — the longest rose run **is** the failure, what follows is the retry, what follows that is the
+resting look — and uses the rig's table only to check the order. No claim in this section depends on
+the push latency.
+
+To re-run (device on USB; ~20 s, run it detached):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\core_c6.ps1
+python tools\core_state_audit.py hues test_out\core_c6\frames --at 452,1080 --size-dp 64 ^
+       --density 2.75 --fps 30 --fixed
+```
+
+> Sign and date here when green: ______________
+
 ## 2. v3.0 features matrix
 
 | Feature | Check |

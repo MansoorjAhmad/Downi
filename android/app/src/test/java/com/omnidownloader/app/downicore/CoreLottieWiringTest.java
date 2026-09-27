@@ -43,6 +43,7 @@ public class CoreLottieWiringTest {
         WIRED.put(CoreStates.PROGRESS, "core_progress");
         WIRED.put(CoreStates.PAUSED, "core_pause");
         WIRED.put(CoreStates.COMPLETE, "core_complete");
+        WIRED.put(CoreStates.RETRY, "core_retry");
     }
 
     private static final String FAILURE = "core_failure";
@@ -53,8 +54,13 @@ public class CoreLottieWiringTest {
             CoreStates.IDLE, CoreStates.RESOLVING, CoreStates.DRAGGING, CoreStates.SNAPPED,
             CoreStates.RESUMING, CoreStates.COMPLETING};
 
-    /** Shipped and deliberately not wired — an owner decision, not an oversight. */
-    private static final String[] UNWIRED = {CoreLottie.DORMANT, CoreLottie.RETRY};
+    /**
+     * Shipped and deliberately not wired — an owner decision, not an oversight. Only the dormant
+     * look is left: it would replace the verified idle art AND breathe on a loop, which cell K-A5
+     * ("nothing animates while idle") forbids. RETRY left this list when C6's recovery path was
+     * wired (it is {@link CoreStates#RETRY} now).
+     */
+    private static final String[] UNWIRED = {CoreLottie.DORMANT};
 
     @Test public void everyStatePlaysTheFileTheDesignSaysItDoes() {
         for (String state : CoreStates.ALL) {
@@ -110,7 +116,7 @@ public class CoreLottieWiringTest {
             unwired.add(file);
         }
         assertEquals("the unwired list is a decision: keep it short and explained",
-                2, UNWIRED.length);
+                1, UNWIRED.length);       // DORMANT alone: RETRY was wired for C6 (2026-09-27)
         for (String file : CoreLottie.SHIPPED) {
             if (unwired.contains(file)) {
                 assertFalse(file + " is on the 'not wired' list but the table plays it",

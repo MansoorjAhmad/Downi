@@ -198,6 +198,19 @@ public final class CoreLook {
             L.rim = 0.65f;
             L.mark = 0.70f;
             L.halo = 0.30f + 0.25f * pulse;
+        } else if (CoreStates.RETRY.equals(state)) {
+            // sheet C6: "tap-to-retry does a press/rebound and transitions rose -> teal as it
+            // re-resolves". The authored core_retry file carries the crossfade AND the C3
+            // press/rebound; what this look owns is the fallback (a refused file) and the mood
+            // bookkeeping: error runs 1 -> 0 across the transition, so the tinted static art reads
+            // rose -> teal too, and the energy comes back up as the answer arrives.
+            L.detected = 1f;
+            L.perimeter = 0f;                 // the ring belongs to a download, not a retry
+            L.track = 0.12f;
+            L.error = 1f - e;                 // rose -> teal, exactly once
+            L.rim = 0.55f + 0.45f * e;
+            L.mark = 0.60f + 0.40f * e;
+            L.halo = 0.30f + 0.25f * pulse;
         }
         return L;
     }

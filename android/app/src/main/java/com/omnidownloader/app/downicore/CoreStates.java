@@ -42,11 +42,18 @@ public final class CoreStates {
     public static final String COMPLETE = "complete";
     /** Restrained error state with a soft retry-ready feel (0.3 s pulse, sheet 6). */
     public static final String FAILED = "failed";
+    /**
+     * C6's recovery, played on the tap that retries a failed grab: the rose reads back to teal
+     * THROUGH the C3 press/rebound (sheet C6: "tap-to-retry does a press/rebound and transitions
+     * rose → teal as it re-resolves"), then settles into RESOLVING — the resolver's own orbit.
+     * A transient, so the arbiter's next push cannot cut the acknowledgement short.
+     */
+    public static final String RETRY = "retry";
 
     /** Every state the debug channel accepts, in the order the design sheet shows them. */
     public static final String[] ALL = {
             IDLE, WAKE, DETECTED, RESOLVING, PRESSED, DRAGGING, SNAPPED,
-            PROGRESS, PAUSED, RESUMING, COMPLETING, COMPLETE, FAILED
+            PROGRESS, PAUSED, RESUMING, COMPLETING, COMPLETE, FAILED, RETRY
     };
 
     /** True when the perimeter carries a real download's progress in this state. */
@@ -58,7 +65,7 @@ public final class CoreStates {
     /** True when the state is a short transition the host has to animate into the next one. */
     public static boolean isTransient(String s) {
         return WAKE.equals(s) || PRESSED.equals(s) || SNAPPED.equals(s)
-                || RESUMING.equals(s) || COMPLETING.equals(s);
+                || RESUMING.equals(s) || COMPLETING.equals(s) || RETRY.equals(s);
     }
 
     public static boolean isKnown(String s) {
