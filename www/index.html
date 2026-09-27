@@ -1728,7 +1728,7 @@
     function resumeOneDownload(jobId) {
       const nativeId = jobId.startsWith('bg_') ? bgNativeId(jobId) : jobId;
       getEngine()?.resumeDropJob?.({ jobId: nativeId });
-      showToast('Resuming', 'Continuing from where it stopped.', 'info');
+      showToast('Resuming', 'Continuing your grab.', 'info');
     }
 
     function cancelAllDownloads() {
