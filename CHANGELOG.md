@@ -184,7 +184,34 @@ screen at all (`CoreHost.verifyDrawable` plus an animator update listener), beca
 `LottieDrawable` is not the view's background, so `View.invalidateDrawable` silently dropped every
 repaint it asked for. That second one is what "core_pause measured its first frame for 5.7 s" was.
 
-Outstanding (M3, M5–M7 of V3.3): the state-machine rename, touch-physics polish and the final device
+**Milestone 5 — sheet C3's touch physics became numbers with a gate, and the phone proved the
+interaction.** The C3 figures used to live at their call sites — a View's clamp (`4f * dp`), a touch
+listener's literals (`0.06f`, `12 * dp`) and an animator's inline envelope (`sin(PI * t) * 0.10f`) —
+where no test could see them and a free-model edit could change how the Core *feels* without touching
+a design table. They are constants on `CoreMotion` now (`MARK_LAG_DP`, `MARK_LAG_FRACTION`,
+`EDGE_MAGNET_DP`, `SNAP_SQUASH`, `SNAP_BULGE_FRACTION`, `PRESS_SQUASH`, `RELEASE_SWELL`), the snap's
+envelope is a pure function (`CoreMotion.snapSquash(t)`, peak exactly 0.10, zero at both ends), and
+`CoreMotionTest.c3TouchPhysicsMatchesTheSheet` pins every one of them.
+
+On the phone (`tools\core_touch.ps1` + `core_state_audit.py touch`, `DEVICE_TEST.md` §0d, 390 frames
+from a recorded pass of injected gestures): a **held press** at the Core's centre is classified as a
+TAP — `CORE_TOUCH down` 17:50:38.197 → `up dragging=false` 17:50:38.429, 232 ms of contact with no
+drag — while the 500 ms swipes log `up dragging=true`, so the platform's own touch slop is doing what
+the plan's ~8 dp threshold asked. The drag **follows the finger**: the Core's centre travelled
+539 → 305 while the finger went 540 → 300. And the edge magnet fires exactly, with a control: released
+**20 px from the left edge** the Core landed at **`CORE_MOVED x=0`** (magnetised), released **218 px
+from it** it stayed at **`x=218`** — C3's "only within 12 dp, and never forced".
+
+Two rig findings worth more than they look. `adb shell input tap` injects down and up **4 ms** apart,
+which cuts a 400 ms press composition off after 4 ms — the first pass therefore read "the press does
+not compress" and the fix was the rig's (a held same-point swipe), not the Core's. And the resting
+Core's membrane is genuinely dark at its bottom edge while its chevron is cyan and *brighter*, so the
+tracker now finds the ring by cyan-ness and pairs the crossings at the expected radius. Outstanding:
+the tracker still cannot resolve the two transient *deformations* (the press's ~10 % compression and
+the snap's flatten/bulge) — they are authored and pinned in code, not yet measured in pixels.
+
+Outstanding (M3, the rest of M5, M6–M7 of V3.3): the state-machine rename, the press/snap
+deformation measurements, failure/retry/unsupported and the final device
 pass — plus the owner's §6 failure/unsupported hexes and the strips review now waiting in
 `test_out\core_visual_m2b\` (states, progress, and the live 48/56/64 dp comparison that settled the
 **64 dp default** — owner ruling 2026-09-27).

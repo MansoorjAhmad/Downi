@@ -31,6 +31,27 @@ public final class CoreMotion {
 
     /** A non-snapping release settles back with this small restrained swell (sheet C3 §2). */
     public static final long RELEASE_SETTLE_MS = 180;
+
+    // ---- C3 — THE TOUCH PHYSICS (sheet C3), the numbers every press/drag/snap path must use --------
+    // These lived at their call sites (a View's clamp, a touch listener's literal, an animator's
+    // envelope), where nothing could pin them and a free-model edit could quietly change the feel.
+    // They are the sheet's numbers: ~10 % compression on a press, a ~4 px interior slosh, edge
+    // magnetism only within 12 dp, and a snap that flattens on the contact axis and bulges
+    // perpendicular to it by half as much.
+    /** The interior slosh's ceiling: the mark trails the container by at most this (sheet C3: ~4 px). */
+    public static final float MARK_LAG_DP = 4f;
+    /** ... and it trails by this fraction of the finger's own travel. */
+    public static final float MARK_LAG_FRACTION = 0.06f;
+    /** A release within this much of an edge magnetises to it; anywhere else stays draggable. */
+    public static final float EDGE_MAGNET_DP = 12f;
+    /** C3 §3's edge contact: the gel flattens along the contact axis by this much at the peak. */
+    public static final float SNAP_SQUASH = 0.10f;
+    /** ... and bulges perpendicular to that axis by this fraction of the flattening. */
+    public static final float SNAP_BULGE_FRACTION = 0.5f;
+    /** C3's press: ~10 % compression inward while the finger is down (settles at 0). */
+    public static final float PRESS_SQUASH = 0.10f;
+    /** C3 §2's release swell cap: the gel never passes this on the rebound. */
+    public static final float RELEASE_SWELL = 0.05f;
     /** The subtle COMPLETE/FAILED -> IDLE return (sheet C5 RETURN): the held look fades to rest. */
     public static final long RETURN_MS = 400;
     public static final long DRAG_MS = 100;       // follow the finger, no lag beyond this
@@ -96,7 +117,20 @@ public final class CoreMotion {
      * finger let go of a Core that did not snap; the gel relaxes, it does not bounce like a toy.
      */
     public static float releaseSettle(float t) {
-        return 1f + 0.05f * pulse(t);
+        return 1f + RELEASE_SWELL * pulse(t);
+    }
+
+    /**
+     * The C3 §3 edge contact as an envelope: how much the gel flattens along the contact axis at
+     * time {@code t} of the snap (0 -> {@link #SNAP_SQUASH} at the midpoint -> 0), so the deformation
+     * ARRIVES while the Core travels and is gone when it lands — "no trace after the snap".
+     *
+     * Pure on purpose: this used to be an animator's inline `sin(PI * t) * 0.10f`, where the sheet's
+     * number could drift unnoticed. The bulge perpendicular to the contact axis is
+     * {@link #SNAP_BULGE_FRACTION} of whatever this returns.
+     */
+    public static float snapSquash(float t) {
+        return (float) Math.sin(Math.PI * t) * SNAP_SQUASH;
     }
 
     private CoreMotion() {}

@@ -385,7 +385,7 @@ public final class CoreHost extends View {
 
     /** Interior slosh (V-3): the mark trails the container during a drag, then springs home. */
     public void setMarkLag(float lx, float ly) {
-        float max = 4f * dp;
+        float max = CoreMotion.MARK_LAG_DP * dp;      // sheet C3: ~4 px, clamped
         float nx = Math.max(-max, Math.min(max, lx));
         float ny = Math.max(-max, Math.min(max, ly));
         if (Math.abs(nx - markLagX) < 0.15f && Math.abs(ny - markLagY) < 0.15f) return;

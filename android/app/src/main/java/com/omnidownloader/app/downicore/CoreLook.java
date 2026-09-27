@@ -122,7 +122,7 @@ public final class CoreLook {
         } else if (CoreStates.PRESSED.equals(state)) {
             // sheet 6 #2: compress inward in 0.1 s, brighter response; the mark sinks into the gel.
             L.detected = 1f;
-            L.scale = 1f - 0.10f * e;
+            L.scale = 1f - CoreMotion.PRESS_SQUASH * e;      // sheet C3: ~10 % compression inward
             L.halo = 0.45f + 0.25f * e;
             L.rim = 1.00f;
             L.mark = 1.00f;

@@ -369,8 +369,10 @@ public final class DowniCore {
                         }
                         if (dragging) {
                             moveTo(Math.round(downX + dx), Math.round(downY + dy));
-                            // interior slosh (V-3): the mark trails the container, gel-style
-                            next.setMarkLag(-dx * 0.06f, -dy * 0.06f);
+                            // interior slosh (V-3): the mark trails the container, gel-style, by the
+                            // sheet C3 fraction of the finger's travel (clamped in CoreHost)
+                            next.setMarkLag(-dx * CoreMotion.MARK_LAG_FRACTION,
+                                    -dy * CoreMotion.MARK_LAG_FRACTION);
                         }
                         return true;
                     }
@@ -405,7 +407,7 @@ public final class DowniCore {
         int px = Math.round(sizeDp * dp);
         int maxX = Math.max(0, swpx - px);
         int maxY = Math.max(0, shpx - px);
-        int near = Math.round(12 * dp);
+        int near = Math.round(CoreMotion.EDGE_MAGNET_DP * dp);   // sheet C3: magnetise only from here
         int nearX = lp.x;
         int nearY = lp.y;
         boolean magnetic = false;
@@ -437,9 +439,12 @@ public final class DowniCore {
                 float t = CoreMotion.easeInOut((Float) a.getAnimatedValue());
                 moveTo(Math.round(fromX + (targetX - fromX) * t),
                         Math.round(fromY + (targetY - fromY) * t));
-                float env = (float) Math.sin(Math.PI * t) * 0.10f;
-                if (horizontalHit) view.setGelSquash(1f - env, 1f + env * 0.5f);
-                else view.setGelSquash(1f + env * 0.5f, 1f - env);
+                float env = CoreMotion.snapSquash(t);     // C3 §3: pure envelope, pinned in CoreMotionTest
+                if (horizontalHit) {
+                    view.setGelSquash(1f - env, 1f + env * CoreMotion.SNAP_BULGE_FRACTION);
+                } else {
+                    view.setGelSquash(1f + env * CoreMotion.SNAP_BULGE_FRACTION, 1f - env);
+                }
             }
         });
         edgeAnim.addListener(new android.animation.AnimatorListenerAdapter() {

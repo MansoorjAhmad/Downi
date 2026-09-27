@@ -159,6 +159,38 @@ python tools\core_state_audit.py diff test_out\core_motion\core_motion_paused_a.
 
 > Sign and date here when green: ______________
 
+## 0d. V3.3 Core 2.0 — M5 on-device C3 touch gate (press / drag / edge snap)
+
+> Device passes **2026-09-27** — vivo V2058, spike-signed debug build, `tools\core_touch.ps1` →
+> `test_out\core_touch` (390 frames at 30 fps from a 13 s recording, 27 s, `CORE_ATTACH=1`,
+> `SERVICE_UNBIND=0`), analyzed with `tools\core_state_audit.py touch`. The C3 numbers themselves are
+> pinned in `CoreMotionTest.c3TouchPhysicsMatchesTheSheet` (they used to live at their call sites).
+>
+> **Two instruments, because they answer different questions.** Injected touch reaches the overlay on
+> this ROM (`adb shell input swipe`; the tap grammar, slop and the magnet are the *service's* own
+> account — `CORE_TOUCH` and `CORE_MOVED`, exact) and the pixels answer what the gel *looked* like
+> (the tracker in `core_state_audit.py touch` measures the ring's centre, radius and axis ratio).
+
+| # | Check | Evidence |
+|---|---|---|
+| M5-0 | The gestures reach the Core at all | ✅ `CORE_TOUCH down` / `up` on every step of the pass, and `CORE_MOVED` after each drag |
+| M5-1 | Tap is not eaten by drag (plan §"Touch handling split": ~8 dp slop) | ✅ a held press at the Core's centre logged **`CORE_TOUCH down` 17:50:38.197 → `up dragging=false` 17:50:38.429** (232 ms held, still a TAP), while the 500 ms swipes logged `up dragging=true` — the platform's own `ViewConfiguration.getScaledTouchSlop()` is the threshold |
+| M5-2 | Drag follows the finger | ✅ pixels: the Core's centre travelled **539 → 305** while the finger went **540 → 300** (390-frame video, `touch` mode). The service agrees (`up dragging=true`) |
+| M5-3 | Edge snap magnets only near an edge (C3 §3, 12 dp) | ✅ the service's own log, with its own control: released **20 px from the left edge → `CORE_MOVED x=0 y=1080`** (magnetised to the edge); released **218 px from it → `CORE_MOVED x=218 y=1080`** (left exactly where the finger let go). Repeated identically in both passes |
+| M5-4 | No trace after the gesture | ✅ the settle step measures the ring back at its rest radius (53.0 px vs the 53.0 px baseline) and the aspect back at 1.000; nothing moves after `CORE_MOVED` |
+| M5-5 | Press compresses ~10 % (C3) | ⚠️ **not yet resolved by the pixel instrument** — the rig now proves the *press itself* happens (a 232 ms held press, above), but the tracker reads a bogus 32 px while the art is scaled down and the state changes, so "how much" is unmeasured. The composition authors it: `core_press.json` scales 100 → 90 → 103.5 → 100 over 24 frames, which is C3's "~10 % compression + overshoot on tap" |
+| M5-6 | Snap flattens on the contact axis, bulges the other | ⚠️ **not yet resolved**. The mechanism is in code and gated (`CoreMotion.snapSquash(t)` peaks at exactly 0.10 and is zero at both ends; `DowniCore` applies it as `1-env, 1+env*0.5` on the contact axis and mirrored on the other), but this pass could not measure the ellipse: the chord method that solves the vertical extent is ill-conditioned at rest (a 2 px error swings it 50 → 70 px) and the tracker's axis ratio is only trustworthy while it holds the ring |
+
+**Rig facts worth keeping.** `adb shell input tap` injects **down and up 4 ms apart** (measured:
+17:44:38.450 → .454), which cuts a 400 ms press composition off after 4 ms — so the press step is a
+**held** swipe at one point (300 ms) instead. And the analyzer had to be taught the art's own look:
+the resting membrane is far dimmer than the download ring `is_arc` was tuned for (its bottom edge is
+genuinely dark, so no column scan can find it), and the chevron inside is *cyan too* — brighter than
+the membrane — so crossings are found by cyan-ness and paired at the expected radius, never by
+"outermost bright thing on the line".
+
+> Sign and date here when green: ______________
+
 ## 2. v3.0 features matrix
 
 | Feature | Check |
