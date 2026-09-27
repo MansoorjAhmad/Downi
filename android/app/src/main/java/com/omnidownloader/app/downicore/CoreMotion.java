@@ -74,6 +74,28 @@ public final class CoreMotion {
     public static final long CAPTURE_PULSE_MS = 150;
     public static final long REACH_FADE_MS = 200;
 
+    // ---- THE AMBIENT LOOP'S OWN BUDGET (device-measured, vivo V2058, 2026-09-27) ---------------
+    // `core_idle_ready` is the one LOOPING composition (CoreLottie.loops) and it is also the file
+    // the DETECTED state plays — so on any video screen the Core re-rendered a 60 fps composition
+    // forever. Measured then: the app's own threads burned 55 % of a core (RenderThread 23 % +
+    // main thread 18 % + the Mali driver 8 %) and pulled surfaceflinger (19 %) and the GPU composer
+    // (10 %) with it, on a phone whose foreground video app sat at 10 %. That is what the owner
+    // felt as "slow", and it is what the phone killed the app for: `com.vivo.abe`/the LMK ended it
+    // minutes later, and a vendor force-stop also clears `enabled_accessibility_services`, so the
+    // Core vanished until DOWNI was opened again. The look stays; the drawing is budgeted:
+    /** The ambient (looping) look redraws at this cadence — 24 fps, not the display's 60. */
+    public static final long AMBIENT_FRAME_MS = 42;
+    /** ...and it breathes for this long after a state change, then holds its last frame in silence. */
+    public static final long AMBIENT_LOOP_WINDOW_MS = 6_000;
+    /**
+     * What a ValueAnimator needs ON TOP of the display's own ~16 ms frames to land on
+     * {@link #AMBIENT_FRAME_MS} — {@code ValueAnimator.setFrameDelay} (API 24) is additive, and the
+     * DOWNLOADING sheen is the one other animation that can run for minutes at a time. Its 360 deg in
+     * 8 s is 45 deg/s = 1.9 deg per frame at this cadence, which is below what the eye resolves on a
+     * 64 dp disc; the alternative was 60 fps repaints of a floating window for the whole download.
+     */
+    public static final long AMBIENT_EXTRA_DELAY_MS = AMBIENT_FRAME_MS - 16L;
+
     /** Smooth S-curve (sheet 6, "Easing curve"): slow start, fast middle, soft landing. */
     public static float easeInOut(float t) {
         if (t <= 0f) return 0f;

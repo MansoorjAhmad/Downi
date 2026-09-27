@@ -289,6 +289,46 @@ detached — it is `nodeAnim` now, cancelled by `cancelAnim()` on every `reachTo
 
 > Sign and date here when green: ______________
 
+## 0h. V3.3 Core 2.0 — M8 the render budget (the Core's own animation vs the vendor kill)
+
+> Pass started **2026-09-27**, vivo V2058, build **48 / v3.2.0** (spike-signed). **The phone dropped
+> off USB mid-pass** (`adb devices` empty, no mDNS/wireless target), so the cells that MEASURE this
+> change are **owed** and are written out below as commands rather than as results. The forensic
+> cells that motivated it were read off the live device in the same pass and keep their raw evidence.
+
+**Why.** The owner's report is that DOWNI goes slow and then the Core is simply *gone*.
+`dumpsys activity exit-info com.omnidownloader.app` answers the second half with eight FORCE STOPs,
+six of them naming the vendor power engine — and no crash on any of them:
+
+```
+ApplicationExitInfo #1: timestamp=2026-09-27 21:31:54.638 pid=22600 process=com.omnidownloader.app
+  reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0 importance=125 pss=168MB rss=351MB
+  description=stop com.omnidownloader.app due to stop by com.vivo.abe state=71 bytes trace=null
+#3  21:11:53.555 pss=168MB   #4  20:31:51.620 pss=94MB    #5  20:18:56.787 pss=49MB
+#9  19:28:51.900 pss=247MB   #11 18:24:05.934 stop by 23966  #13 18:23:25.021  #15 18:21:49.577
+```
+
+The process was alive for minutes each time (94–247 MB PSS), and a vendor force stop also clears
+`enabled_accessibility_services` — which is exactly why the Core is gone until DOWNI is opened again
+(`stopped=true`, `enabled_accessibility_services` → `null` on this phone). The exemption route is
+already exhausted here: `cmd deviceidle whitelist` lists `user,com.omnidownloader.app,10548`,
+JobScheduler's exemption list contains `10548`, and `appops get com.omnidownloader.app` shows
+`RUN_IN_BACKGROUND: allow` + `RUN_ANY_IN_BACKGROUND: allow`. So the lever left is what the process was
+doing while it waited: the one looping composition, repainting a floating window at 60 fps on every
+video screen (see the M8 entry in `CHANGELOG.md`).
+
+| # | Check | Evidence |
+|---|---|---|
+| 0h-1 | **Owed** — the ambient window really ends: the Core stops drawing once it is over | ⏳ `powershell -NoProfile -ExecutionPolicy Bypass -File tools\core_idle_cost.ps1 -State detected -Minutes 3 -SampleSeconds 30`. Expect `frames` to grow in the first sample and then be **flat** — the pre-M8 build climbs forever. Same cell with `-State progress` shows the sheen's capped cadence |
+| 0h-2 | **Owed** — the budget is readable and a hidden Core is parked | ⏳ `state detected` + `stage` in the same push (`amb=1 run=true`), again after 6 s (`amb=0 run=false`), then `hide` + `stage` (`held=1 run=false`). `tools\core_motion_probe.ps1` already probes in exactly this shape |
+| 0h-3 | **Owed** — the M4/M5/M6 gates still pass at the new cadences | ⏳ `tools\core_motion.ps1` + `python tools\core_state_audit.py frames test_out\core_motion` (C5), `tools\core_touch.ps1` (C3), `tools\core_c6.ps1` (C6). The DETECTED control step is a 2.6 s hold — inside the 6 s window — so `control motion >= 5.0` must still pass |
+| 0h-4 | **Owed** — the zero-touch tap still delivers with the shorter first read | ⏳ a Core tap on a Reel: `CHAIN_CLIP_TRY n=1/6 focus=true got=yes` → `CHAIN_DELIVER_OK route=clipboard` → `RUN_END delivered=true ms=…` (3 909 ms on the previous build; the first read is 150 ms earlier, so it must not be slower) and the file on disk |
+| 0h-5 | The kill trigger is real, named, and not a crash | ✅ six `stop by com.vivo.abe` FORCE STOPs in `dumpsys activity exit-info` (raw lines above), no `reason=4` among them |
+| 0h-6 | Build and suite | ✅ `assembleDebug` green; `tools\sign_spike.ps1` → prod cert SHA-256 `4311317…`; **115 tests / 0 failures** across 17 suites (M8 adds `CoreMotionTest.theAmbientLoopIsBudgetedAndEnds`) |
+| 0h-7 | The APK that carries it | ⏳ `app-spike-signed.apk` is built and signed; `adb install -r -d android\app\build\outputs\apk\debug\app-spike-signed.apk` was not reached — the phone was gone |
+
+> Sign and date here when green: ______________
+
 
 
 | Feature | Check |

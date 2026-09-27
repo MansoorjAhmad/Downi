@@ -177,6 +177,20 @@ public class DowniFetcherService extends AccessibilityService {
     // setFocusable(true) alone does not grant it. So the read is retried a few times behind the tap.
     private int clipTries;
     private static final int MAX_CLIP_TRIES = 6;
+    // M8: the three numbers of that window, as numbers. They were literals spread across chainStep3
+    // and clipAttempt, including a hand-computed focus hold (`500 + 6 * 250 + 400`) that had to be
+    // re-derived by hand whenever one of them moved — the drift this file's other budgets live in
+    // named constants to avoid. The first read is 350 ms, not 500: the focus pre-warm (chainStep3
+    // asks for focus the moment the share panel closes) already existed when the 500 was authored,
+    // and every retry below still covers a copy that lands late, so this only removes dead time.
+    private static final long CLIP_READY_MS = 350;
+    private static final long CLIP_RETRY_MS = 250;
+    private static final long CLIP_HOLD_TAIL_MS = 400;
+
+    /** How long the Core stays focusable for the whole read window — derived, never hand-added. */
+    private static long clipFocusHoldMs() {
+        return CLIP_READY_MS + MAX_CLIP_TRIES * CLIP_RETRY_MS + CLIP_HOLD_TAIL_MS;
+    }
 
     /**
      * Run generation, bumped by every {@link #beginChainRun()}. A run's delayed steps capture it
@@ -301,6 +315,10 @@ public class DowniFetcherService extends AccessibilityService {
                 if (core != null) core.hide();
             } else if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
                 screenOn = true;    // coreTick re-shows on the next tick over a target app
+                // M8: in the dark the tick loop now sleeps at OFFSCREEN_LOOP_MS, so the Core would
+                // come back up to five seconds late on a screen that just lit under a video. The
+                // first lit tick is immediate instead — the same shape the a11y event path uses.
+                main.post(new Runnable() { @Override public void run() { coreTick(); } });
             }
         }
     };
@@ -438,12 +456,27 @@ public class DowniFetcherService extends AccessibilityService {
         main.postDelayed(failedHold, FAILED_HOLD_MS);
     }
 
+    // M8: the loops below live as long as the service does, and until now each re-posted itself at its
+    // lit-screen cadence even in the dark — where it skips its work but is still a main-thread wakeup
+    // ~2.4 times a second, which is exactly the profile the vendor power manager answers with a FORCE
+    // STOP (see the ambient note in CoreHost). The lit cadences are untouched (every device gate was
+    // measured at them); the dark half of the phone's life runs at OFFSCREEN_LOOP_MS.
+    private static final long OFFSCREEN_LOOP_MS = 5_000;
+    private static final long CORE_CMD_POLL_MS = 800;
+    private static final long CORE_TICK_POLL_MS = 900;
+    private static final long CHAIN_CMD_POLL_MS = 1_500;
+
+    /** A loop's own cadence while the screen is on; the dark cadence while it is not (§E2). */
+    private long loopDelay(long onScreenMs) {
+        return screenOn ? onScreenMs : OFFSCREEN_LOOP_MS;
+    }
+
     // Reads fetch-spike/core.cmd — the Core's Phase A command channel:
     //   show | hide | list | size <48|56|64> | state <name> | progress <0-100> | mark <scale> | at <x> <y>
     private final Runnable corePoll = new Runnable() {
         @Override public void run() {
             if (screenOn) { try { pollCoreCmd(); } catch (Throwable t) { log("CORE_POLL_ERR " + t); } }
-            main.postDelayed(this, 800);
+            main.postDelayed(this, loopDelay(CORE_CMD_POLL_MS));
         }
     };
 
@@ -452,7 +485,7 @@ public class DowniFetcherService extends AccessibilityService {
     private final Runnable coreTickPoll = new Runnable() {
         @Override public void run() {
             if (screenOn) { try { coreTick(); } catch (Throwable t) { log("CORE_TICK_ERR " + t); } }
-            main.postDelayed(this, 900);
+            main.postDelayed(this, loopDelay(CORE_TICK_POLL_MS));
         }
     };
 
@@ -460,7 +493,7 @@ public class DowniFetcherService extends AccessibilityService {
     private final Runnable chainPoll = new Runnable() {
         @Override public void run() {
             if (screenOn) { try { pollChainCmd(); } catch (Throwable t) { log("CHAIN_POLL_ERR " + t); } }
-            main.postDelayed(this, 1500);
+            main.postDelayed(this, loopDelay(CHAIN_CMD_POLL_MS));
         }
     };
 
@@ -567,8 +600,8 @@ public class DowniFetcherService extends AccessibilityService {
             // the service exists - the first visibility tick runs NOW, the loop then steadies
             // at its 900 ms cadence.
             main.post(new Runnable() { @Override public void run() { coreTick(); } });
-            main.postDelayed(coreTickPoll, 900);
-            main.postDelayed(corePoll, 1500);
+            main.postDelayed(coreTickPoll, CORE_TICK_POLL_MS);
+            main.postDelayed(corePoll, CORE_CMD_POLL_MS);
             main.postDelayed(heartbeat, HEARTBEAT_MS);
         }
 
@@ -1752,15 +1785,17 @@ public class DowniFetcherService extends AccessibilityService {
             clipTries = 0;
             final int gen = runGen;             // a newer run invalidates these steps
             if (core != null) core.setFocusable(true);
-            postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } }, 500);
+            postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } }, CLIP_READY_MS);
             // Hold focus for the whole retry budget, then always give it back — a permanently
-            // focusable bubble would eat the platform's back key and its own touches.
+            // focusable bubble would eat the platform's back key and its own touches. (M8: the hold
+            // is derived from the window's own constants — see clipFocusHoldMs — so it can never
+            // drift away from the steps it is covering.)
             postStep(new Runnable() {
                 @Override public void run() {
                     if (gen != runGen) return;  // the run that asked for focus was superseded
                     if (core != null) core.setFocusable(false);
                 }
-            }, 500 + MAX_CLIP_TRIES * 250 + 400);
+            }, clipFocusHoldMs());
         } else if (chainClickedCopy) {
             log("CHAIN_CLIP_SUPPRESSED already_delivered");   // D-a: one delivery per tap
         }
@@ -1788,7 +1823,7 @@ public class DowniFetcherService extends AccessibilityService {
         if (url == null) {
             clipTries++;
             if (clipTries < MAX_CLIP_TRIES) {
-                postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } }, 250);
+                postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } }, CLIP_RETRY_MS);
                 return;
             }
             log("CHAIN_CLIPBOARD got=null text= tries=" + clipTries);

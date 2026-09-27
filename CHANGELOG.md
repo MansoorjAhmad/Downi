@@ -293,7 +293,57 @@ no share row still fails honestly (`CHAIN_NO_SHARE_CLICK`, `CORE_RESOLVE_FAIL wh
 `RUN_END delivered=false ms=127`) instead of dying. Suite **114 / 0**; the gate is `DEVICE_TEST.md` §0g.
 
 
-**Phase A — the Core's face.** The Core's face exists and runs on the phone: a
+**The Core's own animation was the thing getting the app killed — so it now has a budget
+(2026-09-27, in progress).** Two readings of the phone made this the next fix, ahead of any visual
+work. First, `dumpsys activity exit-info` for the package: **six** `ApplicationExitInfo` entries that
+read `reason=10 (USER REQUESTED) subreason=21 (FORCE STOP)` / `stop com.omnidownloader.app due to
+stop by com.vivo.abe` (18:23:25, 18:24:05, 19:28:51, 20:18:56, 20:31:51, 21:11:53, 21:31:54 — the
+process alive for minutes each time, 94–247 MB PSS, no crash). A vendor force stop also clears
+`enabled_accessibility_services`, which is why the Core vanished until DOWNI was opened again — and
+the app is already on `deviceidle whitelist` (`user,com.omnidownloader.app,10548`, re-applied this
+pass) and inside vivo's own exemption list, so the exemption route is exhausted. Second, what the
+process was doing meanwhile: `core_idle_ready` is the *only* looping composition
+(`CoreLottie.loops`, pinned by `CoreLottieWiringTest`) and it is also the file DETECTED plays — so
+any video screen had the Core re-rendering a 60 fps composition forever in a window floating over
+someone else's app, measured at 55 % of a core across our own threads (RenderThread 23 %, main 18 %,
+the Mali driver 8 %) plus the surfaceflinger and GPU composer it drags behind it — on a foreground
+app that sat at 10 %.
+- **The ambient budget.** `CoreMotion.AMBIENT_FRAME_MS = 42` (24 fps, not the display's 60) and
+  `AMBIENT_LOOP_WINDOW_MS = 6_000`: the looping look redraws at that cadence and only for six
+  seconds after the Core arrives or is touched (`armAmbient` on every load of a looping file), then
+  the drawable is **paused** and the frame it stopped on is held. Every other state is a short
+  one-shot and keeps the display's own rate — the budget applies to the loop and to nothing else.
+- **One gate, both doors.** `CoreHost.stageFrame()` is the only path from the composition to the
+  screen, and both ways in are intercepted: `invalidateDrawable` (how a hand-drawn `LottieDrawable`
+  asks for a repaint — a `GONE` view's `invalidate()` is a no-op, so it had to be this door) and the
+  drawable's own animator listener. A future call site cannot bypass the cap by accident.
+- **The half the frame counters could never show.** This ROM never removes the overlay window —
+  `DowniCore.hide()` only sets the view `GONE`, because re-adding it loses touch — so the DETECTED
+  look kept computing 60 fps frames *behind an invisible view*. `onVisibilityChanged` /
+  `onWindowVisibilityChanged` now park the composition (`setStageHeld`), and `stageNote()` reports
+  `amb=0/1` and `held=1`, so the budget is readable from the same channel the M4 gates already read
+  instead of being guessed at from pixels.
+- **The two other drains.** The DOWNLOADING sheen (`flow`, an 8 s loop that restarts for as long as
+  the download runs) carries the same cadence through `ValueAnimator.setFrameDelay`; and the
+  service's three polling loops now re-post at `OFFSCREEN_LOOP_MS = 5 s` while the screen is dark
+  instead of 800/900/1500 ms — they skip their work in the dark, but were still ~2.4 main-thread
+  wakeups a second, which is exactly the profile `com.vivo.abe` reacts to. The lit cadences are
+  untouched (every device gate was measured at them) and `ACTION_SCREEN_ON` fires an immediate
+  visibility tick, so nothing comes back late.
+- **The clipboard window's numbers are constants.** `CLIP_READY_MS = 350` (the focus pre-warm at
+  panel close already existed when the old `500` was authored), `CLIP_RETRY_MS = 250`, and the focus
+  hold is *derived* (`clipFocusHoldMs()`) instead of hand-computed (`500 + 6 * 250 + 400`), which is
+  the drift the rest of these budgets live in named constants to avoid. The retry budget is
+  unchanged: 6 tries still cover a copy that lands late.
+
+Verified in the build: suite **115 tests / 0 failures** across 17 suites (the new
+`CoreMotionTest.theAmbientLoopIsBudgetedAndEnds` pins the three claims — the cadence is not the
+display's, the window *ends* but outlasts the 2.6 s M4 control step, and the sheen's `setFrameDelay`
+is additive), `assembleDebug` + `tools/sign_spike.ps1` = BUILD SUCCESSFUL, prod-signed
+(`4311317…`). **Device pass owed**: the phone dropped off USB mid-session, so the two cells that
+measure this are unrun and written out as commands in `DEVICE_TEST.md` §0h —
+`core_idle_cost.ps1 -State detected` must show the frames counter stop growing once the window is
+over, and the C4/C5/C6 rigs must still be green with the new cadences.
 `TYPE_ACCESSIBILITY_OVERLAY` window that draws idle / detected / pressed / dragging / snapped /
 progress / paused / resuming / completing / complete / failed, at 48 / 56 / 64 dp. Phase A is
 visual only — no touch handling (`FLAG_NOT_TOUCHABLE`), no detection, no download path — and it is

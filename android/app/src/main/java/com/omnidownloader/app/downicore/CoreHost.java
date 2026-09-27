@@ -16,6 +16,7 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.SweepGradient;
 import android.graphics.drawable.Drawable;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 
@@ -153,6 +154,16 @@ public final class CoreHost extends View {
     private float markLagX, markLagY;                // interior slosh (gel physics, V-3)
     private float squashX = 1f, squashY = 1f;        // edge-snap gel deformation (V-3)
     private boolean animCancelled;                   // a cancelled transition must never settle
+
+    // The ambient (looping) stage's budget — see CoreMotion.AMBIENT_*. `stageAmbient` is true only
+    // while the current file LOOPS (core_idle_ready, the DETECTED look): every other state's file is a
+    // short one-shot that keeps the display's full rate, and the states with no file draw the static
+    // art. Armed by {@link #armAmbient} on every load of a looping file, and only ever cleared by a
+    // non-looping file, by the end of the window ({@link #holdAmbient}), or by a detach.
+    private boolean stageAmbient;
+    private long stageLoopUntil;                     // uptime when the breath must stop
+    private long stageFrameAt;                       // last ambient repaint (rate cap)
+    private boolean stageHeld;                       // paused by the window being invisible
 
     private Shader haloIdle, haloHot, haloErr, haloNeutral, sweep;
     private float cx, cy, r, rIn;
@@ -323,6 +334,10 @@ public final class CoreHost extends View {
             flow.setDuration(8000L);
             flow.setRepeatCount(ValueAnimator.INFINITE);
             flow.setRepeatMode(ValueAnimator.RESTART);
+            // M8: the sheen is the one animation that outlives a state change (an 8 s loop that keeps
+            // restarting for as long as the download runs), so it carries the ambient cadence too —
+            // the frame rate is a budget, not a default (see CoreMotion.AMBIENT_EXTRA_DELAY_MS).
+            flow.setFrameDelay(CoreMotion.AMBIENT_EXTRA_DELAY_MS);
             flow.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
                 @Override public void onAnimationUpdate(ValueAnimator a) {
                     flowDeg = 360f * (Float) a.getAnimatedValue();
@@ -386,6 +401,7 @@ public final class CoreHost extends View {
         if (flow != null) { flow.cancel(); flow = null; }
         if (orbit != null) { orbit.cancel(); orbit = null; }
         if (stage != null) { stage.cancelAnimation(); stage = null; stageAsset = null; }
+        clearAmbient();                          // a detached Core holds no budget and no window
         super.onDetachedFromWindow();
     }
 
@@ -599,14 +615,126 @@ public final class CoreHost extends View {
      * `run=true` while its 300-750 ms are on screen, and a settled frame with `run=false` after.
      * Without them, "the composition never animated" and "it animated but nothing repainted" are
      * the same reading from the outside — which is exactly what cost the M4 pass two runs.
+     *
+     * M8 adds the budget to this line: `amb=1` while the looping READY look is still breathing (see
+     * {@link #armAmbient}) and `held=1` while the window is not visible. Both change `run`, so they
+     * have to be readable from the outside: `run=false` on a looping file means the ambient window is
+     * over or the Core is hidden — the budget working — and NOT that the composition failed to start.
      */
     public String stageNote() {
         return "stage=" + stageAsset
                 + (stageAsset != null ? " n=" + stageLayers : "")
                 + (stage != null ? " f=" + stage.getFrame() + " run=" + stage.isAnimating() : "")
+                + (CoreLottie.loops(stageAsset) ? " amb=" + (stageAmbient ? 1 : 0) : "")
+                + (stageHeld ? " held=1" : "")
                 + (stageDrawFirst != null ? " draws=" + stageDraws + " " + stageDrawFirst : "")
                 + (stageDrawErr != null ? " err=" + stageDrawErr : "")
                 + (stageAsset == null && stageError != null ? " err=" + stageError : "");
+    }
+
+    // ---------- M8: the ambient budget (CoreMotion.AMBIENT_*) ----------
+    // WHAT THIS IS FOR. `core_idle_ready` is the one loop in the shipped set, and it is also the file
+    // the DETECTED state plays — so on any video screen the Core re-rendered a 60 fps composition
+    // forever, in a window floating over someone else's app. Measured on the owner's phone: our own
+    // threads burned 55 % of a core and dragged surfaceflinger and the GPU composer with them, on a
+    // foreground app that sat at 10 % — which is what the vendor power manager (`com.vivo.abe`)
+    // answered with a FORCE STOP, and a force stop also clears `enabled_accessibility_services`, so
+    // the Core vanished until DOWNI was opened again (dumpsys activity exit-info, six times).
+    // The look is unchanged: the breath still starts whenever the Core arrives on a video or the user
+    // touches it, at 24 fps instead of 60, for CoreMotion.AMBIENT_LOOP_WINDOW_MS, and then the frame
+    // it stopped on is held. Everything else in the state machine is a short one-shot and keeps the
+    // display's own rate — the budget applies to the loop and to nothing else.
+
+    /**
+     * Arms the looping look's budget. Called on every (re)load of a looping file, i.e. when the Core
+     * actually arrives somewhere or is touched — a breath nobody asked for is the drain.
+     */
+    private void armAmbient() {
+        stageAmbient = true;
+        stageFrameAt = 0L;
+        stageLoopUntil = SystemClock.uptimeMillis() + CoreMotion.AMBIENT_LOOP_WINDOW_MS;
+    }
+
+    /** The current file does not loop: full rate, no window (see {@link #stageFrame}). */
+    private void clearAmbient() {
+        stageAmbient = false;
+        stageFrameAt = 0L;
+        stageLoopUntil = 0L;
+    }
+
+    /**
+     * A frame of the composition asks to be seen. This is the ONLY door from the stage to the screen
+     * (the drawable is hand-drawn into this view's canvas, so it reaches us through
+     * {@link #invalidateDrawable} and through its own animator listener — both land here), which makes
+     * it the one place the budget can be enforced and the one place it cannot be bypassed.
+     */
+    private void stageFrame() {
+        if (stageHeld) return;                     // nobody can see it: no repaint at all
+        if (!stageAmbient) { invalidate(); return; }   // a one-shot keeps the display's own rate
+        long now = SystemClock.uptimeMillis();
+        if (now >= stageLoopUntil) { holdAmbient(); return; }
+        if (stageFrameAt != 0L && now - stageFrameAt < CoreMotion.AMBIENT_FRAME_MS) return;
+        stageFrameAt = now;
+        invalidate();
+    }
+
+    /**
+     * The ambient window is over: the composition stops where it is and the Core holds that frame in
+     * silence. Pausing the drawable matters as much as skipping the repaint — an unpaused Lottie
+     * animator keeps computing every layer's value at 60 fps on the main thread of the accessibility
+     * service for a frame that is never drawn.
+     */
+    private void holdAmbient() {
+        stageAmbient = false;
+        if (stage != null && CoreLottie.loops(stageAsset)) stage.pauseAnimation();
+    }
+
+    /**
+     * The composition's own repaints obey the budget above. View.invalidateDrawable only honours
+     * {@link #verifyDrawable}, and verifyDrawable has accepted the stage since M4 precisely so its
+     * frames reach the screen — so this override is the gate on that door, and it must still call
+     * through for anything that is not the stage.
+     */
+    @Override public void invalidateDrawable(Drawable who) {
+        if (who == stage) { stageFrame(); return; }
+        super.invalidateDrawable(who);
+    }
+
+    /**
+     * A hidden Core keeps its frame, not its clock.
+     *
+     * This ROM never removes the overlay window — {@code DowniCore.hide()} only sets this view GONE,
+     * because re-adding it loses touch — so the DETECTED look used to keep computing 60 fps frames
+     * behind an invisible view, and the framework silently dropped every one of those repaints (a
+     * GONE view's invalidate() is a no-op), which is why that cost never showed up as frames rendered.
+     * Pausing on GONE is what makes the Core cost nothing while it is not on screen; the same holds
+     * for a window the system hides under us.
+     */
+    private void setStageHeld(boolean held) {
+        if (stageHeld == held) return;
+        stageHeld = held;
+        if (stage == null) return;
+        if (held) {
+            stage.pauseAnimation();
+            return;
+        }
+        if (CoreLottie.isScrubbed(stageAsset)) return;         // the ring is driven by progress
+        boolean loops = CoreLottie.loops(stageAsset);
+        boolean withinWindow = SystemClock.uptimeMillis() < stageLoopUntil;
+        stageAmbient = loops && withinWindow;
+        if (!loops || withinWindow) {                          // a one-shot finishes its own story
+            stageFrameAt = 0L;
+            stage.playAnimation();
+        }
+        invalidate();
+    }
+
+    @Override protected void onVisibilityChanged(View changed, int visibility) {
+        if (changed == this) setStageHeld(visibility != VISIBLE);
+    }
+
+    @Override protected void onWindowVisibilityChanged(int visibility) {
+        setStageHeld(visibility != VISIBLE);
     }
 
     /**
@@ -631,6 +759,7 @@ public final class CoreHost extends View {
             stageAsset = null;
             stageError = null;
             stageLayers = -1;
+            clearAmbient();                        // the static art has no clock to budget
             return;
         }
         boolean same = want.equals(stageAsset) && stage != null;
@@ -643,6 +772,7 @@ public final class CoreHost extends View {
                 }
                 stageAsset = null;
                 stageLayers = -1;
+                clearAmbient();
                 return;
             }
             stage = loaded;
@@ -655,12 +785,21 @@ public final class CoreHost extends View {
         placeStage();
         stage.setAlpha(255);
         if (CoreLottie.isScrubbed(want)) {
+            clearAmbient();
             stage.setProgress(progress);           // sheet 4: the ring IS the fraction
         } else if (restart || !same) {
-            stage.setRepeatCount(CoreLottie.loops(want) ? LottieDrawable.INFINITE : 0);
+            // M8: only the looping READY look needs a budget; everything else is a short one-shot
+            // that keeps the display's own rate and then holds its last frame anyway (repeat 0).
+            boolean loops = CoreLottie.loops(want);
+            if (loops) armAmbient(); else clearAmbient();
+            stage.setRepeatCount(loops ? LottieDrawable.INFINITE : 0);
             stage.setProgress(0f);
             stage.playAnimation();
         }
+        // M8: a state change while the Core is not on screen must not restart the clock either —
+        // the file is loaded and parked on its first frame, and {@link #setStageHeld} plays it when
+        // the window is visible again.
+        if (stageHeld) stage.pauseAnimation();
     }
 
     /**
@@ -696,7 +835,10 @@ public final class CoreHost extends View {
             // during some other repaint. That is the second half of the same M4 fault: core_pause
             // measured its first frame's ring opacity for 5.7 s, and core_complete's merge never
             // appeared, no matter how long it was left on screen.
-            d.addAnimatorUpdateListener(a -> invalidate());
+            // M8: that repaint now goes through {@link #stageFrame}, which is where the ambient
+            // looping look's budget is enforced (24 fps, then a hold) — and {@link #invalidateDrawable}
+            // below is the other door into the same gate, because Lottie also invalidates itself.
+            d.addAnimatorUpdateListener(a -> stageFrame());
             // Pin the tile to the layer itself as well: ImageLayer checks a value callback before it
             // asks the composition for an asset, so the authored orb is what draws even if an asset
             // lookup fails on the way (image layers are the one thing Lottie resolves at draw time).
