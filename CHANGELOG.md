@@ -126,8 +126,9 @@ includes the new `ip`/`op` assertion.
 Outstanding (M3–M7 of V3.3): the state-machine rename, wiring the now-measured progress-ring band
 into `tools\core_state_audit.py` (`scan_ring` is still tuned to Fetcher 1.0's stroked rim, so it
 reads "no rim at all" on the authored ring — the band is measured now, see `DEVICE_TEST.md` §0b,
-M2-5), touch-physics polish and the final device pass — plus the owner's two §6 decisions and the
-strips review now waiting in `test_out\core_visual_m2b\_review_states.jpg`.
+M2-5), touch-physics polish and the final device pass — plus the owner's §6 failure/unsupported
+hexes and the strips review now waiting in `test_out\core_visual_m2b\` (states, progress, and the
+live 48/56/64 dp comparison that settled the **64 dp default** — owner ruling 2026-09-27).
 
 ## V3.2.0 — The Fetcher (Downi Core), shipped 2026-09-26
 
