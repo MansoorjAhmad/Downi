@@ -1221,6 +1221,13 @@ public class DowniFetcherService extends AccessibilityService {
             if (lower.equals("show")) { coreManualVisibility = Boolean.TRUE; core.show(); return; }
             if (lower.equals("hide")) { coreManualVisibility = Boolean.FALSE; core.hide(); return; }
             if (lower.equals("list")) { log("CORE_STATES " + CoreStates.list()); return; }
+            if (lower.equals("stage")) {
+                // M4 bench: the stage's live animation (file, frame, running) on demand. The
+                // CORE_STATE line only carries it at the instant of a state change, so the question
+                // "did that composition actually play?" needs a probe of its own.
+                log("CORE_STAGE " + core.stageNote());
+                return;
+            }
             if (parts.length >= 2 && parts[0].equals("size")) {
                 core.setSizeDp(Integer.parseInt(parts[1]));
                 return;

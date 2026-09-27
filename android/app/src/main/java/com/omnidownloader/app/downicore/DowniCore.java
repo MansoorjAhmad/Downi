@@ -81,6 +81,13 @@ public final class DowniCore {
     public float progress() { return view.progress(); }
     public float markScale() { return view.markScale(); }
 
+    /**
+     * What the authored stage is drawing right now (M4 bench). {@link #setState} logs the note only
+     * at the instant of a state change, which cannot answer the motion questions: a caller that
+     * wants to know whether a composition is still animating, and on which frame, asks again later.
+     */
+    public String stageNote() { return view.stageNote(); }
+
     public boolean isShown() {
         if (!attached || !visible) return false;
         try { return view.isAttachedToWindow() && view.getVisibility() == View.VISIBLE; }

@@ -145,7 +145,46 @@ ground truth for every band), and `tools\core_review_sheets.ps1` invoked the aud
 "must draw its bars" assertion now reports that the bars are baked into the art (M1-2 measures them
 by mark px, 599 px against idle's 1153) instead of flagging a check that can no longer apply.
 
-Outstanding (M3–M7 of V3.3): the state-machine rename, touch-physics polish and the final device
+**Milestone 4 — the C5 motion contract holds on the phone: freeze, resume and completion are green,
+and the gate that measures them was itself mis-timed.** C5 is a statement about TIME, so it needs a
+movie: `tools\core_motion.ps1` screen-records a scripted pass, ffmpeg extracts every frame at 30 fps,
+and `tools\core_state_audit.py frames` measures each frame's painted arc, centre bloom and motion
+against the rig's own `segments.csv`. On `test_out\core_motion` (869 frames, `CORE_ATTACH=2`,
+`SERVICE_UNBIND=0`) it now reports **`VERDICT 0 of the C5 motion claims failed`**:
+
+- **control** — the looping READY look moves (move_max 32.9 ≥ 5.0), so a frozen PAUSED reading is the
+  ring stopping, not a still screen (or a dead rig);
+- **freeze** — PAUSED holds **one 5.5 s frozen run** (both the disc-wide mean and the new ring-annulus
+  mean ≤ 1.0) while its arc stays at **61 %**, the same 61 % it read before the pause; and the two
+  stills taken 2.6 s apart inside the hold are **pixel-identical** (`diff`: mean|delta| 0.00,
+  0 pixels changed > 20, tol 6) — the second, independent instrument;
+- **resume** — RESUMING's arc measures **220° = the 220° it had before the pause** (61 %), not 0;
+- **complete** — the ring closes at 22 633 ms and the centre's merge blooms at 25 367 ms: **ring
+  first**, then COMPLETE holds 359°.
+
+The first attempt at this gate failed 2 of the 4 claims, and the app was not at fault — the rig was.
+The device's own log pinned it to the millisecond: `CORE_CMD cmd=progress 62` is stamped 17:19:42.760
+and the ring lights on the very next frame (frame t 3605 ms, with the video's t=0 = device −29.5 s —
+consistent to a frame with three other `CORE_STATE` anchors), while that step's window had closed
+**138 ms earlier**, so its "settled" slice held pre-command frames and the comparison read 220° vs
+24°. Fixed at the measuring end, not by loosening the claim: the rig holds the two ring-bearing steps
+4.4 s (the poller serves a push 1.0–1.6 s later) so the change lands inside its own step, and the
+analyzer now watches the **ring annulus** as well as the whole disc — a 2.6 dp stroke is ~2 % of the
+disc's area, so a progress-only change is nearly invisible to the disc mean. The same stricter pair of
+metrics decides the frozen runs, so a hold that keeps the orb still while the ring's sheen keeps
+turning can no longer pass as a freeze. New bench channel to ask the question directly: `core.cmd
+stage` logs `CORE_STAGE` on demand (`CoreHost.stageNote()`), because `CORE_STATE` only carries the
+stage at the instant of a change.
+
+Two app-side faults the first pass did expose are fixed with it, and both were invisible from the
+source: the auto-settle (COMPLETING → COMPLETE, RESUMING → PROGRESS) now loads the promoted state's
+file (`updateStage(true)`) — without it `core_complete`'s ring-closing and merge never played on the
+real finish path, because the promotion left the stage cleared — and the stage's frames now reach the
+screen at all (`CoreHost.verifyDrawable` plus an animator update listener), because a hand-drawn
+`LottieDrawable` is not the view's background, so `View.invalidateDrawable` silently dropped every
+repaint it asked for. That second one is what "core_pause measured its first frame for 5.7 s" was.
+
+Outstanding (M3, M5–M7 of V3.3): the state-machine rename, touch-physics polish and the final device
 pass — plus the owner's §6 failure/unsupported hexes and the strips review now waiting in
 `test_out\core_visual_m2b\` (states, progress, and the live 48/56/64 dp comparison that settled the
 **64 dp default** — owner ruling 2026-09-27).

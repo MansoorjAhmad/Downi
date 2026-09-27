@@ -106,6 +106,59 @@ For each ✅: file exists in Vault, size > 0 KB, plays with audio, correct forma
 > 4K demo (e.g. Big Buck Bunny) is a ~258 MB 1080p download — on a slow link that looks like a
 > stalled engine. A 19-second clip (e.g. "Me at the zoo") proves the same path in seconds.
 
+## 0c. V3.3 Core 2.0 — M4 on-device C5 motion gate (freeze / resume / completion, in time)
+
+> Device pass **2026-09-27** — vivo V2058, spike-signed debug build (`app-spike-signed.apk`,
+> installed 16:35:33), `tools\core_motion.ps1` → `test_out\core_motion` (869 frames at 30 fps from a
+> 29 s screen recording, 52.2 s, `CORE_ATTACH=2`, `SERVICE_UNBIND=0`), verdict from
+> `tools\core_state_audit.py frames` (`_m4_frames.log`, `EXIT=0`).
+>
+> The first attempt at this gate (`test_out\core_motion_a`, `_m4_frames_a.log`) failed **2 of the 4
+> claims** — the freeze/resume pair — and the rig was at fault, not the Core (item 1 below). Both
+> passes are kept so the fault is auditable.
+
+| # | Check | Evidence |
+|---|---|---|
+| M4-0 | The instrument is alive | ✅ the motion CONTROL: the looping READY look (`core_idle_ready`) moves **move_max 32.91 ≥ 5.0** over its step, so a frozen PAUSED reading is the ring stopping, not a still screen |
+| M4-1 | PAUSED freezes — no motion, same ring | ✅ **one frozen run of 167 frames = 5 533 ms** (both the disc-wide mean and the ring-annulus mean ≤ 1.0, the stricter test added with this milestone), and the arc across it reads **220° = 61 %** — the same 61 % measured before the pause (frozen runs span 176–189° in the narrow band, 220° swept over the ring's radii). Independent second instrument, two stills 2.6 s apart inside the hold: `diff` → `mean|delta| 0.00`, **0 pixels changed > 20** of 176 px window, `frozen PASS` |
+| M4-2 | RESUME picks up where it stopped | ✅ RESUMING's arc measures **220° against the 220° before the pause (61 %), not 0** — the download's own percentage is the same number before and after, so the ring cannot restart |
+| M4-3 | COMPLETE closes the ring before the merge | ✅ the full circle arrives at **22 633 ms** and the centre's bloom peaks at **25 367 ms** (148.6 luma against 49.4 at rest): **ring first, merge after**, then COMPLETE holds **359°**. (The merge only became visible with the `updateStage(true)` fix in item 2 — the pre-fix promotion drew `stage=null`.) |
+| M4-4 | The stage's frames reach the screen | ✅ `CoreHost.verifyDrawable` + an animator update listener: a hand-drawn `LottieDrawable` is not the view's background, so `View.invalidateDrawable` used to drop every repaint the composition asked for. Before: "`core_pause` measured its first frame for 5.7 s", the merge never appeared. After: the pause's own recede plays and COMPLETE holds its 359° |
+
+**1. The rig measured the wrong frames — and said so precisely.** The device's log stamps every
+applied command: `CORE_CMD cmd=progress 62` at **17:19:42.760**, and the ring lights on the very next
+frame (`f_0109`, video **3605 ms**); the video's `t=0` is device −29.5 s, which three other
+`CORE_STATE` anchors pin to a frame (detected 1867 ms, resuming 11 100 ms, completing 13 567 ms).
+That instant is **138 ms after the `progress62` step's window had closed**, so the step's "settled
+40 %" slice still held pre-command frames and it read 24° instead of 220° — and since the freeze and
+resume claims compare PAUSED/RESUMING against that reference, both failed on a Core that was drawing
+correctly. Two fixes, neither of which loosens a claim: the rig now holds the two ring-bearing steps
+**4.4 s** (a push is served 1.0–1.6 s later, so the change lands inside its own step), and the
+analyzer watches the **ring annulus** as well as the whole disc, because a 2.6 dp stroke is ~2 % of
+the disc's area — a progress-only change is nearly invisible to the disc mean. The same pair of
+metrics now decides the frozen runs, so a hold that keeps the orb still while the ring's sheen keeps
+turning can no longer pass as a freeze.
+
+**2. Two app faults the first pass exposed, both invisible in the source.**
+`CoreHost.updateStage(true)` on every auto-settle (COMPLETING → COMPLETE, RESUMING → PROGRESS): the
+state changes under a stage that still belongs to the old state, and the promotion used to leave it
+cleared, so `core_complete`'s ring-closing and merge never played on the real finish path — only when
+`state complete` was typed by hand. And the `verifyDrawable` override plus the animator update
+listener, without which the composition's frames are computed and dropped. `core.cmd stage` (new
+bench channel, logged as `CORE_STAGE`) exists because `CORE_STATE` only carries the stage at the
+instant of a change and "did that file actually play?" needs its own probe.
+
+To re-run (device on USB; the pass takes ~52 s and the verdict ~45 s, so run it detached):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\core_motion.ps1     # the pass
+powershell -NoProfile -ExecutionPolicy Bypass -File _m4_analyze.ps1           # the C5 verdict -> _m4_frames.log
+python tools\core_state_audit.py diff test_out\core_motion\core_motion_paused_a.png ^
+       test_out\core_motion\core_motion_paused_b.png --at 452,1080 --size-dp 64 --density 2.75 --fixed
+```
+
+> Sign and date here when green: ______________
+
 ## 2. v3.0 features matrix
 
 | Feature | Check |

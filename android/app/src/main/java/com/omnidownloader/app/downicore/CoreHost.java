@@ -15,6 +15,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.SweepGradient;
+import android.graphics.drawable.Drawable;
 import android.util.Log;
 import android.view.View;
 
@@ -359,6 +360,17 @@ public final class CoreHost extends View {
         else if (CoreStates.RESUMING.equals(state)) state = CoreStates.PROGRESS;
         else if (CoreStates.COMPLETING.equals(state)) state = CoreStates.COMPLETE;
         updateFlow();
+        // An auto-settle IS a state change, so it picks the promoted state's file up exactly like
+        // setState does — otherwise the state changes under a stage that still belongs to the old
+        // one. This is what made the C5 "brief bright merge" (plan §3: the energy pulls inward,
+        // there is a merge, then it settles) invisible on the real finish path: COMPLETING has no
+        // file of its own, so entering it clears the stage, and the promotion to COMPLETE used to
+        // leave it cleared — the ring's close and the bloom in core_complete never played at all
+        // (M4 device pass 2026-09-27: `state complete` typed by hand loaded `core_complete`, the
+        // COMPLETING -> COMPLETE promotion logged `stage=null`). RESUMING -> PROGRESS has the same
+        // hole: the ring the download owns only came back when a command happened to re-set the
+        // state.
+        updateStage(true);
         invalidate();                                  // the last frame of the transition
     }
 
@@ -571,14 +583,21 @@ public final class CoreHost extends View {
     public String stageAsset() { return stageAsset; }
 
     /**
-     * `stage=<file> n=<layers> draws=<n> <state of the first draw>` while the stage owns the state,
-     * else `stage=null err=<why>`. The draw half exists because "loaded but paints nothing" — a
-     * wrong bounds, an invisible drawable, an image asset that never resolves — looks identical to
-     * "never loaded" from outside.
+     * `stage=<file> n=<layers> f=<frame> run=<isAnimating> draws=<n> <state of the first draw>`
+     * while the stage owns the state, else `stage=null err=<why>`. The draw half exists because
+     * "loaded but paints nothing" — a wrong bounds, an invisible drawable, an image asset that
+     * never resolves — looks identical to "never loaded" from outside.
+     *
+     * `f`/`run` are the live animation, read at the moment the note is taken: a file that is
+     * supposed to play (any state but the scrubbed PROGRESS one) has to show a frame past 0 with
+     * `run=true` while its 300-750 ms are on screen, and a settled frame with `run=false` after.
+     * Without them, "the composition never animated" and "it animated but nothing repainted" are
+     * the same reading from the outside — which is exactly what cost the M4 pass two runs.
      */
     public String stageNote() {
         return "stage=" + stageAsset
                 + (stageAsset != null ? " n=" + stageLayers : "")
+                + (stage != null ? " f=" + stage.getFrame() + " run=" + stage.isAnimating() : "")
                 + (stageDrawFirst != null ? " draws=" + stageDraws + " " + stageDrawFirst : "")
                 + (stageDrawErr != null ? " err=" + stageDrawErr : "")
                 + (stageAsset == null && stageError != null ? " err=" + stageError : "");
@@ -663,6 +682,15 @@ public final class CoreHost extends View {
             // a loaded core_complete n=3 showed no ring, because its trim was still at frame 0).
             d.setVisible(true, false);
             d.setCallback(this);
+            // ...and repaint this view on every frame of the animation. A hand-drawn Drawable
+            // cannot do that itself: Lottie asks for a repaint through {@link Drawable.Callback},
+            // and View.invalidateDrawable only honours verifyDrawable (background / foreground
+            // drawables, see the override below), so the composition's frames would be computed
+            // and then dropped — the stage would sit on whichever frame happened to be drawn
+            // during some other repaint. That is the second half of the same M4 fault: core_pause
+            // measured its first frame's ring opacity for 5.7 s, and core_complete's merge never
+            // appeared, no matter how long it was left on screen.
+            d.addAnimatorUpdateListener(a -> invalidate());
             // Pin the tile to the layer itself as well: ImageLayer checks a value callback before it
             // asks the composition for an asset, so the authored orb is what draws even if an asset
             // lookup fails on the way (image layers are the one thing Lottie resolves at draw time).
@@ -763,6 +791,17 @@ public final class CoreHost extends View {
         } catch (Throwable t) {
             return "tree_err=" + t;
         }
+    }
+
+    /**
+     * The stage is drawn into this view's canvas by hand, never set as the background, and the
+     * default implementation only accepts the background / foreground drawables — so without this
+     * every invalidation the drawable sends is dropped and its frames never reach the screen (see
+     * the callback note in {@link #loadStage}). {@link #drawStage} has always assumed this works;
+     * this is what makes the assumption true.
+     */
+    @Override protected boolean verifyDrawable(Drawable who) {
+        return who == stage || super.verifyDrawable(who);
     }
 
     private boolean drawStage(Canvas c) {
