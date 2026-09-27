@@ -178,16 +178,18 @@ python tools\core_state_audit.py diff test_out\core_motion\core_motion_paused_a.
 | M5-2 | Drag follows the finger | ✅ pixels: the Core's centre travelled **539 → 305** while the finger went **540 → 300** (390-frame video, `touch` mode). The service agrees (`up dragging=true`) |
 | M5-3 | Edge snap magnets only near an edge (C3 §3, 12 dp) | ✅ the service's own log, with its own control: released **20 px from the left edge → `CORE_MOVED x=0 y=1080`** (magnetised to the edge); released **218 px from it → `CORE_MOVED x=218 y=1080`** (left exactly where the finger let go). Repeated identically in both passes |
 | M5-4 | No trace after the gesture | ✅ the settle step measures the ring back at its rest radius (53.0 px vs the 53.0 px baseline) and the aspect back at 1.000; nothing moves after `CORE_MOVED` |
-| M5-5 | Press compresses ~10 % (C3) | ⚠️ **not yet resolved by the pixel instrument** — the rig now proves the *press itself* happens (a 232 ms held press, above), but the tracker reads a bogus 32 px while the art is scaled down and the state changes, so "how much" is unmeasured. The composition authors it: `core_press.json` scales 100 → 90 → 103.5 → 100 over 24 frames, which is C3's "~10 % compression + overshoot on tap" |
-| M5-6 | Snap flattens on the contact axis, bulges the other | ⚠️ **not yet resolved**. The mechanism is in code and gated (`CoreMotion.snapSquash(t)` peaks at exactly 0.10 and is zero at both ends; `DowniCore` applies it as `1-env, 1+env*0.5` on the contact axis and mirrored on the other), but this pass could not measure the ellipse: the chord method that solves the vertical extent is ill-conditioned at rest (a 2 px error swings it 50 → 70 px) and the tracker's axis ratio is only trustworthy while it holds the ring |
+| M5-5 | Press compresses ~10 % (C3) | ✅ **measured: the art's edge fell to 50.0 px = 10.7 % of the 56.0 px rest edge** at 3133 ms of the press step, then swelled back to 56.0 px (100 % — the rebound), against sheet C3's "~10 % compression + overshoot". The thin ring could not resolve this (its crossings are narrow, partly unlit, and sit beside a fixed-radius host track, and `core_press.json` swaps the composition under it); the *whole art* scales, so the instrument is the angle-averaged radial profile's steepest falloff (`profile_radius` in `core_state_audit.py`), which is also brightness-invariant |
+| M5-6 | Snap flattens on the contact axis, bulges the other | ⚠️ **not resolved by any instrument yet, and the tool now says so instead of guessing.** The vertical extent cannot be measured on this look: the art's membrane is genuinely dark along its bottom, so no column or chord scan finds it (and the chord solve is ill-conditioned at rest — 2 px of noise swings it 50 → 70 px). The mechanism is in code and gated: `CoreMotion.snapSquash(t)` peaks at exactly 0.10 and is zero at both ends, `DowniCore` applies it as `(1-env, 1+env*0.5)` on the contact axis and mirrored on the other |
 
 **Rig facts worth keeping.** `adb shell input tap` injects **down and up 4 ms apart** (measured:
 17:44:38.450 → .454), which cuts a 400 ms press composition off after 4 ms — so the press step is a
-**held** swipe at one point (300 ms) instead. And the analyzer had to be taught the art's own look:
-the resting membrane is far dimmer than the download ring `is_arc` was tuned for (its bottom edge is
-genuinely dark, so no column scan can find it), and the chevron inside is *cyan too* — brighter than
-the membrane — so crossings are found by cyan-ness and paired at the expected radius, never by
-"outermost bright thing on the line".
+**held** swipe at one point (300 ms) instead. The position claims belong to the service's own
+`CORE_MOVED` line: the pixel tracker loses the Core through the snap's 216 px glide, and the tool
+prints "NOT DECIDED HERE" for those claims rather than inventing a number. And the analyzer had to be
+taught the art's own look: the resting membrane is far dimmer than the download ring `is_arc` was
+tuned for (its bottom edge is genuinely dark, so no column scan can find it), and the chevron inside
+is *cyan too* — brighter than the membrane — so ring crossings are found by cyan-ness and paired at
+the expected radius, while the *press* is measured on the whole art's edge instead.
 
 > Sign and date here when green: ______________
 

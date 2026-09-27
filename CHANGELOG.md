@@ -204,11 +204,15 @@ from it** it stayed at **`x=218`** — C3's "only within 12 dp, and never forced
 
 Two rig findings worth more than they look. `adb shell input tap` injects down and up **4 ms** apart,
 which cuts a 400 ms press composition off after 4 ms — the first pass therefore read "the press does
-not compress" and the fix was the rig's (a held same-point swipe), not the Core's. And the resting
-Core's membrane is genuinely dark at its bottom edge while its chevron is cyan and *brighter*, so the
-tracker now finds the ring by cyan-ness and pairs the crossings at the expected radius. Outstanding:
-the tracker still cannot resolve the two transient *deformations* (the press's ~10 % compression and
-the snap's flatten/bulge) — they are authored and pinned in code, not yet measured in pixels.
+not compress" and the fix was the rig's (a held same-point swipe), not the Core's: with the press
+actually held, the art's edge measures **56.0 → 50.0 px = 10.7 % of rest, swelling back to 100 %**,
+which is C3's "~10 % compression + overshoot". The instrument for that is the angle-averaged radial
+profile's steepest falloff, not the thin ring: the whole art scales, while the ring's crossings are
+narrow, partly unlit and sit beside a fixed-radius host track. And the resting Core's membrane is
+genuinely dark at its bottom edge while its chevron is cyan and *brighter*, so ring crossings are
+found by cyan-ness and paired at the expected radius, and the tool prints "NOT DECIDED HERE" for the
+claims it cannot settle (position — the service's `CORE_MOVED` line is exact — and the snap's
+flatten/bulge, whose vertical extent no scan can measure on this look).
 
 Outstanding (M3, the rest of M5, M6–M7 of V3.3): the state-machine rename, the press/snap
 deformation measurements, failure/retry/unsupported and the final device
