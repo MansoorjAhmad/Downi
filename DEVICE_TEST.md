@@ -590,6 +590,22 @@ cannot reach it at all.
 
 > Sign and date here when green: **2026-09-28** — 0p-1 … 0p-5 green. **v3.3.1 is launched.**
 
+## 0p. V3.3.1 — the PUBLISHED build's smoke (V5, the Law's §9 gate) — vivo V2058
+
+> The CI-built `DOWNI-v3.3.1.apk` (41 995 009 B, ~2.8 MB leaner than the local release build — different
+> toolchain, same commit) was downloaded from the GitHub release, signature-checked, installed **in place
+> over the version already on the phone** — no uninstall — then tapped twice inside real TikTok sessions.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0p-1 | The published artefact is signed with the unchanged key | ✅ `apksigner verify --print-certs`: `DN: CN=Manso, O=OmniDownloader, C=US`, `SHA-256 431131731d…` — the same digest every release has carried since 3.0.x |
+| 0p-2 | It installs over the previous version without an uninstall | ✅ `adb install -r DOWNI-v3.3.1.apk` → `Success`; the phone then reads `versionCode=49 versionName=3.3.1` |
+| 0p-3 | A tap inside a real TikTok session delivers, on the **published** build | ✅ two taps, two files: `/sdcard/Movies/DOWNI/tiktok_7685706012287880470.mp4` (**6 879 033 B**, 14:13) and `…The Infinite Pencil Loop…mp4` (3 475 019 B, 14:12) |
+| 0p-4 | No crash across them | ✅ `logcat -b crash -T '09-28 14:05:00.000'` → nothing; `pidof com.omnidownloader.app` → alive (21697) |
+| 0p-5 | The workflows that built it were green | ✅ `gh run list`: `Release DOWNI APK` (v3.3.1) **completed success** 2m07s; `Test — Engine Smoke + Debug Build` (v3.3.1) **completed success** 1m45s; `gh release view v3.3.1` → `prerelease: false`, asset `DOWNI-v3.3.1.apk`, notes = the tagged commit's message |
+
+> Sign and date here when green: **2026-09-28** — 0p-1 … 0p-5 green. **v3.3.1 is shipped.**
+
 ## 3. Regression sweep (after any engine touch)
 
 - ✅ 09-24 Cancel mid-download (in-app card + DowniDrop): download stops, no file and no `.part`
