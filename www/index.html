@@ -85,7 +85,12 @@
          four controls still under the line, which the audit caught on the next run). min-height
          ONLY: no display change, because some of them are `flex-1` rows in the Vault and an
          inline-flex override would collapse that layout. */
+      /* Part 3 F2 (2026-09-28): the shared `btn` floor. min-WIDTH joined min-height once the Vault's
+         per-item icon buttons grew to 48 (F2c) and squeezed the card's `flex-1` Play button to
+         40.9 px — one defect traded for another, which the next audit run caught. A floor cannot
+         shrink anything: it only says no `.btn` is ever narrower than a thumb. */
       min-height: 48px;
+      min-width: 48px;
     }
     .btn:active { transform: scale(0.97); background: rgba(255, 255, 255, 0.10); }
 
@@ -114,6 +119,20 @@
       border-color: rgba(var(--accent-rgb),0.4);
       color: var(--accent);
     }
+
+    /* ---- Part 3 F2 (2026-09-28): the touch-target sweep ----
+       The platform's own minimum for a thumb is 48 dp and this is Android, so the platform line is 48.
+       C1/C2 grew the primary action and the shared `.btn`; these three classes finish the job on the
+       controls the audit still measured below it, one token each, no redesign:
+         .chip-btn  a chip that is a CONTROL (the Vault's filters) -- NOT the platform chips, which
+                    stay labels by the standing ruling (PART3_UI_PLAN.md section 4)
+         .btn-icon  an icon-only button: 35.5 px wide because the icon is 14 px and the padding is
+                    10 px a side. min-width ONLY, so the row keeps its rhythm.
+         .row-48    a row whose whole surface is the control -- the Settings rows whose visible widget
+                    is smaller than a thumb (a 20 px checkbox, a 28 px swatch, a copy row). */
+    .chip-btn { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; }
+    .btn-icon { min-width: 48px; justify-content: center; }
+    .row-48 { min-height: 48px; }
 
     /* ---- HERO VORTEX BUTTON ----
        v3.3.1: the ring and the glow used to run `infinite`, and that pair was the app's entire
@@ -166,14 +185,20 @@
       position: relative;
       overflow: hidden;
     }
-    /* Shine sweep while active */
+    /* Shine sweep while active.
+       v3.3.1 (2026-09-28): this animated `background-position`, which repaints the gradient every
+       frame. Priced with the app in the front and exactly this declaration on a visible screen
+       (tools/core_web_anim.py js + dumpsys gfxinfo + ps): 565 frames / 9 s and +12 s of CPU per 9 s
+       (~1.3 cores) -- the vortex pair's own price, for one 8 px bar. It is a `transform` now: the
+       same shine, carried by the compositor with no per-frame paint. Measured after: 0 frames.
+       (DEVICE_TEST.md 0q) */
     .bar.live > div::after {
-      content: ''; position: absolute; inset: 0;
+      content: ''; position: absolute; top: 0; bottom: 0; left: -100%; width: 100%;
       background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.55) 50%, transparent 70%);
-      background-size: 200% 100%;
       animation: sweep 1.4s linear infinite;
+      will-change: transform;
     }
-    @keyframes sweep { to { background-position: -200% 0; } }
+    @keyframes sweep { to { transform: translateX(200%); } }
 
     .sheet {
       background: var(--surface-2);
@@ -195,13 +220,30 @@
     .nav-item { color: var(--muted); border-radius: 16px; transition: all .15s ease; }
     .nav-item.on { color: #04121C; background: linear-gradient(135deg, var(--accent), var(--accent-2)); font-weight: 800; }
 
+    /* v3.3.1 (2026-09-28): the same story as the sweep above -- four small skeletons cost 557 frames /
+       9 s and +13 s of CPU per 9 s with the app in the front. The shimmer is an overlay carried by the
+       compositor now, and the static gradient stays as the base so a skeleton still reads as a
+       skeleton even if the animation never runs. `:not(.absolute)` leaves the one absolutely
+       positioned skeleton -- the inspector's thumbnail, `absolute inset-0 skel` -- exactly as it was
+       (a plain `position: relative` on .skel would have broken it). */
     .skel {
+      overflow: hidden;
       background: linear-gradient(100deg, rgba(255,255,255,0.05) 30%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 70%);
-      background-size: 200% 100%;
-      animation: shimmer 1.3s infinite linear;
       border-radius: 12px;
     }
-    @keyframes shimmer { to { background-position: -200% 0; } }
+    .skel:not(.absolute) { position: relative; }
+    .skel::after {
+      content: ''; position: absolute; top: 0; bottom: 0; left: -100%; width: 100%;
+      background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.07) 50%, transparent 70%);
+      /* The shimmer is a bounded run, not a loop: 4 passes (~5.2 s) cover every real loading window
+         and then the skeleton rests. Same reason as the vortex fix -- v3.3.1's measurement showed the
+         price of ANY running animation here is the 60 fps itself (a compositor-only transform still
+         read 563 frames / +11 s CPU per 9 s), so the only cheap animation is one that ends. */
+      animation: shimmer 1.3s linear 4 forwards;
+      will-change: transform;
+      pointer-events: none;
+    }
+    @keyframes shimmer { to { transform: translateX(200%); } }
 
     .fade-in { animation: fadeIn .28s ease both; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
@@ -318,7 +360,7 @@
           </div>
         </div>
       </div>
-      <button onclick="switchTab('settings')" class="btn w-10 h-10 flex items-center justify-center" title="Settings">
+      <button onclick="switchTab('settings')" class="btn w-12 h-12 flex items-center justify-center" title="Settings" aria-label="Settings">
         <svg viewBox="0 0 24 24" class="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
         </svg>
@@ -472,7 +514,7 @@
           </div>
           <div class="flex items-center gap-2">
             <button onclick="rescanVaultStorage()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Rescan</button>
-            <button onclick="refreshVault()" class="btn w-9 h-9 flex items-center justify-center text-zinc-300">
+            <button onclick="refreshVault()" class="btn w-12 h-12 flex items-center justify-center text-zinc-300" aria-label="Rescan the vault">
               <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.6-6.4M21 3v6h-6"/></svg>
             </button>
             <button onclick="handleOpenSystemGallery()" class="btn px-3 py-2 text-[11px] font-bold text-zinc-300">Gallery</button>
@@ -480,17 +522,17 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <button id="vaultChipAll" onclick="setVaultFilter('all')" class="chip on px-4 py-1.5 text-[10px] font-extrabold">ALL</button>
-          <button id="vaultChipVideo" onclick="setVaultFilter('video')" class="chip px-4 py-1.5 text-[10px] font-extrabold">VIDEO</button>
-          <button id="vaultChipAudio" onclick="setVaultFilter('audio')" class="chip px-4 py-1.5 text-[10px] font-extrabold">AUDIO</button>
+          <button id="vaultChipAll" onclick="setVaultFilter('all')" class="chip chip-btn on px-4 py-1.5 text-[10px] font-extrabold">ALL</button>
+          <button id="vaultChipVideo" onclick="setVaultFilter('video')" class="chip chip-btn px-4 py-1.5 text-[10px] font-extrabold">VIDEO</button>
+          <button id="vaultChipAudio" onclick="setVaultFilter('audio')" class="chip chip-btn px-4 py-1.5 text-[10px] font-extrabold">AUDIO</button>
           <button id="btnVaultLayout" onclick="toggleVaultLayout()" class="btn ml-auto px-3 py-1.5 text-[10px] font-bold text-zinc-300">List</button>
         </div>
 
         <input id="vaultSearch" type="text" placeholder="Search your media…" oninput="onVaultSearch(this.value)"
-          class="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-[12px] text-white placeholder-zinc-500 font-mono transition">
+          class="w-full row-48 bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-[12px] text-white placeholder-zinc-500 font-mono transition">
 
         <div class="flex items-center gap-2">
-          <select id="vaultSort" onchange="onVaultSort(this.value)" class="flex-1 bg-black/40 border border-white/10 rounded-2xl px-3 py-2.5 text-[11px] font-bold text-zinc-300">
+          <select id="vaultSort" onchange="onVaultSort(this.value)" class="flex-1 row-48 bg-black/40 border border-white/10 rounded-2xl px-3 py-2.5 text-[11px] font-bold text-zinc-300">
             <option value="new">Newest first</option>
             <option value="size">Largest first</option>
             <option value="name">Name (A–Z)</option>
@@ -614,32 +656,32 @@
               <p class="text-[12px] font-bold text-zinc-200">Accent color</p>
               <p class="text-[10px] mt-0.5" style="color:var(--muted)">Pick your DOWNI glow</p>
             </div>
-            <div class="flex items-center gap-2">
-              <button onclick="setAccent('cyan')" class="w-7 h-7 rounded-full border border-white/20" style="background:#22D3EE"></button>
-              <button onclick="setAccent('violet')" class="w-7 h-7 rounded-full border border-white/20" style="background:#8B5CF6"></button>
-              <button onclick="setAccent('emerald')" class="w-7 h-7 rounded-full border border-white/20" style="background:#10B981"></button>
-              <button onclick="setAccent('rose')" class="w-7 h-7 rounded-full border border-white/20" style="background:#FB7185"></button>
+            <div class="flex items-center gap-1.5">
+              <button onclick="setAccent('cyan')" class="w-12 h-12 flex items-center justify-center" title="Cyan accent" aria-label="Cyan accent"><span class="w-7 h-7 rounded-full border border-white/20 block" style="background:#22D3EE"></span></button>
+              <button onclick="setAccent('violet')" class="w-12 h-12 flex items-center justify-center" title="Violet accent" aria-label="Violet accent"><span class="w-7 h-7 rounded-full border border-white/20 block" style="background:#8B5CF6"></span></button>
+              <button onclick="setAccent('emerald')" class="w-12 h-12 flex items-center justify-center" title="Emerald accent" aria-label="Emerald accent"><span class="w-7 h-7 rounded-full border border-white/20 block" style="background:#10B981"></span></button>
+              <button onclick="setAccent('rose')" class="w-12 h-12 flex items-center justify-center" title="Rose accent" aria-label="Rose accent"><span class="w-7 h-7 rounded-full border border-white/20 block" style="background:#FB7185"></span></button>
             </div>
           </div>
-          <div class="flex items-center justify-between py-3 border-t border-white/5">
+          <label class="flex items-center justify-between py-3 row-48 border-t border-white/5 cursor-pointer">
             <div>
               <p class="text-[12px] font-bold text-zinc-200">AMOLED black</p>
               <p class="text-[10px] mt-0.5" style="color:var(--muted)">True black — on by default</p>
             </div>
             <input type="checkbox" id="chkAmoled" checked onchange="setAmoled(this.checked)" class="w-5 h-5">
-          </div>
+          </label>
         </div>
 
         <!-- Behavior -->
         <div class="card p-4 space-y-1">
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">Behavior</p>
-          <div class="flex items-center justify-between py-3 border-t border-white/5">
+          <label class="flex items-center justify-between py-3 row-48 border-t border-white/5 cursor-pointer">
             <div>
               <p class="text-[12px] font-bold text-zinc-200">Clipboard auto-detect</p>
               <p class="text-[10px] mt-0.5" style="color:var(--muted)">Banner when a video link is copied</p>
             </div>
             <input type="checkbox" id="chkClipboard" checked onchange="toggleClipboardDetect(this.checked)" class="w-5 h-5">
-          </div>
+          </label>
           <div class="py-3 border-t border-white/5">
             <p class="text-[12px] font-bold text-zinc-200">DowniDrop</p>
             <p class="text-[10px] mt-0.5" style="color:var(--muted)">Share → DOWNI grabs instantly in the background — always</p>
@@ -671,15 +713,15 @@
         <!-- About -->
         <div class="card p-4 space-y-1">
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">About</p>
-          <div class="flex items-center justify-between py-2.5 border-t border-white/5 cursor-pointer" onclick="copyAppVersion()" title="Tap to copy">
+          <div class="flex items-center justify-between py-2.5 row-48 border-t border-white/5 cursor-pointer" onclick="copyAppVersion()" title="Tap to copy">
             <span class="text-[11px]" style="color:var(--muted)">App</span>
             <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400"></span></span>
           </div>
-          <div class="flex items-center justify-between py-2.5 border-t border-white/5">
+          <div class="flex items-center justify-between py-2.5 row-48 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">Engine</span>
             <span class="text-[10px] font-mono text-zinc-300" id="aboutEngine">yt-dlp</span>
           </div>
-          <div class="flex items-center justify-between py-2.5 border-t border-white/5">
+          <div class="flex items-center justify-between py-2.5 row-48 border-t border-white/5">
             <span class="text-[11px]" style="color:var(--muted)">Developer</span>
             <span class="text-[12px] font-bold text-zinc-200">MansoorjAhmad</span>
           </div>
@@ -756,10 +798,19 @@
       </div>
       <p id="inspectorQualityNote" class="hidden text-[10px] mt-3 leading-relaxed" style="color:var(--muted)"></p>
 
-      <button id="btnConfirmDownloadQuality" onclick="proceedSelectedQualityDownload()" class="btn-hero w-full py-4 mt-4 text-[13px] font-extrabold">
-        <span id="btnConfirmDownloadText">Download</span>
-      </button>
-      <button onclick="closeInspector()" class="btn w-full py-3 mt-2 text-[11px] font-bold text-zinc-400">Cancel</button>
+      <!-- Part 3 F1 / C8 (2026-09-28): the primary action used to be the LAST child of this scrolling
+           sheet, so on a real quality list it sat below the fold and could not be tapped without
+           scrolling first (DEVICE_TEST.md 0k: device y=2416 on a 2408-px screen). It is sticky now:
+           the sheet still scrolls, the action never leaves the view. Measured on the open sheet with
+           eight quality rows: confirm top +87 px past the fold before, 0 after (0k/0q).
+           -mx-5 px-5 lets the wash span the sheet edge to edge while the sheet's own p-5 stands. -->
+      <div id="inspectorActionBar" class="sticky bottom-0 -mx-5 px-5 pt-3 pb-1 mt-3"
+           style="background:linear-gradient(180deg, rgba(0,0,0,0) 0%, var(--surface-2) 30%)">
+        <button id="btnConfirmDownloadQuality" onclick="proceedSelectedQualityDownload()" class="btn-hero w-full py-4 text-[13px] font-extrabold">
+          <span id="btnConfirmDownloadText">Download</span>
+        </button>
+        <button onclick="closeInspector()" class="btn w-full py-3 mt-2 mb-1 text-[11px] font-bold text-zinc-400">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -856,7 +907,7 @@
     <div id="playerRipple" class="absolute inset-0 z-10 pointer-events-none flex items-center justify-center opacity-0 transition-opacity duration-200">
       <span id="playerRippleText" class="px-4 py-2 rounded-2xl bg-black/70 text-white text-[13px] font-extrabold font-mono">+10s</span>
     </div>
-    <button onclick="closePlayer()" class="absolute top-3 right-3 w-10 h-10 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center z-10">
+    <button onclick="closePlayer()" class="absolute top-3 right-3 w-12 h-12 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center z-10">
       <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
     </button>
     <div id="playerBar" class="absolute bottom-0 inset-x-0 p-4 pb-7 z-10 space-y-2" style="background:linear-gradient(to top, rgba(0,0,0,.88), transparent)">
@@ -2492,10 +2543,10 @@
           <div class="p-3 space-y-1">
             <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
             <p class="text-[10px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${dateStr ? ' · ' + dateStr : ''}${item.folder ? ' · ' + escapeHtml(item.folder) : ''}</p>
-            <div class="flex gap-1.5 pt-1.5">
-              <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Play</button>
-              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
-              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            <div class="flex flex-wrap gap-1.5 pt-1.5">
+              <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn w-full py-1.5 text-[10px] font-bold text-white">Play</button>
+              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn btn-icon px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn btn-icon px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
           </div>
         </div>`;
@@ -2519,12 +2570,12 @@
           ${selecting ? '' : (isCustom ? `
             <div class="flex items-center gap-1.5 flex-shrink-0">
               <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn px-2.5 py-1.5 text-[10px] font-bold text-white">Open</button>
-              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn btn-icon px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>` : `
             <div class="flex items-center gap-1.5 flex-shrink-0">
               <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold text-white">Play</button>
-              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
-              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn btn-icon px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn btn-icon px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>`)}
         </div>`;
     }
@@ -2555,10 +2606,10 @@
           <div class="p-3 space-y-1">
             <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
             <p class="text-[10px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${item.modified ? ' · ' + new Date(item.modified).toLocaleDateString() : ''}</p>
-            <div class="flex gap-1.5 pt-1.5">
-              <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Open</button>
-              <button onclick="customVaultAction('${encodedKey}', 'share')" class="btn px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
-              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            <div class="flex flex-wrap gap-1.5 pt-1.5">
+              <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn w-full py-1.5 text-[10px] font-bold text-white">Open</button>
+              <button onclick="customVaultAction('${encodedKey}', 'share')" class="btn btn-icon px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn btn-icon px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
           </div>
         </div>`;
