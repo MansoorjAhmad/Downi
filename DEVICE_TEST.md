@@ -782,7 +782,28 @@ published tag is not moved, a new version is cut.
 > (`CB11CE76…`, versionCode 50, installed in place, unchanged by this pass); **§0t-12 closed** by 0u-2/0u-7.
 > 0u-5 is the live instance of the killer 0h-9 samples: the scheduled reading (2026-09-29 20:00 local) stays
 > in place untouched. The two test grabs are left in `/sdcard/Movies/DOWNI` (1.9 MB + 7.3 MB, hashes above)
-> for the owner to keep or clear, and **nothing was pushed** — `origin/main` is still `62296ae`.
+> for the owner to keep or clear. **Pushed the same evening** (§0v): `origin/main` is now `e712c1b` and the
+> tag `v3.3.2` is on the remote — the release is live.
+
+## 0v. The release that is live: what GitHub published, measured against what was verified — vivo V2058 (the tap is outstanding)
+
+> Measured **2026-09-28 18:05–18:30**. The push was the owner's call this evening: `git push origin main`
+> (9 commits → `e712c1b`) and `git push origin v3.3.2` (annotated → `471e3cb`). CI took the tag
+> immediately — `release.yml` run **#28** (13:09:18Z, head `471e3cb`) built, signed and published
+> **v3.3.2 at 13:11:08Z**, asset `DOWNI-v3.3.2.apk`. This section is what that asset *is*, measured against
+> the artefact §0t/§0u verified rather than assumed.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0v-1 | The release exists, and the file hashed here is the file GitHub serves | `releases/tags/v3.3.2` → published **2026-09-28T13:11:08Z**, asset `DOWNI-v3.3.2.apk`, **41 996 925 B**, API digest `sha256:a97e01f764712bc83d4c4d387ec30afa7370c723c169787d76a7e2f6e1e1ba5c`; downloaded and re-hashed locally: **`a97e01f7…ba5c`, 41 996 925 B** — digest and size match, so the download *is* the published asset. Release notes come from the tagged **commit** message (`release: v3.3.2 …`, what `release.yml` reads); the annotated tag's own long message is not used |
+| 0v-2 | **It is not the artefact that was verified — and here is the whole of the difference** | Verified local build `CB11CE76…` = 44 809 989 B; published `a97e01f7…` = 41 996 925 B. Both APKs hold **the same 565 entries — nothing added, nothing missing** (`lib/` equal to the byte at 17 891 132 B compressed, `res/` equal, `classes.dex` 17 B apart = build nondeterminism). The entire **2 804 750 B** of difference is one entry: `assets/chaquopy/requirements-common.imy` — **5 989 166 B locally vs 3 184 416 B in the published APK** |
+| 0v-3 | The difference dissected: **the same engine, packaged differently** | Inside the two `.imy` bundles (1087 inner entries each): **the same `yt_dlp-2026.8.19` and `certifi-2026.7.22`** (`dist-info/METADATA` byte-identical at 52 224 B), every module present in both — but the local build ships **compiled `.pyc` bytecode** (`yt_dlp/extractor/lazy_extractors.pyc`, 237 752 B) where CI ships **the `.py` source** (`…/lazy_extractors.py`, 135 092 B), module for module, and that is the whole gap. Functionally the same yt-dlp (CPython compiles at import; first import marginally slower). Written down so "the published APK is 2.8 MB smaller" never has to be a mystery: it is packaging, not a missing extractor |
+| 0v-4 | What the published artefact **does** carry, checked on the file itself | `apksigner verify --print-certs` → `DN: CN=Manso, O=OmniDownloader, C=US`, `SHA-256 431131731d7b26dadd6dc6ffa3ef337853f30a63decbb863bcec2a61bb0785e5` = **the unchanged key** (§0p-1, §0r-1, §0t-2), so it installs in place over v3.3.1/3.3.2; `aapt dump badging` → `versionCode='50' versionName='3.3.2'`, no `debuggable`; and `assets/public/index.html` **extracted from the published APK** = **`0C7B0E7A16B2F86D521628CC0456BEB5D4E84F6ADC17A0E7B389FF6929D5C7C1`**, 180 230 B = **byte-identical to §0t-4's verified web state** — the only commits after the tag are documentation, so the UI in the download is the UI that was verified |
+| 0v-5 | **And the one thing still not proven: nobody has tapped this binary** | The tap needs the phone, and the phone left ADB at ~18:20 — `adb devices` empty, `reconnect` and `kill-server` + `start-server` did not bring it back, and Windows shows no Android USB device. So the 5-minute publish gate (install the published APK over, confirm `versionCode 50`, one real tap into `/sdcard/Movies/DOWNI`) is **outstanding**, written here rather than implied. Everything above says the published build *should* behave exactly like the verified one; only a tap says it does |
+
+> Sign and date here when green: **2026-09-28** — 0v-1 … 0v-4 green, statically, on the published file;
+> **0v-5 outstanding** (phone off ADB). Nothing in this section upgrades any claim elsewhere in this file,
+> and no user-facing "it works" should lean on it until 0v-5 is green.
 
 ## 3. Regression sweep (after any engine touch)
 
