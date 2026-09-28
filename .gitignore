@@ -68,3 +68,12 @@ adapter*.txt
 android/build-out.txt
 android/build-err.txt
 
+# The `_*` convention, decided once (2026-09-28, F7 of V3.3.1_COMPLETION_PLAN.md). The root carries 8
+# TRACKED `_*.cmd` / `_*.ps1` helpers -- those are the dev commands and they stay tracked. The 23
+# UNTRACKED `_*.txt` files are captures of one-off runs, which is exactly what the twelve named rules
+# above already ignore by hand; these two lines finish that sentence instead of naming the next log.
+# Nothing dangles: the only `_*` files any doc cites are `_m4_frames.log` and `_m7_regression.log`,
+# and `*.log` is ignored above (they are on disk, they are just not version-controlled).
+_*.txt
+_*.err
+

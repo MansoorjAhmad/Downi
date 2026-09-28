@@ -14,8 +14,15 @@ Shipped in v3.1.0 ("The Polish Release"):
 - DowniDrop 2.0: invisible DropActivity (v2.6.4 pattern restored), instant background grabs, self-starting engine (no app warm-up assumed), per-platform quality memory headless, Cancel action, rich saved/failed notifications, Settings toggle (Instant / Ask quality)
 - Vault keyed-DOM reconciliation: cards are moved/added/removed, never rebuilt — blink fixed at the root; in-place selection; no-op refresh detection; 200ms search debounce; single-card new-arrival animation
 
+Shipped in v3.3.1 ("The Core" — Fetcher 2.0, versionCode 49):
+- The Core: overlay state machine (14 wire states), the owner's own art, wake/detect/resolve/job binding, press/drag/snap with position memory, the C5 motion contract (freeze / resume / completion), C6 failure and recovery, the bench channel
+- Cost: the two `iterations: Infinite` hero animations now rest and play one pass on a tap (~0 time at rest), the progress sweep and the skeleton shimmer rest too (565 → 0 frames, 303 → 0 frames per 9 s window) — the vortex, sweep and shimmer fixes together end the "animations nobody asked to see" bill
+- UI: the touch-target sweep on all four screens (Vault 30 → 2 controls under 48 px, Settings 13 → 5), the inspector's primary action is a sticky row instead of a control below the fold
+- Core states: an explicit `Kind` (REST/TRANSIENT/HOLD/TOUCH) plus a settle/legality table — the state machine's rules are data now, and 18 suites / 123 tests hold them
+
 Deferred / next candidates:
-- Vault Phase 2 polish (shimmer skeletons, content-visibility, press-scale) — parked for v3.2; deliberately cut from v3.1.0 so the paint-timing fix ships isolated
+- The vivo ABE vendor-kill recount (§0h): how often the process is taken, over a longer window than any pass has had yet
+- Vault Phase 2 polish (content-visibility, press-scale) — the shimmer skeletons shipped and are bounded now
 - Pause + resume (needs .part support - a deep change to the proven core; requires the full matrix)
 - TikTok photo-post saving (needs a multi-file save contract)
 - Web: direct-to-CDN downloads where CORS allows (skip the proxy)

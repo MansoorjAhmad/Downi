@@ -85,6 +85,37 @@ below a 1080p pixel trace's resolution, so this cell's confirmation is the file 
 (`DEVICE_TEST.md` §0m) — never a claim of pixels.
 
 
+**Same day, the completion pass: the polish, the state table, and the last two loops.** Four things were
+still owed when v3.3.1 shipped, and all four are closed in the same version (no new version invented, no
+release advanced — the work is local, `DEVICE_TEST.md` §0q):
+
+- **The inspector's primary action could not be tapped without scrolling first** (C8). With a real
+  quality list the sheet is 946 px of content in a 725 px view, and the Download pill sat **+87 px below
+  the fold**. It is a sticky action row now, measured on the open sheet: **−144 px above the fold**,
+  nothing occluded at full scroll.
+- **The touch-target sweep finished the four screens** (C3, C4, C8). Before → after, controls under the
+  platform's 48 px: Grab **6 of 18 → 5 of 19**, Queue **3 of 10 → 2 of 10**, Vault **30 of 58 → 2 of 58**,
+  Settings **13 of 31 → 5 real** (with two of the raw hits honestly *covered* by a `<label>`). What is
+  left is the version badge, the platform chips and the status pills — labels by the standing ruling, not
+  controls. **Overflow reads `+0.0 px` on all four screens.** The sweep also caught its own regression:
+  growing the Vault's icon buttons squeezed the card's Play button to 40.9 px wide, so `.btn` gained a
+  `min-width` floor and the card's action row wraps.
+- **The last two looping animations now rest** (the M8 vortex fix's own siblings). On a visible screen,
+  the progress **sweep** cost **565 frames / 9 s and +12 s of CPU per 9 s** (~1.3 cores) for one 8 px bar;
+  four small **skeletons** cost 557 frames / +13 s. Both are compositor-only `transform`s **and** the
+  shimmer is bounded to 4 passes: the next 9 s window reads **0 frames and +1 s**. The measurement also
+  settled an argument worth keeping in writing — a compositor-only transform *that loops* was still
+  563 frames / +11 s, so the cost is the 60 fps itself, not the property. **The only cheap animation is
+  one that ends.**
+- **The Core's state vocabulary has a type and a transition table** (M3). `CoreStates.Kind`
+  (REST / TRANSIENT / HOLD / TOUCH), `settleTarget()` and `isLegal()`; the old duplicate knowledge —
+  `isTransient()`'s list and `CoreHost.settle()`'s hardcoded chain — is one table now, so a new beat with
+  no settle target fails a test instead of freezing on screen. A violation reports
+  `CORE_TRANSITION … legal=false`. **Wire names unchanged** (all fourteen, in order). Behaviour-free by
+  construction, and proven so: **18 suites, 123 tests, 0 failures**, then the M7 motion regression on the
+  same build reads **`VERDICT 0 of the C5 motion claims failed`**. Still open, in writing: the vivo
+  vendor-kill recount (§0h), which needs a longer window than this pass had.
+
 ### The Core (Fetcher 2.0) — the 3.3.0 section, folded into 3.3.1
 
 > Version 3.3.0 never shipped on its own: these are the sections that describe the Core itself. They

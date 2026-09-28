@@ -135,6 +135,61 @@ rounds to 47.5 px.
 C2 was revised on evidence: its first value was 44 px, and the next audit run showed four controls still
 under the platform line — this is Android, so the token is 48.
 
+### The completion pass — 2026-09-28, the same day, measured (`V3.3.1_COMPLETION_PLAN.md`)
+
+The pass above left three things owed: the after-numbers existed only for **Grab**, **C3 and C4 had no
+disposition**, and the audit's own rule could not see a hit area a `<label>` gives. All three are
+closed here, together with **C8** — the one candidate that was a real defect rather than a taste call.
+
+**What the second sweep found, in numbers** (the same tool, the same four screens, one build apart):
+
+| # | Site | Before | After | How |
+|---|---|---|---|---|
+| F2a | the header's settings button; the player's close button | 40 × 48 | **48 × 48** | `w-12 h-12` |
+| F2b | the Vault's three filter chips | 28.5 tall | **48** | a `.chip-btn` token — they are *controls*, unlike the platform chips that stay labels |
+| F2c | the Vault's per-item icon buttons (share / delete / open, card **and** row, custom-folder too) | 35.5 wide | **48** | a `.btn-icon` token (7 buttons) |
+| F2d | the Vault header's rescan button | 36 × 36 | **48 × 48** | `w-12 h-12` |
+| F2e | the Settings AMOLED + clipboard rows | checkbox **20 × 20** | **the row is the target**: a `<label>`, 59.7 px tall | the box stays a box |
+| F2f | the Settings accent swatches (4) | 28 × 28 | **48 × 48**, the dot still 28 px inside | bigger target, identical look |
+| F2g | the Settings "App → DOWNI v3.3.1" tap-to-copy row | 38.7 tall | **48** | `.row-48`, applied to all three About rows for one rhythm |
+| F2h | the Vault's search field and sort dropdown | 39.5 / 36.7 tall | **48** | `.row-48` — the sweep caught these two, which the candidate list had never named |
+| F2i | the Vault card's "Play" button | 69 → **40.9 wide** *(a regression F2c caused)* | **148.9 × 48** | `.btn` gained `min-width: 48px` and the card's action row wraps: Play on its own line, share/delete under it. The second audit run is what caught the trade — the first only knew the icons had grown |
+
+**C3 and C4 now have their written disposition: TAKEN**, as F2b/F2c/F2d (the Vault's controls) and
+F2e/F2f/F2g (Settings') — heights and hit areas only, which is what their rows asked for, without
+touching either screen's layout. **C8 is TAKEN**: the inspector's confirm control is a sticky action
+row now, and it stops being a defect (F1, below). The below-the-fold counts that remain on the Vault
+(30) and Settings (12) are the pages' own scroll, not defects — a candidate list is not a modal.
+
+**The four screens, before and after** (same rule set, same build conditions; the raw count is the
+old rule, "covered" is a control whose hit area is ≥ 48 px through a `<label>` or a bigger button):
+
+| Screen | under 48 px | below the fold | what remains, named |
+|---|---|---|---|
+| **Grab** | 6 of 18 → **5 of 19** | 0 → 0 | the version badge, the three platform chips (labels by the standing ruling) and the hidden screens' markup (C7's correction) |
+| **Queue** | 3 of 10 → **2 of 10** | 0 → 0 | the same two kinds |
+| **Vault** | **30 of 58 → 2 of 58** | 30 → 30 | the same two kinds. Grid **and** list mode measured: 2 of 58 and 2 of 48 |
+| **Settings** | 13 of 31 → **7 raw / −2 covered / 5 real** | 12 → 12 | the version badge, `HEALTHY` / `ARMED` / `⚡ Instant grab` (labels) and the hidden button |
+
+The denominators move with the page's own content (a clipboard card, the last-grab chip, the number of
+files in the Vault), which is why every remaining row is *named* rather than counted. **Overflow reads
+`+0.0 px` on all four screens** — a wider pill cannot be pushing anything sideways.
+
+**F1 — the inspector's primary action (C8), measured on the open sheet** with eight quality rows
+inflated into it, the sheet scrolling:
+
+| | before | after |
+|---|---|---|
+| `#btnConfirmDownloadQuality` top, relative to the fold | **+87 px below** | **−144 px above** |
+| the sheet's scroller | 946 px | 962 px |
+| the last quality row at full scroll | — | bottom 655, the action bar's top 667 → **0 px occluded** |
+
+**F3 — the instrument grew what it was missing** (`tools/core_web_audit.py`): it now reports the box a
+thumb can actually **hit** (the nearest `label`/`button`/`a`/`[onclick]` ancestor) next to the element's
+own box, prints both counts, and reads the layout's **horizontal overflow**. Both are in the tool's
+docstring; both are what made F2e's checkbox honest and F2i's regression visible.
+
+
 ## 5. The gate, when it is implemented
 
 - **Before / after, in numbers**: `core_web_audit.py` on all four screens + the inspector — the same

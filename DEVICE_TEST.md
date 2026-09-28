@@ -606,6 +606,34 @@ cannot reach it at all.
 
 > Sign and date here when green: **2026-09-28** — 0p-1 … 0p-5 green. **v3.3.1 is shipped.**
 
+## 0q. V3.3.1 — the completion pass (F1–F5, M3) — vivo V2058, debug build `A5A87459…`
+
+> Same version, same versionCode 49, no new release: the polish, the state table and the two remaining
+> looping animations, measured on the **debug** build (`app-spike-signed.apk`, sha256 `A5A87459…`) with
+> the WebView's own DevTools socket (`tools/core_web_audit.py`, `tools/core_web_anim.py`) and `dumpsys
+> gfxinfo` + `ps` for cost. Every number below is a measurement, not a review note.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0q-1 | **F1 — the inspector's primary action can be tapped without scrolling first** | With eight quality rows inflated into the open sheet: `#btnConfirmDownloadQuality`'s top was **+87 px past the fold before, −144 px above it after**; the sheet still scrolls (scroller 946 → 962 px) and at full scroll the last row's bottom (655) sits above the action bar's top (667) → **0 px occluded** |
+| 0q-2 | **F2 — the touch-target sweep, four screens, before → after** | Grab **6 of 18 → 5 of 19**; Queue **3 of 10 → 2 of 10**; Vault **30 of 58 → 2 of 58** (grid) and **2 of 48** (list); Settings **13 of 31 → 7 raw / −2 covered by a ≥48 px hit area / 5 real**. The remaining rows are the version badge, the platform chips and the status pills — **labels by the standing ruling**, not controls. Horizontal **overflow `+0.0 px` on all four screens**. Fixed: header settings 40 × 48 → 48 × 48, player close 40 → 48, Vault filter chips 28.5 → 48 tall, Vault item icon buttons 35.5 → 48 wide (7 of them), Vault rescan 36 → 48, Vault search/sort 39.5/36.7 → 48, AMOLED/clipboard checkboxes → the `<label>` row is the target (59.7 px), accent swatches 28 → 48 with the dot still 28, About rows 38.7 → 48 |
+| 0q-3 | **F2's own regression, caught by the next audit run** | Growing the Vault's icon buttons squeezed the card's `flex-1` **Play button 69 → 40.9 px wide** — one defect traded for another. `.btn` gained `min-width: 48px` and the action row now wraps: **148.9 × 48** Play on its own line, share/delete beneath. Re-audited green |
+| 0q-4 | **F5 — the last two looping animations now rest** | On a visible screen with the *old* declarations: the progress **sweep** cost **565 frames / 9 s and +12 s CPU per 9 s** (~1.3 cores) for one 8 px bar, the four **skeletons** 557 frames / +13 s. Both are compositor-only `transform`s now **and** the shimmer is bounded (4 passes, then it rests): frames **303 → 0** across the two 9 s windows, i.e. window 2 is `0 frames` and `+1 s` of CPU. A compositor-only transform *that loops* was still 563 frames / +11 s — the price is the 60 fps, not the property, which is why "stop" is the fix and "cheaper" is not |
+| 0q-5 | **M3 — the state machine has a type and a table** | `CoreStates.Kind` (REST/TRANSIENT/HOLD/TOUCH), `settleTarget()` and `isLegal()`; `CoreHost.settle()` and `isTransient()` both read the one table now; illegal transitions are reported as `CORE_TRANSITION … legal=false` (reachable only from the bench channel — the arbiter goes through `setBaseState`'s beat guard). Wire names unchanged: `CORE_READY` still prints **all fourteen** in order |
+| 0q-6 | **M3 — the JVM suite and the M7 regression** | `:app:testDebugUnitTest` → **18 suites, 123 tests, 0 failures** (was 17/117; the new `CoreStatesTest` is 6 of them). Then `tools/core_motion.ps1` on the same build, `core_state_audit.py frames … --fixed`: **`VERDICT 0 of the C5 motion claims failed`** — control PASS (DETECTED move_max 19.78 ≥ 5.0), freeze PASS (**184 frames in one frozen run, longest 6100 ms**, arc 222°), resume PASS (**arc 221 = the 221 before the pause**, not 0), complete PASS (closed circle from 22600 ms, held 3833 ms, the merge peaking 148.1 vs 48.6 at rest) |
+| 0q-7 | The freeze claim's second instrument | The two PAUSED stills are **byte-identical** (`580852` B each, 3 s apart) |
+| 0q-8 | The packaged web state matches the source | `www/index.html` and `android/app/src/main/assets/public/index.html` are **byte-identical** (`C4B3ECB5…` at the F1/F2 build, re-checked at every rebuild) |
+| 0q-9 | Nothing was pushed | The work is local: `git status` shows the edits and **no push, no tag, no release** — the release page was deleted by the owner, and this pass deliberately does not recreate or advance it |
+
+**Two things this cell does not claim.** The raw overlay audit is the debug build's; the four-screen
+numbers and the two animation costs were measured on it. The **release** build re-run (`assembleRelease`
++ the same instruments) is the pass's last gate and is recorded where it lands. And one item stays open
+on purpose: the **§0h vendor-kill recount (0h-9)** — how often the vivo ABE killer takes the process —
+needs a longer window than this pass had, so it is carried forward rather than guessed.
+
+> Sign and date here when green: **2026-09-28** — 0q-1 … 0q-9 green on the debug build; the release
+> build's own re-run is filed under §0r when it lands.
+
 ## 3. Regression sweep (after any engine touch)
 
 - ✅ 09-24 Cancel mid-download (in-app card + DowniDrop): download stops, no file and no `.part`
