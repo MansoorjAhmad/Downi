@@ -557,7 +557,7 @@ cannot reach it at all.
 
 > Sign and date here when green: **2026-09-28** — 0o-1 … 0o-8 green.
 
-## 0o. V3.3.1 — the RELEASE build's own pass (the launch gate) — vivo V2058
+## 0o-b. V3.3.1 — the RELEASE build's own pass (the launch gate) — vivo V2058
 
 > The one gate no rig can drive: the bench channels and the screenshot capability are `BuildConfig.DEBUG`
 > -only (`DowniFetcherService`:63-65, `src/main/res/xml/fetcher_service.xml`), so every other cell in this
@@ -567,13 +567,13 @@ cannot reach it at all.
 
 | # | Check | Evidence |
 |---|---|---|
-| 0o-1 | It installs over 3.2.0 without an uninstall | ✅ `adb install -r` → `Success`; `dumpsys package` then reads `versionCode=49 versionName=3.3.1` |
-| 0o-2 | The Core appears over a real platform session | ✅ TikTok in the front (`mCurrentFocus=com.zhiliaoapp.musically/…SplashActivity`): `core_state_audit.py shot` → `rim rgb(29,163,177) hue=186 sat=0.84 -> teal`, `mark 1445 px teal = 15.5 %`, `ring lit 17 %` (nothing downloading — honest), `VERDICT 1 shot(s), 0 mismatch(es)` |
-| 0o-3 | One tap, and it delivers for real | ✅ `adb shell input tap 540 1168` (the Core's measured centre) → **a new file on disk: `/sdcard/Movies/DOWNI/2026 TikTok Monitization … .mp4`, 3 251 870 B at 14:02**, and the next shot's ring reads `painted 360 deg = 100 %` — the job's real progress and its COMPLETE hold |
-| 0o-4 | The tap does not kill the app (the §0g defect, in release) | ✅ `pidof com.omnidownloader.app` → 19238 after the tap; `logcat -b crash -T '09-28 13:59:00.000'` → no `AndroidRuntime`/`FATAL` |
-| 0o-5 | A surface with nothing to grab still refuses honestly | ✅ an earlier tap on a TikTok feed clip whose tree exposed no share row: no new file, no fake progress, no crash — the honest `share=0` path measured in §0n-3 |
+| 0o-b-1 | It installs over 3.2.0 without an uninstall | ✅ `adb install -r` → `Success`; `dumpsys package` then reads `versionCode=49 versionName=3.3.1` |
+| 0o-b-2 | The Core appears over a real platform session | ✅ TikTok in the front (`mCurrentFocus=com.zhiliaoapp.musically/…SplashActivity`): `core_state_audit.py shot` → `rim rgb(29,163,177) hue=186 sat=0.84 -> teal`, `mark 1445 px teal = 15.5 %`, `ring lit 17 %` (nothing downloading — honest), `VERDICT 1 shot(s), 0 mismatch(es)` |
+| 0o-b-3 | One tap, and it delivers for real | ✅ `adb shell input tap 540 1168` (the Core's measured centre) → **a new file on disk: `/sdcard/Movies/DOWNI/2026 TikTok Monitization … .mp4`, 3 251 870 B at 14:02**, and the next shot's ring reads `painted 360 deg = 100 %` — the job's real progress and its COMPLETE hold |
+| 0o-b-4 | The tap does not kill the app (the §0g defect, in release) | ✅ `pidof com.omnidownloader.app` → 19238 after the tap; `logcat -b crash -T '09-28 13:59:00.000'` → no `AndroidRuntime`/`FATAL` |
+| 0o-b-5 | A surface with nothing to grab still refuses honestly | ✅ an earlier tap on a TikTok feed clip whose tree exposed no share row: no new file, no fake progress, no crash — the honest `share=0` path measured in §0n-3 |
 
-> Sign and date here when green: **2026-09-28** — 0o-1 … 0o-5 green. **The release-build pass is closed.**
+> Sign and date here when green: **2026-09-28** — 0o-b-1 … 0o-b-5 green. **The release-build pass is closed.**
 
 ## 0p. V3.3.1 — the published APK's smoke (the Law §9's post-release cell) — vivo V2058
 
@@ -590,7 +590,7 @@ cannot reach it at all.
 
 > Sign and date here when green: **2026-09-28** — 0p-1 … 0p-5 green. **v3.3.1 is launched.**
 
-## 0p. V3.3.1 — the PUBLISHED build's smoke (V5, the Law's §9 gate) — vivo V2058
+## 0p-b. V3.3.1 — the PUBLISHED build's smoke (V5, the Law's §9 gate) — vivo V2058
 
 > The CI-built `DOWNI-v3.3.1.apk` (41 995 009 B, ~2.8 MB leaner than the local release build — different
 > toolchain, same commit) was downloaded from the GitHub release, signature-checked, installed **in place
@@ -598,13 +598,13 @@ cannot reach it at all.
 
 | # | Check | Evidence |
 |---|---|---|
-| 0p-1 | The published artefact is signed with the unchanged key | ✅ `apksigner verify --print-certs`: `DN: CN=Manso, O=OmniDownloader, C=US`, `SHA-256 431131731d…` — the same digest every release has carried since 3.0.x |
-| 0p-2 | It installs over the previous version without an uninstall | ✅ `adb install -r DOWNI-v3.3.1.apk` → `Success`; the phone then reads `versionCode=49 versionName=3.3.1` |
-| 0p-3 | A tap inside a real TikTok session delivers, on the **published** build | ✅ two taps, two files: `/sdcard/Movies/DOWNI/tiktok_7685706012287880470.mp4` (**6 879 033 B**, 14:13) and `…The Infinite Pencil Loop…mp4` (3 475 019 B, 14:12) |
-| 0p-4 | No crash across them | ✅ `logcat -b crash -T '09-28 14:05:00.000'` → nothing; `pidof com.omnidownloader.app` → alive (21697) |
-| 0p-5 | The workflows that built it were green | ✅ `gh run list`: `Release DOWNI APK` (v3.3.1) **completed success** 2m07s; `Test — Engine Smoke + Debug Build` (v3.3.1) **completed success** 1m45s; `gh release view v3.3.1` → `prerelease: false`, asset `DOWNI-v3.3.1.apk`, notes = the tagged commit's message |
+| 0p-b-1 | The published artefact is signed with the unchanged key | ✅ `apksigner verify --print-certs`: `DN: CN=Manso, O=OmniDownloader, C=US`, `SHA-256 431131731d…` — the same digest every release has carried since 3.0.x |
+| 0p-b-2 | It installs over the previous version without an uninstall | ✅ `adb install -r DOWNI-v3.3.1.apk` → `Success`; the phone then reads `versionCode=49 versionName=3.3.1` |
+| 0p-b-3 | A tap inside a real TikTok session delivers, on the **published** build | ✅ two taps, two files: `/sdcard/Movies/DOWNI/tiktok_7685706012287880470.mp4` (**6 879 033 B**, 14:13) and `…The Infinite Pencil Loop…mp4` (3 475 019 B, 14:12) |
+| 0p-b-4 | No crash across them | ✅ `logcat -b crash -T '09-28 14:05:00.000'` → nothing; `pidof com.omnidownloader.app` → alive (21697) |
+| 0p-b-5 | The workflows that built it were green | ✅ `gh run list`: `Release DOWNI APK` (v3.3.1) **completed success** 2m07s; `Test — Engine Smoke + Debug Build` (v3.3.1) **completed success** 1m45s; `gh release view v3.3.1` → `prerelease: false`, asset `DOWNI-v3.3.1.apk`, notes = the tagged commit's message |
 
-> Sign and date here when green: **2026-09-28** — 0p-1 … 0p-5 green. **v3.3.1 is shipped.**
+> Sign and date here when green: **2026-09-28** — 0p-b-1 … 0p-b-5 green. **v3.3.1 is shipped.**
 
 ## 0q. V3.3.1 — the completion pass (F1–F5, M3) — vivo V2058, debug build `A5A87459…`
 
@@ -672,6 +672,50 @@ channel — are the two things checked here.
 
 > Sign and date here when green: **2026-09-28** — 0r-1 … 0r-8 green on the signed release build, and the
 > local APK is parked in `outputs/apk/release/` with its sha256 above until the owner publishes it.
+
+## 0s. V3.3.1 — the end-to-end pass: a real link, all the way into the Vault — vivo V2058
+
+> Measured **2026-09-28**, once on the **debug** build (§0q's `app-spike-signed.apk`) and once on the
+> **shipped release** build, driven by hand (`adb shell input tap`) because the release build has no bench
+> channel and no DevTools socket. Every other cell in this file asks a rig a question; this one asks the
+> question a thumb asks — paste a link, read the inspector, tap the CTA, find the file, find it in the
+> Vault — and then compares the two builds' output **bytes**.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0s-1 | The whole chain runs on the debug build | typed `https://www.instagram.com/reel/DdbMO05yk3x/` into `#inputManualUrl` (540,1090) → `#btnInspectLink` (540,1289) → the inspector resolved **real Instagram metadata** with its quality lanes → `#btnConfirmDownloadQuality` → the file landed (`test_out/e2e_typed.png`, `e2e_inspector.png`, `e2e_progress.png`, `e2e_queue.png`; the CTA's own rects from `test_out/e2e_rects_grab.json`) |
+| 0s-2 | The ledger tells the truth afterwards — the N9 size fix, live | debug Queue: `statActive 0 / statDone 3 / statSize 16` **MB GRABBED**, led by *Video by marvinachi · Gallery / Movies · 28/09/2026 · SAVED*. 16 ≈ 3.6 + 9.2 + 3.6, and the only thing this pass added was the 3.6 MB job — so the completion event carried its real size, which is what N9 was about |
+| 0s-3 | **The installed binary is the artefact** | `pm path` → `/data/app/~~COsHZ…/base.apk`, hashed **on the device**: `sha256 15f14d0ea1c0ad59c9c74e7210f62f467717e2817f23d7b05c010e21541c7dc4`, **44 809 989 B** — the same digest as `app-release.apk` and as `test_out/v331_completion/DOWNI-v3.3.1-local-completion.apk` (§0r-8). `flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]` — **no `DEBUGGABLE`**, so the build under test is the non-debuggable one |
+| 0s-4 | The same chain, the same URL, on the shipped build | release install in place (`lastUpdateTime 16:53:58`, the phone reads `versionCode=49 versionName=3.3.1`); `test_out/e2e_release_typed.png` → `#btnInspectLink` → `ui_inspector.xml`: `#btnConfirmDownloadQuality` sits inside `inspectorActionBar` `[1911,2263]` — **F1's pinned row, above the fold, on the shipped artefact** → tap → `/sdcard/Movies/DOWNI/Video by marvinachi (6).mp4`, **3 608 924 B at 17:02** (`e2e_release_inspector.png`, `e2e_release_progress1.png`) |
+| 0s-5 | The shipped build's file is byte-identical to the debug build's | `sha256 DC816AC92AEEE8E0CEE25BD7F669D38A7435312602A51AEFEB186C521FC05F70` for all three: the release run's `(6)` (`test_out/e2e_release/marvinachi-6-release.mp4`), the debug run's `(5)` (`test_out/e2e/marvinachi-5.mp4`) and the `(4)` baseline pulled before the change (`test_out/e2e/marvinachi-4-baseline.mp4`) |
+
+| 0s-6 | It is a real video, not a stub | `tools\ffprobe.exe` on the pulled file: **h264 720×1280 @ 30 fps + aac stereo**, `duration=15.717052`, `bit_rate=1836947`, `size=3608924`, `format_name=mov,mp4,m4a,3gp,3g2,mj2` |
+| 0s-7 | The Vault indexes it, on the shipped build | `ui_vault.xml`: the grid's **first tile** is `Video by marvinachi (6).mp4` · `3.4 MB · 28/09/2026 · Movies DOWNI` with its own Play row; `vaultCountText` **12 items · 45.2 MB**, `vaultStorageText` `🎬 45.2 MB (100%) · 🎵 0 MB (0%)` (`e2e_release_vault.png`) |
+| 0s-8 | The counters and the toast fired | release Queue (`ui_queue.xml`, `e2e_release_queue.png`): `statActive 0 / statDone 4 / statSize 19` **MB GRABBED** — 16 + 3.6 → 19, one job more than the debug read — with the in-app toast `Saved ✓ / Video by marvinachi · Gallery / Movies` captured in the same window |
+| 0s-9 | Nothing crashed in either pass | `logcat -b crash` **empty** before and after; `pidof` = **20054** (the pid the install created) across the whole release pass and still alive at the end; it is the only app process in `ps -A` |
+| 0s-10 | The 69-line `libsigchain` block, read instead of feared | `09-28 17:01:55.177 21476 21459 E libsigchain: Setting SIGSEGV to SIG_DFL` followed by 68 frames — characterised below, and it is **not** a crash |
+
+**The `libsigchain` block is a `sigaction` *call*, not a signal.** The line says what it is — *Setting*
+SIGSEGV to SIG_DFL — and frames `#00 LogStack() ← #01 sigaction+220` are both inside `libsigchain.so`, the
+ART library that chains signal handlers, reporting the change. The caller is CPython's `subprocess` C
+helper: `#02–#05 _posixsubprocess.cpython-311.so` under `#07 _PyObject_MakeTpCall` /
+`#08 _PyEval_EvalFrameDefault`, reached from Java through `com.chaquo.python.PyObject.callAttr` →
+`DowniEnginePlugin.lambda$extract$13` on a `ThreadPoolExecutor` worker — i.e. the **forked child's standard
+pre-`exec` signal reset** inside the extract path. No source in this repo spawns a process (no `subprocess`
+/ `Popen` / `ProcessBuilder` / `Runtime.getRuntime` anywhere under `android/app/src/main`), so the caller is
+bundled Python code reached through the plugin. That it is not a crash is not an opinion: the whole buffer
+holds exactly **one** `Setting SIG…` line and **no** `Fatal signal`, **no** `*** *** ***` and **no**
+`debuggerd`; `-b crash` is empty (`/data/tombstones` was not even needed); the child is gone from `ps` by the
+end — the only app pid is 20054 — and the job it belonged to produced the verified file in 0s-5.
+
+**What this pass does not claim.** The release build exposes no bench channel and no WebView socket
+(`if (!BuildConfig.DEBUG) return;`, §0r), so no row above is a rig cell — it is what a thumb does. The
+in-flight percentage is the *debug* build's (`test_out/e2e_progress.png`); the release build's own mid-job
+frame reads `instagram.com 100 %` on the *Active downloads* card, which is the job's completion hold captured
+7 s after the CTA (ACTIVE read 0 by 17:03), so the release cell counts the delivery, not a mid-flight number.
+
+> Sign and date here when green: **2026-09-28** — 0s-1 … 0s-10 green on both builds, and the shipped build's
+> own file is byte-identical to the debug build's.
 
 ## 3. Regression sweep (after any engine touch)
 

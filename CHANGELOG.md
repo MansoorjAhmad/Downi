@@ -128,6 +128,21 @@ the new 48 px gear landing on Settings, **0 frames rendered / 0 janky** and **21
 10 s at rest, and no crash entry dated that day. **Nothing was pushed, tagged or released** — the local APK
 (`sha256 15F14D0E…`, 44 809 989 B) waits in `outputs/apk/release/` for the owner to publish.
 
+**And the chain a thumb walks is verified end to end, on that same artefact.** A real Instagram reel typed
+into the field, the inspector's own metadata and quality lanes, the pinned CTA, a file on disk, a row in the
+Vault — first on the debug build, then on the shipped release build. The two runs' files are
+**byte-identical**: `sha256 DC816AC9…`, 3 608 924 B, `h264 720×1280 @ 30 fps + aac stereo`, `15.717052 s`,
+`1 836 947 bps`. The shipped build's Vault lists it as its **first tile** (`12 items · 45.2 MB`) and its
+Queue reads `ACTIVE 0 / COMPLETED 4 / 19 MB GRABBED` — 3.6 MB more than the debug read, which is the N9 size
+fix proving itself live rather than in a unit test. The binary under test is the artefact:
+`/data/app/…/base.apk` hashed **on the device** is **`15f14d0e…`, 44 809 989 B** — the same digest as the
+local APK — and its flags carry **no `DEBUGGABLE`**; `logcat -b crash` stayed empty and the pid never
+changed. One thing that looked alarming was read instead of reported: a 69-line `libsigchain` block says
+`Setting SIGSEGV to SIG_DFL` — a **`sigaction` call**, logged by ART's signal chaining
+(`#00 LogStack ← #01 sigaction`), made by CPython's `_posixsubprocess` in the forked child's standard
+pre-`exec` signal reset — **not** a delivered signal: no `Fatal signal`, no tombstone, no crash entry, and
+the job it belonged to produced the verified file above. Full cell: `DEVICE_TEST.md` §0s.
+
 ### The Core (Fetcher 2.0) — the 3.3.0 section, folded into 3.3.1
 
 > Version 3.3.0 never shipped on its own: these are the sections that describe the Core itself. They
