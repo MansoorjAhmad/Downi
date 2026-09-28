@@ -1,9 +1,13 @@
-# Downi v3.3.2 — Part 3 (the UI polish), measured before it is touched
+# Part 3 — the UI polish, measured before it is touched
 
-**Written 2026-09-28, the same day v3.3.1 shipped.** Part 3 was deferred by the plan's own rule
+**Written 2026-09-28, the same day v3.3.1 shipped. There is no v3.3.2.** This file is the owner's
+own **Part 3** bucket — deferred by the roadmap, not a planned version — so its release vehicle is
+the owner's call, and nothing here is shipped until they make it. The work that *was* executed from
+it (C1/C2/C5a) sits on `main`, unreleased, in `9d07a83`. Part 3 was deferred by the plan's own rule
 (`V3.3_PLAN.md` §7: "collect whatever turns up, then bundle it") and by the owner's list — flat icons,
 spacing, typography. This file does what every other part of this project does first: **measure**, so the
-choices are numbers and not taste. Nothing here is implemented yet; §4 is the owner's pick.
+choices are numbers and not taste. §§1-3 are the measurements and the candidates; §4 records what was
+decided, what was declined and what waits for the owner, and the result the audit then measured.
 
 ---
 
@@ -112,8 +116,7 @@ is declined with a reason, and what genuinely needs the owner's taste.
 | C9 | the flat icons: name them, and their style stays the existing one |
 
 **Order of work:** C1 + C2 + C5a in one pass (all three live in `www/index.html`'s style block), then
-`cap sync`, the audit re-run on all four screens, a release-build device pass, and then v3.3.2's own
-release through `V3.3.1_PLAN.md` §2's proven V0-V5 checklist.
+`cap sync`, the audit re-run on all four screens, a release-build device pass, and then, whenever the owner picks a vehicle, `V3.3.1_PLAN.md` §2's proven V0-V5 checklist.
 
 **Result, measured 2026-09-28 after the pass** (the same tool, the same screen):
 
@@ -139,9 +142,9 @@ under the platform line — this is Android, so the token is 48.
 - **The app's honesty re-checks** (the Law §6 / `DEVICE_TEST.md`): any change touching live state,
   counters, notifications or the ledger re-runs those cells on a real phone.
 - **A device pass** on the release build for the screens that changed, then the usual release mechanics
-  (`V3.3.1_PLAN.md` §2, V0-V5) — v3.3.2, one focused release.
+  (`V3.3.1_PLAN.md` §2, V0-V5) — the release vehicle is the owner's call; no version is assumed here.
 
-## 6. Not in v3.3.2
+## 6. Out of scope for this pass
 
 - **The Core is frozen**: nothing in `downicore/`, no new art, no timing changes. It shipped today and
   the sheets are green (`DEVICE_TEST.md` §0l-§0p).
