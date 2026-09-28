@@ -602,6 +602,27 @@ public class DowniFetcherService extends AccessibilityService {
 
     private static final class Counter { int nodes; }
 
+    /**
+     * TAP_SCAN's counters — one walk's raw offer, taken at the instant of the tap.
+     *
+     * `ids` is the one that matters most on Instagram: a Reels video exposes `clips_*`
+     * resource-ids and, measured 2026-09-28, no URL and no shortcode at all — so the list is
+     * the finding, not noise. `igIdList` holds the raw shortcodes when they exist, which is the
+     * entire raw material for reconstructing a /reel/&lt;id&gt;/ URL with no share sheet involved.
+     */
+    private static final class TapScan {
+        int nodes;
+        int urls;
+        int visibleUrls;
+        int mediaUrls;
+        int igIds;
+        int visibleIgIds;
+        int ttIds;
+        final java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<>();
+        final java.util.LinkedHashSet<String> igIdList = new java.util.LinkedHashSet<>();
+        final java.util.LinkedHashSet<String> mediaSrc = new java.util.LinkedHashSet<>();
+    }
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
@@ -1010,6 +1031,97 @@ public class DowniFetcherService extends AccessibilityService {
         if (keep && core.isShown()) core.ensureOnScreen();   // rotation can move the bounds under a shown Core
     }
 
+    // ---------- TAP_SCAN: the tap-time reading (instrument only, 2026-09-28) ----------
+
+    /**
+     * The owner asked a measured question: *why does an Instagram grab wait ~16 s when TikTok
+     * returns a URL in ~1 s?* The chain's own numbers answer the back half of that (the sheet
+     * tree's 15 unchanged dumps), but not what the app was offering at the INSTANT of the tap —
+     * which is where an instant route could have come from. So this walks the tree once, at the
+     * tap, and states exactly what is on screen:
+     *
+     *   urls / visible / media   full URLs, how many were visible, how many pass `MediaUrl`
+     *   igids / visible_igids    Instagram shortcodes (`IG_SHORT_P`) — the raw material for
+     *                            reconstructing a /reel/&lt;id&gt;/ URL with NO share sheet at all
+     *   ttids                    TikTok video ids
+     *   ids                      the resource-ids of visible nodes. On a Reels video this list
+     *                            is the finding: `clips_*` and nothing else — no URL, no shortcode.
+     *
+     * Deliberately behaviour-free: it reads, counts and logs. It never offers anything to the
+     * ledger, never delivers, never touches the chain, and never writes `lastDumpBody` — so no
+     * run's outcome can change because this exists. That is the whole point of taking the
+     * reading before choosing the fix: the data picks the branch, not the other way round.
+     */
+    private void tapScan() {
+        try {
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null) { log("TAP_SCAN root_null pkg=" + sessionPkg); return; }
+            TapScan s = new TapScan();
+            tapScanWalk(root, 0, s);
+            long now = SystemClock.elapsedRealtime();
+            AttentionLedger.Candidate cand = ledger.best(now);
+            log("TAP_SCAN pkg=" + sessionPkg + " nodes=" + s.nodes
+                    + " urls=" + s.urls + " visible=" + s.visibleUrls + " media=" + s.mediaUrls
+                    + " igids=" + s.igIds + " visible_igids=" + s.visibleIgIds
+                    + " ttids=" + s.ttIds
+                    + " ledger=" + ledger.size()
+                    + " cand=" + (cand == null ? "none" : clip(cand.url, 120)));
+            log("TAP_SCAN_IDS [" + clip(s.ids.toString(), 320) + "]");
+            if (!s.igIdList.isEmpty()) {
+                log("TAP_SCAN_IGIDS list=[" + clip(s.igIdList.toString(), 300) + "]");
+            }
+            if (!s.mediaSrc.isEmpty()) {
+                log("TAP_SCAN_MEDIA list=[" + clip(s.mediaSrc.toString(), 400) + "]");
+            }
+        } catch (Throwable t) {
+            log("TAP_SCAN_ERR " + t);
+        }
+    }
+
+    private void tapScanWalk(AccessibilityNodeInfo node, int depth, TapScan s) {
+        if (node == null || s.nodes >= MAX_NODES || depth > MAX_DEPTH) return;
+        s.nodes++;
+        String id = node.getViewIdResourceName();
+        CharSequence t = node.getText();
+        CharSequence d = node.getContentDescription();
+        String hay = (t == null ? "" : t.toString()) + " " + (d == null ? "" : d.toString());
+        boolean visible = node.isVisibleToUser();
+
+        // Visible resource-ids, shortened to the part that means something. Bounded at 40 so a
+        // long feed cannot flood the box; the video surface's ids appear early in the walk.
+        if (visible && id != null && !id.isEmpty() && s.ids.size() < 40) {
+            int slash = id.lastIndexOf('/');
+            s.ids.add(slash < 0 ? id : id.substring(slash + 1));
+        }
+
+        if (hay.contains("http")) {
+            Matcher um = URL_P.matcher(hay);
+            while (um.find()) {
+                String u = um.group().replaceAll("[\\.,;:!?)\\]\"']+$", "");
+                s.urls++;
+                if (visible) s.visibleUrls++;
+                if (MediaUrl.reason(u) == null) {
+                    s.mediaUrls++;
+                    if (s.mediaSrc.size() < 4) s.mediaSrc.add(u + (visible ? "|vis" : "|hid"));
+                }
+            }
+        }
+        Matcher im = IG_SHORT_P.matcher(hay);
+        while (im.find()) {
+            s.igIds++;
+            if (visible) s.visibleIgIds++;
+            s.igIdList.add("ig:" + im.group(1));
+        }
+        Matcher tm = TIKTOK_ID_P.matcher(hay);
+        while (tm.find()) s.ttIds++;
+
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = null;
+            try { child = node.getChild(i); } catch (Throwable ignored) {}
+            tapScanWalk(child, depth + 1, s);
+        }
+    }
+
     /**
      * The owner's tap — the only thing that ever starts a download (ruling 2026-09-25 ~18:20).
      * Wave 2 tap grammar (D-V2-3): the tap's MEANING follows the Core's state — a PAUSED Core
@@ -1019,6 +1131,7 @@ public class DowniFetcherService extends AccessibilityService {
      */
     private void onCoreTap() {
         if (chainRunning) { log("CORE_TAP_BUSY ignored"); return; }
+        tapScan();                               // TAP_SCAN: what the app offers at this instant
         String base = CoreArbiter.baseState(jobState, chainRunning, videoDetected);
         String tracked = jobBinding != null ? jobBinding.trackedUrl() : null;
         CoreTapAction.Action action = CoreTapAction.of(base, tracked != null);
