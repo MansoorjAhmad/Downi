@@ -524,6 +524,13 @@ public class DowniDownloadService extends Service {
 
     private void runSharedDownload(String jobId, String url) {
         File workDir = new File(new File(getCacheDir(), "DowniEngine"), jobId);
+        // Wave 5b (the speed work's instrument): declared OUTSIDE the try so the failure path can
+        // report the same timings. engineT0 starts at the top of the run, so the gap to the first
+        // real progress tick covers resolution AND any cold start of the Python runtime — which is
+        // exactly what the user waits for.
+        final long engineT0 = SystemClock.elapsedRealtime();
+        final boolean[] firstTick = new boolean[]{false};
+        final long[] firstTickMs = new long[]{0};
         try {
             if (url == null || url.trim().isEmpty()) throw new IllegalArgumentException("No link in that share.");
             final String cleanUrl = url.trim();
@@ -544,6 +551,13 @@ public class DowniDownloadService extends Service {
             DownloadProgressListener listener = new DownloadProgressListener() {
                 @Override
                 public void onProgress(double percent, long downloadedBytes, long totalBytes, double speedBytesPerSec, long etaSeconds) {
+                    if (!firstTick[0] && totalBytes > 0) {
+                        firstTick[0] = true;
+                        firstTickMs[0] = SystemClock.elapsedRealtime() - engineT0;
+                        DowniFetcherService.blackboxEventNow(getApplicationContext(),
+                                "ENGINE_FIRST_NUMBER ms=" + firstTickMs[0] + " total=" + totalBytes
+                                + " speed=" + ((long) speedBytesPerSec) + "Bps");
+                    }
                     // v3.1.1 (defect N2): the row carries real numbers — % · size/total · speed · ETA.
                     applyProgress(jobId, (int) percent, downloadedBytes, totalBytes, speedBytesPerSec, etaSeconds);
                 }
@@ -560,6 +574,8 @@ public class DowniDownloadService extends Service {
                 }
             };
             String formatId = rememberedFormatFor(cleanUrl);
+            DowniFetcherService.blackboxEventNow(this, "ENGINE_JOB_START platform="
+                    + platformKeyFor(cleanUrl) + " fmt=" + formatId + " job=" + jobId);
 
             PyObject response = Python.getInstance().getModule("downloader")
                 .callAttr("download", cleanUrl, workDir.getAbsolutePath(), formatId, listener);
@@ -622,6 +638,9 @@ public class DowniDownloadService extends Service {
             // grab even when it was closed the whole time.
             addGrabBytes(this, finalBytes);
             recordGrabHistory(this, jobId, title, destination, dropUrls.get(jobId), finalBytes);
+            DowniFetcherService.blackboxEventNow(this, "ENGINE_DONE ms="
+                    + (SystemClock.elapsedRealtime() - engineT0) + " first_number_ms=" + firstTickMs[0]
+                    + " bytes=" + finalBytes);
             Log.i("DOWNI", "drop saved " + jobId + " -> " + destination); // (D) logcat breadcrumb
             live.remove(jobId);
             releaseJobRow(jobId);
@@ -672,6 +691,9 @@ public class DowniDownloadService extends Service {
                             .put("ts", System.currentTimeMillis()).toString())
                         .apply();
                 } catch (Exception ignored) {}
+                DowniFetcherService.blackboxEventNow(this, "ENGINE_FAIL ms="
+                        + (SystemClock.elapsedRealtime() - engineT0) + " first_number_ms=" + firstTickMs[0]
+                        + " err=" + detail);
                 Log.i("DOWNI", "drop failed " + jobId + ": " + detail); // (D) logcat breadcrumb
                 notifySharedFailure(url, friendly);
             }

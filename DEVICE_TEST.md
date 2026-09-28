@@ -877,6 +877,26 @@ published tag is not moved, a new version is cut.
 > `5e75883f…`; 0y-5 records the trade. **§0x-4's "production blindness" is closed by this section**:
 > a release build now carries its own last fifty events, and mentions when the previous one died.
 
+## 0z. B, step 1 — the instrument, and what it already measured — vivo V2058
+
+> The owner's B question: *"the fetcher is noticeably sluggish compared to TikTok (5–8× slower)"*. This
+> section is the instrument that answers it, the first numbers it produced, and the two things it
+> immediately corrected about my own assumptions.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0z-1 | The instrument: the engine's phases, in the box | Four events from the one place **every** grab's download passes through (`DowniDownloadService.runSharedDownload`, the `startShared` contract): `ENGINE_JOB_START platform=… fmt=… job=…`, **`ENGINE_FIRST_NUMBER ms=… total=… speed=…Bps`** (the first progress tick with real numbers = the end of resolution), `ENGINE_DONE ms=… first_number_ms=… bytes=…`, `ENGINE_FAIL ms=… err=…`. Milestones are persisted immediately (`blackboxEventNow`), so they survive a kill; `t0` starts at the top of the run, so the gap includes a cold Python start — which is exactly what the user waits for |
+| 0z-2 | **TikTok, measured** (warm grab, 678 730 B) | `20:02:25.151 ENGINE_JOB_START platform=tiktok fmt=best job=drop1790607745139`, `20:02:29.837 ENGINE_FIRST_NUMBER ms=4692 total=678730 speed=1100521Bps`, `20:02:30.977 ENGINE_DONE ms=5832 first_number_ms=4692 bytes=678730` — **resolution 4.69 s, transfer 1.14 s, total 5.83 s** at ~1.05 MB/s reported. Even TikTok's fast lane spends **four times longer finding the file than moving it** |
+| 0z-3 | **Instagram: the chain, not the engine, is the first bottleneck** | The box shows the IG chain's own cost *before* any download exists: `STEP2_SCROLL pkg=com.instagram.android from=3 to=5`, then **fifteen consecutive `DUMP reason=content_changed … identical_to_previous` at ~0.6 s each** (19:58:35→19:58:50 in the first run, the same shape at 20:03), and only then `STEP3_DUMP_15 confidence=HIGH source=tree url=…` → `PIPELINE_READY`. Wall clock from tap to file: **13–22 s for Instagram** (two cold grabs) against **13 s for TikTok** — with the download sometimes starting after the user has given up. Whatever the engine costs, this wait is in front of it, and it is a *chain-wait* problem (what is it waiting for, and can the URL be taken earlier), not a yt-dlp tuning problem |
+| 0z-4 | A measurement bug I hit — and the spec correction it forced | The first export came 80 s after the grab and Instagram's `ENGINE_*` lines were **gone**: with the per-poll chatter filtered, one waiting chain still emits ~50 real events per minute, so a 50-slot ring held less than two grabs. The box is **100 events** now (`EventRing.CAPACITY`, tests made capacity-relative), still ~15 KB in RAM and one prefs entry. The same measurement proved the *noise filter* works — TikTok's `ENGINE_*` lines survived its whole half, which is why 0z-2 exists |
+| 0z-5 | Not measured yet, and said plainly | **Instagram's own `ENGINE_*` numbers are not in hand.** The ring lost them in the first run, and the app then went into the state described in 0z-6, so the focused re-run could not be taken tonight. The instrument is in place; the re-run is a two-minute job (and it can be made Core-independent by hooking the plugin's in-app download path the same way, which is the next 20 lines of code) |
+| 0z-6 | **A hazard found while trying: a bound-but-deaf binding** | After the export sequence: `settings get secure enabled_accessibility_services` still named our service, `dumpsys accessibility` still listed it under *Bound services*, and `pidof` was alive — but **the box stopped receiving events entirely** (nothing at all after 20:04:39 despite two Instagram launches) and the Core had no window. A fresh process produced an overlay window again, but at `[0,2331][1080,2408]` — not the Core's 176×176 at (904,711). Recorded as-is: on this ROM **bound ≠ delivering**, and the Fetcher has no self-check for that state yet (Wave 4's re-arm covers *disarmed*, not *bound-but-deaf*) — a candidate for the next pass, with the box as the instrument that proves it |
+
+> Sign and date here when green: **2026-09-28 20:02–20:15** — 0z-1 … 0z-4 recorded (TikTok's phases
+> measured; the IG chain-wait measured); **0z-5 outstanding** (IG's engine phases), 0z-6 recorded as a
+> new hazard. Build `b0352870…` (44 820 349 B) installed in place — `base.apk` on the device hashed to
+> itself — 21 suites / 159 tests / 0 failures. Commit `…` (code) + this section (docs); not pushed.
+
 ## 3. Regression sweep (after any engine touch)
 
 

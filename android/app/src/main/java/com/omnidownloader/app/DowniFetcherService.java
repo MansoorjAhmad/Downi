@@ -110,13 +110,34 @@ public class DowniFetcherService extends AccessibilityService {
      * (EventRing.FLUSH_EVERY) and at milestones; one small prefs entry, no file I/O.
      */
     private void persistBlackbox() {
+        persistBlackbox(this);
+    }
+
+    /** Static form, so the download service and the plugin write to the same box. */
+    static void persistBlackbox(android.content.Context ctx) {
         try {
-            getSharedPreferences("downi_fetcher", MODE_PRIVATE).edit()
+            ctx.getSharedPreferences("downi_fetcher", android.content.Context.MODE_PRIVATE).edit()
                     .putString("lastEvents", BLACKBOX.dump())
                     .putLong("lastEventAt", System.currentTimeMillis())
                     .apply();
             BLACKBOX.markFlushed();
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Wave 5b: one event into the box from ANY component — the chain, the download service, or the
+     * plugin — persisted on the usual cadence. This is what makes the engine's own phases (the
+     * numbers the speed work is about) visible on a release build, where logcat gives us nothing.
+     */
+    public static void blackboxEvent(android.content.Context ctx, String msg) {
+        BLACKBOX.add(ts() + " " + msg);
+        if (BLACKBOX.shouldFlush()) persistBlackbox(ctx);
+    }
+
+    /** As above, but persisted immediately: for milestones that must survive a kill right after. */
+    public static void blackboxEventNow(android.content.Context ctx, String msg) {
+        BLACKBOX.add(ts() + " " + msg);
+        persistBlackbox(ctx);
     }
 
     /**

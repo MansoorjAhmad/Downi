@@ -22,26 +22,57 @@ import java.util.ArrayDeque;
  */
 public final class EventRing {
 
-    public static final int CAPACITY = 50;
+    /**
+     * How many events the box keeps. The first cut was 50 (the owner's spec), and the measurement
+     * corrected it: while the chain waits for Instagram's sheet it emits ~50 real events per minute
+     * even with the per-poll chatter filtered, so 50 slots held less than two grabs — the TikTok
+     * run's `ENGINE_*` lines were still there, Instagram's were gone (2026-09-28 20:04). 100 short
+     * strings is still ~15 KB in RAM and one prefs entry.
+     */
+    public static final int CAPACITY = 100;
     /** Longest a single stored line may be (the UI and the prefs entry stay readable). */
     public static final int MAX_LINE = 220;
     /** Flush cadence: at most this many trailing events are lost if the process is killed. */
     public static final int FLUSH_EVERY = 4;
 
+    /**
+     * Per-poll chatter that answers nothing and evicts the milestones this box exists for. Measured
+     * 2026-09-28: while the chain waited for Instagram's sheet it logged `DUMP reason=…` every ~600 ms,
+     * and two grabs' `ENGINE_*` lines were pushed out of a 50-slot ring within half a minute. These
+     * stay in logcat and in the debug build's forensic log; the box keeps the story.
+     */
+    private static final String[] NOISE = {
+            " identical_to_previous",
+            "DUMP reason=",
+    };
+
     private final ArrayDeque<String> lines = new ArrayDeque<>();
     private int sinceFlush;
     private int dropped;
 
-    /** Adds one event, dropping the oldest when full. Blank lines are ignored. */
+    /** Adds one event, dropping the oldest when full. Blank lines and per-poll noise are ignored. */
     public synchronized void add(String line) {
         String clean = clean(line);
         if (clean.isEmpty()) return;
+        if (isNoise(clean)) return;
         if (lines.size() >= CAPACITY) {
             lines.removeFirst();
             dropped++;
         }
         lines.addLast(clean);
         sinceFlush++;
+    }
+
+    /**
+     * True for events that are per-poll chatter rather than history (see {@link #NOISE}). Kept public
+     * so the reason a line is missing from the box can be checked and tested, not just asserted.
+     */
+    public static boolean isNoise(String line) {
+        if (line == null) return false;
+        for (String n : NOISE) {
+            if (line.contains(n)) return true;
+        }
+        return false;
     }
 
     /** True when the service should persist the ring (see {@link #FLUSH_EVERY}). */

@@ -14,21 +14,22 @@ public class EventRingTest {
 
     private static String n(int i) { return "event " + i; }
 
-    @Test public void keepsTheLastFiftyEventsOldestFirst() {
+    @Test public void keepsTheLastCapacityEventsOldestFirst() {
         EventRing r = new EventRing();
-        for (int i = 1; i <= 60; i++) r.add(n(i));
+        int extra = 10;
+        for (int i = 1; i <= EventRing.CAPACITY + extra; i++) r.add(n(i));
         String[] s = r.snapshot();
         assertEquals(EventRing.CAPACITY, s.length);
-        assertEquals("event 11", s[0]);                       // 1..10 fell out
-        assertEquals("event 60", s[s.length - 1]);
-        assertEquals(10, r.dropped());
+        assertEquals("event " + (extra + 1), s[0]);                  // the oldest 10 fell out
+        assertEquals("event " + (EventRing.CAPACITY + extra), s[s.length - 1]);
+        assertEquals(extra, r.dropped());
         assertEquals(EventRing.CAPACITY, r.size());
     }
 
-    @Test public void exactlyFiftyFitsWithoutDroppingAnything() {
+    @Test public void exactlyCapacityFitsWithoutDroppingAnything() {
         EventRing r = new EventRing();
-        for (int i = 1; i <= 50; i++) r.add(n(i));
-        assertEquals(50, r.snapshot().length);
+        for (int i = 1; i <= EventRing.CAPACITY; i++) r.add(n(i));
+        assertEquals(EventRing.CAPACITY, r.snapshot().length);
         assertEquals(0, r.dropped());
         assertEquals("event 1", r.snapshot()[0]);
     }
@@ -79,11 +80,11 @@ public class EventRingTest {
     @Test public void seedingRespectsTheCapacity() {
         EventRing r = new EventRing();
         StringBuilder dump = new StringBuilder();
-        for (int i = 1; i <= 60; i++) dump.append(n(i)).append('\n');
+        for (int i = 1; i <= EventRing.CAPACITY + 10; i++) dump.append(n(i)).append('\n');
         r.seed(dump.toString());
         assertEquals(EventRing.CAPACITY, r.size());
-        assertEquals("event 11", r.snapshot()[0]);
-        assertEquals("event 60", r.snapshot()[49]);
+        assertEquals("event 11", r.snapshot()[0]);                                  // 10 fell out
+        assertEquals("event " + (EventRing.CAPACITY + 10), r.snapshot()[EventRing.CAPACITY - 1]);
     }
 
     @Test public void dumpAndSnapshotAgree() {
@@ -92,6 +93,31 @@ public class EventRingTest {
         assertEquals("first\nsecond", r.dump());
         assertEquals(r.dump(), r.asText());
         assertEquals(2, r.snapshot().length);
+    }
+
+    @Test public void perPollChatterNeverEvictsTheMilestones() {
+        // The 2026-09-28 finding: 15 `DUMP reason=… identical_to_previous` lines (one per ~600 ms of
+        // waiting) pushed two grabs' ENGINE lines out of the box. Noise is not history.
+        EventRing r = new EventRing();
+        r.add("10:00:00.000 CHAIN_SCAN pkg=com.instagram.android share=1 copylink=0 downi=0 overflow=1");
+        for (int i = 0; i < 80; i++) {
+            r.add("10:00:0" + (i % 10) + ".000 DUMP reason=content_changed nodes=70 identical_to_previous");
+        }
+        r.add("10:00:10.000 ENGINE_JOB_START platform=instagram fmt=best job=drop123");
+        String[] s = r.snapshot();
+        assertEquals("only the milestones are kept", 2, s.length);
+        assertTrue(s[0].contains("CHAIN_SCAN"));
+        assertTrue(s[1].contains("ENGINE_JOB_START"));
+        assertEquals("and nothing was aged out by the chatter", 0, r.dropped());
+    }
+
+    @Test public void theNoiseFilterIsNarrowEnoughToKeepTheVerdicts() {
+        assertTrue(EventRing.isNoise("10:00:00.000 DUMP reason=content_changed nodes=70 identical_to_previous"));
+        assertFalse("the numbered dump carries the verdict",
+                EventRing.isNoise("10:00:00.000 STEP3_DUMP_15 confidence=HIGH source=tree url=https://…"));
+        assertFalse(EventRing.isNoise("10:00:00.000 ENGINE_FIRST_NUMBER ms=412 total=7333756"));
+        assertFalse(EventRing.isNoise("10:00:00.000 CHAIN_SHARE_CLICK route=gesture_bounds_ok=true"));
+        assertFalse(EventRing.isNoise(null));
     }
 
     @Test public void clearEmptiesTheBoxAndItsCounters() {
