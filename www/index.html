@@ -372,6 +372,23 @@
       <!-- ================= TAB 1: GRAB ================= -->
       <div id="viewGrab" class="space-y-4">
 
+        <!-- Fetcher re-arm banner (Wave 4, 2026-09-28). The phone clears the accessibility binding
+             behind our back — vivo did it on an app update — and until this existed the app looked
+             perfectly healthy while grabbing nothing. Shown ONLY to a user who had it on before. -->
+        <div id="fetcherOffBanner" class="hidden card p-4 fade-in" style="border-color:rgba(251,113,133,0.35); background:rgba(251,113,133,0.06)">
+          <div class="flex items-start gap-3">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-[15px] font-extrabold" style="background:rgba(251,113,133,0.14); color:#FB7185">!</div>
+            <div class="min-w-0">
+              <p class="text-[12px] font-extrabold text-white">The Fetcher is switched off</p>
+              <p id="fetcherOffWhy" class="text-[10px] mt-0.5 leading-relaxed" style="color:var(--muted)">Your phone turned it off — usually after an update. Nothing grabs until it is back on.</p>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button onclick="rearmFetcherFlow()" class="btn-hero flex-1 py-2.5 text-[11px] font-extrabold">Re-arm it now</button>
+            <button onclick="openFetcherSettings()" class="btn px-3 py-2.5 text-[11px] font-bold text-zinc-300">How?</button>
+          </div>
+        </div>
+
         <!-- Clipboard banner -->
         <div id="clipboardBanner" class="hidden card card-accent p-4 flex items-center justify-between gap-3 fade-in">
           <div class="flex items-center gap-3 min-w-0">
@@ -1046,6 +1063,7 @@
         document.getElementById(id)?.classList.remove('on');
       });
       if (tab === 'settings') loadFetcherCard();
+        if (tab === 'grab') refreshFetcherState();   // Wave 4: the banner follows you to Grab
       const view = { grab: 'viewGrab', queue: 'viewQueue', vault: 'viewVault', settings: 'viewSettings' }[tab];
       const nav = { grab: 'navGrab', queue: 'navQueue', vault: 'navVault', settings: 'navSettings' }[tab];
       const el = document.getElementById(view);
@@ -3227,6 +3245,9 @@
       refreshSaveLocationLabel();
       consumeOpenQueueRequest();   // v3.1.1: notification tap → Queue (N7)
       checkNotificationHint();     // v3.1.1: warn once if notifications are off (N6)
+      // Wave 4 (2026-09-28): the phone may have switched the Fetcher off since the last run — say so
+      // on the Grab screen instead of letting a tap that does nothing be the discovery.
+      setTimeout(refreshFetcherState, 1500);
       applyAccent();
       applyAmoled();
       setupVaultLongPress();
@@ -3305,9 +3326,17 @@
         const badge = document.getElementById('fetcherBadge');
         const btn = document.getElementById('fetcherToggleBtn');
         const stats = document.getElementById('fetcherStats');
-        if (res.armed) { badge.textContent = 'ARMED'; badge.style.color = '#22D3EE'; }
+        // Wave 4 (2026-09-28): four honest states, not two — `bound` is whether the service is
+        // actually running, `wasArmed` whether the user ever turned it on (so a user who never did
+        // is never nagged), and `recoverable` whether the app may write the binding itself.
+        if (res.armed && res.bound) { badge.textContent = 'ARMED'; badge.style.color = '#22D3EE'; }
+        else if (res.armed) { badge.textContent = 'ARMED · not running'; badge.style.color = '#FBBF24'; }
+        else if (res.wasArmed) { badge.textContent = 'OFF · re-armable'; badge.style.color = '#FB7185'; }
         else { badge.textContent = 'OFF'; badge.style.color = '#FB7185'; }
-        btn.textContent = res.armed ? 'Turn Fetcher off' : 'Turn Fetcher on';
+        if (res.armed) btn.textContent = 'Turn Fetcher off';
+        else if (res.wasArmed) btn.textContent = 'Re-arm the Fetcher';
+        else btn.textContent = 'Turn Fetcher on';
+        applyFetcherOffBanner(res);
         const mb = (res.bytesToday / 1048576).toFixed(1);
         stats.textContent = 'today: ' + res.grabsToday + ' grabs · ' + mb + ' MB'
             + (res.pausedCount > 0 ? ' · ' + res.pausedCount + ' paused' : '')
@@ -3337,13 +3366,60 @@
       } catch (e) {}
     }
     async function toggleFetcher() {
+      // Turning it back ON after the phone switched it off goes through the recovery path, which
+      // knows the difference between "no grant" and "the binding was wiped" (Wave 4).
+      if (!fetcherState.armed && fetcherState.recoverable) { await rearmFetcherFlow(); return; }
       try {
         const res = await getEngine()?.setFetcherEnabled({ enabled: !fetcherState.armed });
         if (res && res.needsPermission) {
+          await openFetcherSettings();
           alert('One-time setup - run once from a PC: adb shell pm grant com.omnidownloader.app android.permission.WRITE_SECURE_SETTINGS');
         }
       } catch (e) {}
       loadFetcherCard();
+    }
+
+    // ---------- Wave 4: the Fetcher can be switched off behind our back ----------
+    // vivo's ABE clears the accessibility binding (measured: an app update did exactly that on
+    // 2026-09-28), and until this existed the app looked perfectly healthy while grabbing nothing.
+    // The banner appears only when the Fetcher WAS on and is now off — never as a nag to a user who
+    // has not turned it on, and never while it is working.
+    function applyFetcherOffBanner(res) {
+      const banner = document.getElementById('fetcherOffBanner');
+      if (!banner) return;
+      const off = !!(res && res.wasArmed && !res.armed);
+      banner.classList.toggle('hidden', !off);
+      if (!off) return;
+      const why = document.getElementById('fetcherOffWhy');
+      if (why) {
+        why.textContent = res.recoverable
+            ? 'Your phone turned it off — usually after an update. One tap puts it back.'
+            : 'Your phone turned it off. Open accessibility settings and switch DOWNI Fetcher on.';
+      }
+    }
+    async function refreshFetcherState() {
+      try {
+        const res = await getEngine()?.fetcherStatus();
+        if (!res) return;
+        fetcherState = res;
+        applyFetcherOffBanner(res);
+      } catch (e) {}
+    }
+    async function rearmFetcherFlow() {
+      try {
+        const res = await getEngine()?.rearmFetcher();
+        if (res && res.armed) {
+          showToast('Fetcher re-armed', 'The Core will appear over Instagram and TikTok again.', 'success');
+        } else {
+          await openFetcherSettings();
+          showToast('Switch it on', 'Turn on "DOWNI Fetcher" in the list that just opened, then come back.', 'info');
+        }
+      } catch (e) {}
+      await refreshFetcherState();
+      loadFetcherCard();
+    }
+    async function openFetcherSettings() {
+      try { await getEngine()?.openAccessibilitySettings(); } catch (e) {}
     }
     async function setCoreSize(dp) {
       try { await getEngine()?.setCoreSize({ dp }); } catch (e) {}

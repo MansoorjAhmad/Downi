@@ -450,6 +450,14 @@ public class DowniEnginePlugin extends Plugin {
         JSObject r = new JSObject();
         r.put("armed", fetcherArmed());
         r.put("canToggle", canToggleFetcher());
+        // Wave 4: the difference between "you never turned it on" and "the phone turned it off" —
+        // and whether the app can put it back by itself (the one-time adb grant).
+        r.put("bound", DowniFetcherService.isBound());
+        r.put("wasArmed", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
+                .getBoolean("wasArmed", false));
+        r.put("userEnabled", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
+                .getBoolean("userEnabled", false));
+        r.put("recoverable", FetcherRecovery.wantedAndAllowed(getContext()));
         try {
             org.json.JSONObject paused = new org.json.JSONObject(getContext()
                     .getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
@@ -512,6 +520,42 @@ public class DowniEnginePlugin extends Plugin {
                     .edit().putBoolean("userEnabled", enabled).apply();
             r.put("ok", true);
         } catch (Exception e) { r.put("ok", false); r.put("error", String.valueOf(e)); }
+        call.resolve(r);
+    }
+
+    /**
+     * Wave 4 (owner report 2026-09-28: the ROM disarmed the Fetcher when the app updated, silently):
+     * try to put the binding back through the app's own recovery path, and report exactly what
+     * happened. `outcome` is FetcherRecovery's own vocabulary — ok-present / ok-rearmed /
+     * skipped-guard / err-… — so the UI can be honest about which case the user is in instead of
+     * showing a toggle that silently does nothing.
+     */
+    @PluginMethod
+    public void rearmFetcher(PluginCall call) {
+        JSObject r = new JSObject();
+        String outcome = FetcherRecovery.ensureArmed(getContext());
+        FetcherRecovery.scheduleKeepAlive(getContext());
+        r.put("outcome", outcome);
+        r.put("armed", fetcherArmed());
+        r.put("bound", DowniFetcherService.isBound());
+        r.put("recoverable", FetcherRecovery.wantedAndAllowed(getContext()));
+        call.resolve(r);
+    }
+
+    /** The door the user has to walk through when the app may not write the binding itself. */
+    @PluginMethod
+    public void openAccessibilitySettings(PluginCall call) {
+        JSObject r = new JSObject();
+        try {
+            android.content.Intent i = new android.content.Intent(
+                    android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+            r.put("ok", true);
+        } catch (Exception e) {
+            r.put("ok", false);
+            r.put("error", String.valueOf(e));
+        }
         call.resolve(r);
     }
 

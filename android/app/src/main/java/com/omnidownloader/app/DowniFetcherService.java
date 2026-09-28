@@ -30,6 +30,7 @@ import com.omnidownloader.app.downicore.DowniCore;
 import com.omnidownloader.app.fetcher.ChainObserver;
 import com.omnidownloader.app.fetcher.CoreTapAction;
 import com.omnidownloader.app.fetcher.Route;
+import com.omnidownloader.app.fetcher.ShareRows;
 import com.omnidownloader.app.fetcher.ShareSurface;
 import com.omnidownloader.app.fetcher.SheetSwipe;
 import com.omnidownloader.app.fetcher.AttentionLedger;
@@ -81,6 +82,15 @@ public class DowniFetcherService extends AccessibilityService {
     public static void resetCorePositionLive() {
         DowniFetcherService s = live;
         if (s != null && s.core != null) s.core.resetPosition();
+    }
+
+    /**
+     * True while THIS app has a live Fetcher service instance bound — the honest "is it actually
+     * running right now" that the settings card and the re-arm banner need. `armed` in the setting
+     * only says the platform has us enabled; this says the service exists.
+     */
+    public static boolean isBound() {
+        return live != null;
     }
 
     /**
@@ -157,6 +167,11 @@ public class DowniFetcherService extends AccessibilityService {
     private ShareSurface.Win chainSheetWin;
     /** The descriptor the policy picked in the last {@link #sheetSurfaceWindow()} call. */
     private ShareSurface.Win lastSurfaceWin;
+    /**
+     * True once this run has tried the platform's own overflow ("More actions for this post") because
+     * the share row could not be used — the Home feed's second route (Wave 4, 2026-09-28).
+     */
+    private boolean chainTriedOverflow;
 
     /**
      * Defect D-a (found on device 2026-09-25): one tap could deliver the SAME url **twice**. Two
@@ -1045,6 +1060,7 @@ public class DowniFetcherService extends AccessibilityService {
         chainSheetNeedsClose = false;
         chainSheetWin = null;
         lastSurfaceWin = null;
+        chainTriedOverflow = false;
         sheetSwipes = 0;
         sheetWaits = 0;
         sheetScans = 0;
@@ -1440,9 +1456,11 @@ public class DowniFetcherService extends AccessibilityService {
         ArrayList<AccessibilityNodeInfo> share = new ArrayList<>();
         ArrayList<AccessibilityNodeInfo> copy = new ArrayList<>();
         ArrayList<AccessibilityNodeInfo> downi = new ArrayList<>();
-        collectCandidates(root, share, copy, downi, new Counter(), 0);
+        ArrayList<AccessibilityNodeInfo> overflow = new ArrayList<>();
+        collectCandidates(root, share, copy, downi, overflow, new Counter(), 0);
         log("CHAIN_SCAN pkg=" + sessionPkg + " share=" + share.size()
-                + " copylink=" + copy.size() + " downi=" + downi.size());
+                + " copylink=" + copy.size() + " downi=" + downi.size()
+                + " overflow=" + overflow.size());
         for (AccessibilityNodeInfo n : share) {
             log("CHAIN_SHARE_CANDIDATE id=" + clip(strOrEmpty(n.getViewIdResourceName()), 90)
                     + " text=" + clip(nodeText(n), 120) + " clickable=" + n.isClickable()
@@ -1450,7 +1468,23 @@ public class DowniFetcherService extends AccessibilityService {
         }
         if (!doClick) { log("CHAIN_DRY_DONE"); return; }
         AccessibilityNodeInfo t = firstClickable(share);
-        if (t == null) { log("CHAIN_NO_SHARE_CLICK"); resolverFailed("no_share_row"); chainReset(); return; }
+        String route = null;
+        if (t == null) {
+            // Wave 4 (owner report 2026-09-28: "the Fetcher is reliable on the Reels tab but
+            // inconsistent on the Home feed"): the feed's row IS the row a finger hits, but nothing
+            // in its chain is clickable in the tree. A gesture at the row's OWN bounds — never a
+            // screen fraction — is the honest equivalent of the user's tap.
+            t = firstTappable(share);
+            if (t != null) route = "gesture_bounds";
+        }
+        if (t == null) {
+            // The feed's second route: the post's own overflow, whose menu carries "Copy link".
+            if (!chainTriedOverflow) { chainStepOverflow(); return; }
+            log("CHAIN_NO_SHARE_CLICK overflow=tried");
+            resolverFailed("no_share_row");
+            chainReset();
+            return;
+        }
         observer.onStep("share_found", "");
         // Wave 2 (sheet C4 REACH): the tether lands on the REAL control the resolver is
         // about to touch — its screen bounds are the truth, no invented coordinates.
@@ -1459,12 +1493,54 @@ public class DowniFetcherService extends AccessibilityService {
             t.getBoundsInScreen(sb);
             if (reach != null) reach.reachTo(sb);
         } catch (Throwable ignored) {}
-        log("CHAIN_SHARE_CLICK text=" + clip(nodeText(t), 120)
-                + " route=" + clickNode(t));
+        String routeUsed;
+        if (route != null) {
+            routeUsed = route + "_ok=" + tapCenter(t);   // the tree offers nothing clickable
+        } else {
+            routeUsed = clickNode(t);
+        }
+        log("CHAIN_SHARE_CLICK text=" + clip(nodeText(t), 120) + " route=" + routeUsed);
         // Event-driven wait (§H2): poll for the share surface's own window instead of sleeping a
         // fixed 1300 ms — the sheet opens in ~700 ms on this ROM, so step 2 starts sooner; the
         // deadline fallback keeps OEM same-window sheets working.
         postStep(new Runnable() { @Override public void run() { waitShareSurface(0); } }, 300);
+    }
+
+    /**
+     * The Home feed's second route (Wave 4, 2026-09-28): tap the post's own overflow —
+     * *"More actions for this post"* — and let the normal step-2 scan find the platform's **Copy link**
+     * inside its menu. Same transport the chain already trusts (the platform's own action, never a share
+     * sheet pointed at DOWNI), and the same close gate afterwards, so a menu that dismisses itself can
+     * never receive a stray BACK either.
+     */
+    private void chainStepOverflow() {
+        chainTriedOverflow = true;
+        AccessibilityNodeInfo root = pickShareRoot("CHAIN_OVERFLOW", false);
+        if (root == null) { log("CHAIN_OVERFLOW_NO_ROOT"); resolverFailed("no_share_row"); chainReset(); return; }
+        ArrayList<AccessibilityNodeInfo> share = new ArrayList<>();
+        ArrayList<AccessibilityNodeInfo> copy = new ArrayList<>();
+        ArrayList<AccessibilityNodeInfo> downi = new ArrayList<>();
+        ArrayList<AccessibilityNodeInfo> overflow = new ArrayList<>();
+        collectCandidates(root, share, copy, downi, overflow, new Counter(), 0);
+        AccessibilityNodeInfo o = firstClickable(overflow);
+        String route = o != null ? null : "gesture_bounds";
+        if (o == null) o = firstTappable(overflow);
+        if (o == null) {
+            log("CHAIN_OVERFLOW_NONE candidates=0");
+            resolverFailed("no_share_row");
+            chainReset();
+            return;
+        }
+        observer.onStep("overflow_found", "");
+        try {
+            Rect sb = new Rect();
+            o.getBoundsInScreen(sb);
+            if (reach != null) reach.reachTo(sb);
+        } catch (Throwable ignored) {}
+        String routeUsed = route == null ? clickNode(o) : (route + "_ok=" + tapCenter(o));
+        log("CHAIN_OVERFLOW_CLICK text=" + clip(nodeText(o), 120) + " route=" + routeUsed);
+        // Its menu is a share surface in every sense the chain cares about: wait for it the same way.
+        postStep(new Runnable() { @Override public void run() { waitShareSurface(0); } }, 400);
     }
 
     private void waitShareSurface(final int attempt) {
@@ -1589,6 +1665,11 @@ public class DowniFetcherService extends AccessibilityService {
                 log("CHAIN_SHEET_WAIT n=" + sheetWaits + "/" + MAX_SHEET_WAITS
                         + " why=surface_not_open_no_swipe");
                 postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 900);
+                return;
+            }
+            if (!surface && !chainTriedOverflow) {
+                log("CHAIN_SHEET_NEVER_OPENED fallback=overflow");
+                chainStepOverflow();
                 return;
             }
             log("CHAIN_NO_TARGET neither DOWNI nor Copy link found"
@@ -1947,22 +2028,42 @@ public class DowniFetcherService extends AccessibilityService {
         }
     }
 
+    /** The four-list form the probes use; the overflow list is only needed by the share step. */
     private void collectCandidates(AccessibilityNodeInfo node, ArrayList<AccessibilityNodeInfo> share,
                                    ArrayList<AccessibilityNodeInfo> copy, ArrayList<AccessibilityNodeInfo> downi,
+                                   Counter c, int depth) {
+        collectCandidates(node, share, copy, downi, new ArrayList<AccessibilityNodeInfo>(), c, depth);
+    }
+
+    /**
+     * Wave 4 (owner report 2026-09-28: "Inconsistency on Home Feed"): the classification moved to
+     * {@link ShareRows}, because Instagram's feed does not call its share row a share row — its own
+     * description is *"Send post. Button. Double tap to choose who to send this post to."* — so the old
+     * `contains("share")` test never listed it at all. The same pass gives the post's **overflow**
+     * (*"More actions for this post"*) a list of its own: its menu carries the platform's own
+     * "Copy link", the transport this chain already trusts.
+     */
+    private void collectCandidates(AccessibilityNodeInfo node, ArrayList<AccessibilityNodeInfo> share,
+                                   ArrayList<AccessibilityNodeInfo> copy, ArrayList<AccessibilityNodeInfo> downi,
+                                   ArrayList<AccessibilityNodeInfo> overflow,
                                    Counter c, int depth) {
         if (node == null || c.nodes >= MAX_NODES || depth > MAX_DEPTH) return;
         if (isOurs(node)) return;             // never scan the Fetcher's own bubble overlay
         c.nodes++;
         String txt = nodeText(node);
         if (!txt.isEmpty()) {
-            if (txt.contains("share") && !txt.contains("reshare")) share.add(node);
-            if (txt.contains("copy link")) copy.add(node);
-            if (txt.contains("downi")) downi.add(node);
+            switch (ShareRows.classify(txt, strOrEmpty(node.getViewIdResourceName()))) {
+                case ShareRows.SHARE:     share.add(node); break;
+                case ShareRows.COPY_LINK: copy.add(node); break;
+                case ShareRows.OVERFLOW:  overflow.add(node); break;
+                case ShareRows.DOWNI:     downi.add(node); break;
+                default: break;
+            }
         }
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = null;
             try { child = node.getChild(i); } catch (Throwable ignored) {}
-            collectCandidates(child, share, copy, downi, c, depth + 1);
+            collectCandidates(child, share, copy, downi, overflow, c, depth + 1);
         }
     }
 
@@ -2026,6 +2127,24 @@ public class DowniFetcherService extends AccessibilityService {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /**
+     * The node whose own bounds we may tap when the tree offers nothing clickable. Instagram's Home
+     * feed is the case this exists for: `row_feed_button_share` is `clickable=false`, yet its bounds
+     * are exactly the row a finger hits. The box comes from the node itself — never a screen fraction
+     * — so this cannot reach the feed's next-video gesture the way the old blind swipes could.
+     */
+    private AccessibilityNodeInfo firstTappable(ArrayList<AccessibilityNodeInfo> list) {
+        for (AccessibilityNodeInfo n : list) {
+            try {
+                if (!n.isVisibleToUser()) continue;
+                Rect r = new Rect();
+                n.getBoundsInScreen(r);
+                if (r.width() >= 8 && r.height() >= 8) return n;
+            } catch (Throwable ignored) {}
+        }
+        return null;
     }
 
     private static AccessibilityNodeInfo firstClickable(ArrayList<AccessibilityNodeInfo> list) {
