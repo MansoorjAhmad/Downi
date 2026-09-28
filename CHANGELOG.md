@@ -87,7 +87,8 @@ below a 1080p pixel trace's resolution, so this cell's confirmation is the file 
 
 **Same day, the completion pass: the polish, the state table, and the last two loops.** Four things were
 still owed when v3.3.1 shipped, and all four are closed in the same version (no new version invented, no
-release advanced — the work is local, `DEVICE_TEST.md` §0q):
+release advanced — the work is local, `DEVICE_TEST.md` §0q, and the signed release build gets its own rows
+in §0r):
 
 - **The inspector's primary action could not be tapped without scrolling first** (C8). With a real
   quality list the sheet is 946 px of content in a 725 px view, and the Download pill sat **+87 px below
@@ -115,6 +116,17 @@ release advanced — the work is local, `DEVICE_TEST.md` §0q):
   construction, and proven so: **18 suites, 123 tests, 0 failures**, then the M7 motion regression on the
   same build reads **`VERDICT 0 of the C5 motion claims failed`**. Still open, in writing: the vivo
   vendor-kill recount (§0h), which needs a longer window than this pass had.
+
+**The release build, verified locally as the pass's last gate.** `:app:assembleRelease` green, signed with
+the unchanged key (`4311317…`, the digest §0p-1 recorded — signing continuity holds) and installed **in
+place** over the published build (`adb install -r`, no uninstall; the phone reads 49 / 3.3.1). A release
+build cannot be audited from inside — it is not debuggable, so no DevTools socket, and its bench channel is
+compiled out (`if (!BuildConfig.DEBUG) return;`) — so it is tied to the audit by its own bytes instead: the
+`assets/public/index.html` **extracted from the APK** is byte-identical to `www/index.html`,
+**`B11770B0…`, 180 230 B**. On the phone: F1's pinned row photographed over a real Instagram quality list,
+the new 48 px gear landing on Settings, **0 frames rendered / 0 janky** and **21 CPU ticks = 0.21 s** over
+10 s at rest, and no crash entry dated that day. **Nothing was pushed, tagged or released** — the local APK
+(`sha256 15F14D0E…`, 44 809 989 B) waits in `outputs/apk/release/` for the owner to publish.
 
 ### The Core (Fetcher 2.0) — the 3.3.0 section, folded into 3.3.1
 

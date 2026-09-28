@@ -622,17 +622,56 @@ cannot reach it at all.
 | 0q-5 | **M3 — the state machine has a type and a table** | `CoreStates.Kind` (REST/TRANSIENT/HOLD/TOUCH), `settleTarget()` and `isLegal()`; `CoreHost.settle()` and `isTransient()` both read the one table now; illegal transitions are reported as `CORE_TRANSITION … legal=false` (reachable only from the bench channel — the arbiter goes through `setBaseState`'s beat guard). Wire names unchanged: `CORE_READY` still prints **all fourteen** in order |
 | 0q-6 | **M3 — the JVM suite and the M7 regression** | `:app:testDebugUnitTest` → **18 suites, 123 tests, 0 failures** (was 17/117; the new `CoreStatesTest` is 6 of them). Then `tools/core_motion.ps1` on the same build, `core_state_audit.py frames … --fixed`: **`VERDICT 0 of the C5 motion claims failed`** — control PASS (DETECTED move_max 19.78 ≥ 5.0), freeze PASS (**184 frames in one frozen run, longest 6100 ms**, arc 222°), resume PASS (**arc 221 = the 221 before the pause**, not 0), complete PASS (closed circle from 22600 ms, held 3833 ms, the merge peaking 148.1 vs 48.6 at rest) |
 | 0q-7 | The freeze claim's second instrument | The two PAUSED stills are **byte-identical** (`580852` B each, 3 s apart) |
-| 0q-8 | The packaged web state matches the source | `www/index.html` and `android/app/src/main/assets/public/index.html` are **byte-identical** (`C4B3ECB5…` at the F1/F2 build, re-checked at every rebuild) |
+| 0q-8 | The packaged web state matches the source | `www/index.html` and `android/app/src/main/assets/public/index.html` are **byte-identical** — **`B11770B0…`, 180 230 B** at the final build (`C4B3ECB5…` was the F1/F2 build, before F2's own regression fix moved the line). Re-checked at every rebuild, and re-checked a third time from **inside the release APK** in §0r-3 |
 | 0q-9 | Nothing was pushed | The work is local: `git status` shows the edits and **no push, no tag, no release** — the release page was deleted by the owner, and this pass deliberately does not recreate or advance it |
 
-**Two things this cell does not claim.** The raw overlay audit is the debug build's; the four-screen
-numbers and the two animation costs were measured on it. The **release** build re-run (`assembleRelease`
-+ the same instruments) is the pass's last gate and is recorded where it lands. And one item stays open
-on purpose: the **§0h vendor-kill recount (0h-9)** — how often the vivo ABE killer takes the process —
-needs a longer window than this pass had, so it is carried forward rather than guessed.
+**What this cell does not claim.** Both instruments used here are debug-only, for two different reasons.
+The WebView audit speaks CDP, and a signed release APK is not debuggable — the platform never opens the
+DevTools socket for it. The M7 motion rig needs no socket at all (it screenrecords and pushes a file into
+`fetch-spike/core.cmd`), but that channel is gated at its source: `if (!BuildConfig.DEBUG) return;` —
+*"Phase G: the bench channel never ships"* (`DowniFetcherService.java:1239`, `:1363`). So the four-screen
+numbers and the two animation costs were measured on the debug build, and the release build's own check is
+§0r instead — a deliberately different instrument: the artefact's own hashes, its screencaps, and the
+phone's counters. One item also stays open on purpose: the **§0h vendor-kill recount (0h-9)** — how often
+the vivo ABE killer takes the process — needs a longer window than this pass had, so it is carried forward
+rather than guessed at.
 
-> Sign and date here when green: **2026-09-28** — 0q-1 … 0q-9 green on the debug build; the release
-> build's own re-run is filed under §0r when it lands.
+> Sign and date here when green: **2026-09-28** — 0q-1 … 0q-9 green on the debug build `A5A87459…`.
+
+## 0r. V3.3.1 — the completion pass, the **release** build — vivo V2058, signed `app-release.apk`
+
+> Same version, same versionCode 49, same keystore. This row exists because V3's whole point is that the
+> release build must behave like the debug one — and this is how that is checked when the release build
+> cannot be audited from inside: `aapt dump badging` prints **no `application-debuggable` flag** for it, so
+> no DevTools socket, so no CDP. What is left is stronger in one place and weaker in another: the artefact
+> proves *which bytes shipped*, the screencaps prove *what a thumb sees*, and `gfxinfo`/`ps` prove *what it
+> costs*.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0r-1 | The release build is signed with the unchanged key | `:app:assembleRelease` green; `apksigner verify --print-certs` → `DN: CN=Manso, O=OmniDownloader, C=US`, `SHA-256 431131731d7b26dadd6dc6ffa3ef337853f30a63decbb863bcec2a61bb0785e5` — the same digest as §0p-1, so signing continuity holds |
+| 0r-2 | It installs **in place** over the published build | `adb install -r` → `Success`, no uninstall; the phone reads `versionCode=49 versionName=3.3.1` |
+| 0r-3 | **The artefact carries the audited web state** — the check that stands in for the socket | `assets/public/index.html` **extracted from the APK**: **`B11770B094CBC937FA9B91C298399F…`, 180 230 B** — byte-identical to `www/index.html` and to `android/app/src/main/assets/public/index.html` (§0q-8). A release build cannot be measured from inside; it can be proved to contain the thing that was |
+| 0r-4 | F1 holds in the shipped artefact | `test_out/v331_completion/release_inspector.png`: a real Instagram list (Best Available HD / Up to 1080p Full HD / 720p / Audio Track (MP3 / M4A)) scrolling behind the pinned **Download Best Available Quality (HD) / Cancel** row — the action is reachable without scrolling first |
+| 0r-5 | F2's new 48 px gear lands on Settings | tap at the header gear → Settings photographed (`test_out/v331_completion/release_settings.png`); Grab photographed (`test_out/v331_completion/release_grab.png`) |
+| 0r-6 | **The release build rests** | With `topResumedActivity=…/.MainActivity` read in the same call: `dumpsys gfxinfo … reset` + 10 s → **`Total frames rendered: 0`**, `Janky frames: 0 (0.00%)`, `Total ViewRootImpl: 1`; `/proc/<pid>/stat` utime+stime **21 ticks = 0.21 s** across the window (~2 % of one core — the process's own housekeeping). The pre-fix declarations read **565 frames and +12 s CPU per 9 s** (§0q-4) |
+| 0r-7 | No crash across the pass | `logcat -b crash -T '09-28 00:00:00.000'` → **nothing**; the buffer's only entries are older than today (`09-27 13:31:14`, `09-27 20:16:21`); `pidof com.omnidownloader.app` → alive (**14163**) before and after, and `ps -A` shows that same pid, so the process in the numbers above is the one that was installed |
+| 0r-8 | The artefact is recorded locally and **nothing is published** | `android/app/build/outputs/apk/release/app-release.apk` → `test_out/v331_completion/DOWNI-v3.3.1-local-completion.apk`, sha256 **`15F14D0EA1C0AD59C9C74E7210F62F467717E2817F23D7B05C010E21541C7DC4`**, **44 809 989 B**. **No push, no tag, no release** — the GitHub release was deleted by the owner, and this pass deliberately does not recreate or advance it |
+
+**What §0r deliberately does not repeat.** The four-screen sweep and the M7 motion rig are not re-run on
+this build, and for two different reasons. The sweep speaks CDP, which a non-debuggable app does not
+expose. The rig's recording and analysis sides are build-agnostic — `screenrecord` plus
+`core_state_audit.py` work against anything — but its scripted half pushes `fetch-spike/core.cmd`, and that
+channel is compiled out of a release build: `if (!BuildConfig.DEBUG) return;` — *"Phase G: the bench channel
+never ships"* (`DowniFetcherService.java:1239`, `:1363`). So the rig could not have *driven* this build even
+with a socket, which is the honest version of "the release build is not the bench build". The gap is closed
+by 0r-3 instead — the release APK is proved to carry the exact bytes §0q audited — and by 0r-4/0r-5, which
+are what a thumb actually does on the shipped build. The two ways a release build can genuinely differ from
+a debug one — the packaged web state, and the platform's treatment of a non-debuggable app with no bench
+channel — are the two things checked here.
+
+> Sign and date here when green: **2026-09-28** — 0r-1 … 0r-8 green on the signed release build, and the
+> local APK is parked in `outputs/apk/release/` with its sha256 above until the owner publishes it.
 
 ## 3. Regression sweep (after any engine touch)
 
