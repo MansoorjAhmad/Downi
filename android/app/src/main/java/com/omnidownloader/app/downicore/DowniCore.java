@@ -95,8 +95,16 @@ public final class DowniCore {
     }
 
     public void setState(String s) {
+        String from = view.state();
         view.setState(s);
         listener.onCoreLog("CORE_STATE " + view.state() + " " + view.stageNote());
+        // M3 (2026-09-28): the transition contract is checkable now, and this is where a violation
+        // would show. The arbiter cannot break it (it goes through setBaseState's beat guard) and the
+        // touch path does not, so in practice the only caller here is the bench channel
+        // (`core.cmd state <name>` typed by a rig). One extra line, and only when it is true.
+        if (from != null && !CoreStates.isLegal(from, view.state())) {
+            listener.onCoreLog("CORE_TRANSITION from=" + from + " to=" + view.state() + " legal=false");
+        }
     }
 
     /**

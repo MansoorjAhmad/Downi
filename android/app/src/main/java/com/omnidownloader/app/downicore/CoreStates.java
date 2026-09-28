@@ -56,16 +56,145 @@ public final class CoreStates {
             PROGRESS, PAUSED, RESUMING, COMPLETING, COMPLETE, FAILED, RETRY
     };
 
+    /**
+     * What KIND of thing a state is — the explicit type M3 asked for (`V3.3_PLAN.md` §8 row 3).
+     * Until now this was implicit: it lived in whichever predicate list a name happened to sit in, so
+     * "is this a beat or a look?" was answered by different methods with no shared source.
+     */
+    public enum Kind {
+        /** Calm. The app's resting contract (cell K-A5): nothing animates here. */
+        REST,
+        /** A one-shot beat: plays once, then settles into {@link #settleTarget(String)} — never a loop. */
+        TRANSIENT,
+        /** A look that holds until the truth changes. This is the arbiter's own vocabulary. */
+        HOLD,
+        /** The finger owns it (sheet C3). The touch path drives these; the arbiter must not. */
+        TOUCH
+    }
+
+    /*
+     * ONE TABLE, FOUR ANSWERS (M3, 2026-09-28), read top to bottom with ALL above: kind, what a beat
+     * settles into, and whether the arbiter may cut it. Before this table the same knowledge existed
+     * twice — `isTransient()`'s list and the hardcoded chain inside `CoreHost.settle()` — and nothing
+     * checked the two agreed, so a new transient with no settle branch would have frozen on screen
+     * instead of failing loudly.
+     */
+    private static final Kind[] KIND = {
+            Kind.REST,      // IDLE
+            Kind.TRANSIENT, // WAKE
+            Kind.HOLD,      // DETECTED
+            Kind.HOLD,      // RESOLVING
+            Kind.TOUCH,     // PRESSED
+            Kind.TOUCH,     // DRAGGING
+            Kind.TOUCH,     // SNAPPED
+            Kind.HOLD,      // PROGRESS
+            Kind.HOLD,      // PAUSED
+            Kind.TRANSIENT, // RESUMING
+            Kind.TRANSIENT, // COMPLETING
+            Kind.HOLD,      // COMPLETE
+            Kind.HOLD,      // FAILED
+            Kind.TRANSIENT, // RETRY
+    };
+
+    /** The state a beat settles into on its own; null where the state does not settle by itself. */
+    private static final String[] SETTLE = {
+            null,           // IDLE is not a beat
+            DETECTED,       // WAKE -> the settled "a video is here" look
+            null,           // DETECTED holds
+            null,           // RESOLVING holds until the resolver says otherwise
+            null,           // PRESSED leaves on the finger's own terms (drag or release)
+            null,           // DRAGGING likewise
+            null,           // SNAPPED likewise
+            null,           // PROGRESS holds
+            null,           // PAUSED holds
+            PROGRESS,       // RESUMING -> the flow is back
+            COMPLETE,       // COMPLETING -> the success pulse has played
+            null,           // COMPLETE holds
+            null,           // FAILED holds (leaving it is what clears the rose: CoreLook)
+            RESOLVING,      // RETRY -> the resolver's own orbit (sheet C6: "as it re-resolves")
+    };
+
+    /**
+     * True when the arbiter must not cut the state: every TRANSIENT beat, plus the finger's two
+     * one-shot beats (PRESSED, SNAPPED), which leave on their own the way WAKE does. This is exactly
+     * the set `isTransient()` has always returned — M3 made it a column instead of a chain of
+     * `equals` calls, so `CoreHost.settle()` and this predicate can no longer drift apart.
+     */
+    private static final boolean[] BEAT = {
+            false,          // IDLE
+            true,           // WAKE
+            false,          // DETECTED
+            false,          // RESOLVING
+            true,           // PRESSED
+            false,          // DRAGGING  (the finger is holding it; it is not a beat)
+            true,           // SNAPPED
+            false,          // PROGRESS
+            false,          // PAUSED
+            true,           // RESUMING
+            true,           // COMPLETING
+            false,          // COMPLETE
+            false,          // FAILED
+            true,           // RETRY
+    };
+
+    private static int indexOf(String s) {
+        if (s == null) return -1;
+        for (int i = 0; i < ALL.length; i++) if (ALL[i].equals(s)) return i;
+        return -1;
+    }
+
     /** True when the perimeter carries a real download's progress in this state. */
     public static boolean showsProgress(String s) {
         return PROGRESS.equals(s) || PAUSED.equals(s) || RESUMING.equals(s)
                 || COMPLETING.equals(s) || COMPLETE.equals(s);
     }
 
-    /** True when the state is a short transition the host has to animate into the next one. */
+    /** The kind of a state, or null when the name is not in the vocabulary. */
+    public static Kind kindOf(String s) {
+        int i = indexOf(s);
+        return i < 0 ? null : KIND[i];
+    }
+
+    /** What a beat settles into when its animation ends; null for every non-beat (and unknown) state. */
+    public static String settleTarget(String s) {
+        int i = indexOf(s);
+        return i < 0 ? null : SETTLE[i];
+    }
+
+    /** True for the looks that hold until the truth changes — the arbiter's own vocabulary. */
+    public static boolean isHold(String s) {
+        return kindOf(s) == Kind.HOLD;
+    }
+
+    /**
+     * True for the states the finger owns (sheet C3). The arbiter must not name these: while a finger
+     * is down the touch path is the truth, and `DowniCore.setBaseState`'s own `interacting` flag is
+     * what keeps a drag from being overwritten mid-gesture.
+     */
+    public static boolean isTouch(String s) {
+        return kindOf(s) == Kind.TOUCH;
+    }
+
+    /**
+     * The transition contract, in one place. Legal means: a re-assert of the same state (the service
+     * re-pushes freely — it is idempotent), a change out of a state that is holding, or a beat handing
+     * over to its own settle target. Illegal is the one thing the code has always promised cannot
+     * happen: cutting a beat with some other state — and now it is checkable rather than asserted in a
+     * comment (`DowniCore.setState` reports a violation on `CORE_TRANSITION`).
+     */
+    public static boolean isLegal(String from, String to) {
+        if (from == null || to == null) return true;        // nothing to compare: callers guard anyway
+        if (from.equals(to)) return true;                   // idempotent re-assert
+        int f = indexOf(from), t = indexOf(to);
+        if (f < 0 || t < 0) return true;                    // unknown names never reach the view
+        if (!BEAT[f]) return true;                          // a hold (or a touch state) may change
+        return to.equals(SETTLE[f]);                        // a beat may only hand over to its own target
+    }
+
+    /** True when the state is a short beat the host has to animate into the next one. */
     public static boolean isTransient(String s) {
-        return WAKE.equals(s) || PRESSED.equals(s) || SNAPPED.equals(s)
-                || RESUMING.equals(s) || COMPLETING.equals(s) || RETRY.equals(s);
+        int i = indexOf(s);
+        return i >= 0 && BEAT[i];
     }
 
     public static boolean isKnown(String s) {

@@ -369,17 +369,20 @@ public final class CoreHost extends View {
         }
     }
 
-    /** What a transient state becomes when its short animation ends — then nothing animates. */
+    /** What a beat becomes when its short animation ends — then nothing animates. */
     private void settle() {
         animT = 0f;
-        if (CoreStates.WAKE.equals(state)) state = CoreStates.DETECTED;
-        else if (CoreStates.RESUMING.equals(state)) state = CoreStates.PROGRESS;
-        else if (CoreStates.COMPLETING.equals(state)) state = CoreStates.COMPLETE;
+        // M3 (2026-09-28): the promotion table lives in CoreStates, not here. This used to be a chain
+        // of `if (WAKE) ... else if (RESUMING) ...` — a second copy of knowledge that `isTransient()`
+        // carried too, and nothing checked the two agreed: a new transient with no branch here would
+        // have frozen on screen instead of failing loudly. PRESSED/SNAPPED have no target (the finger
+        // ends them), so this is a no-op for them, exactly as the chain was.
         // C6: the retry acknowledgement hands over to the resolver's own orbit ("as it re-resolves").
         // If the retry's run has ALREADY reported a job state by then, the arbiter's next push
-        // corrects this within a beat — and because RETRY is a transient, that push could not cut the
-        // acknowledgement short in the first place (DowniCore.setBaseState's transient guard).
-        else if (CoreStates.RETRY.equals(state)) state = CoreStates.RESOLVING;
+        // corrects this within a beat — and because RETRY is a beat, that push could not cut the
+        // acknowledgement short in the first place (DowniCore.setBaseState's beat guard).
+        String to = CoreStates.settleTarget(state);
+        if (to != null) state = to;
         updateFlow();
         // An auto-settle IS a state change, so it picks the promoted state's file up exactly like
         // setState does — otherwise the state changes under a stage that still belongs to the old
