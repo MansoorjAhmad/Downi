@@ -275,7 +275,18 @@ public class DowniFetcherService extends AccessibilityService {
     private static final long SURFACE_FIRST_PROBE_MS = 120;
     private static final long SURFACE_POLL_MS = 120;
     private static final int MAX_SURFACE_TRIES = 25;      // ~3.0 s while the sheet's content loads
-    private static final int MAX_SURFACE_NOWIN_TRIES = 8; // ~1.0 s when no sheet window at all
+    /**
+     * How long the no-separate-window wait watches for the sheet's own "Copy link" row.
+     *
+     * §0z-8, measured: this IG version never opens the sheet as its own window (`no_window=1`), and its
+     * action rows populate LAST — after the DM list — anywhere from ~1.3 s to ~2.2 s after the share
+     * tap. The 22:23 run is the proof that giving up early is what "flaky" means here: its two scans
+     * (1.8 s and 2.2 s) saw 66 nodes of DM rows and no Copy link, so the run failed — while a manual
+     * dump moments later showed the same sheet with `Copy link`, `Share`, `Add to story`, `WhatsApp`.
+     * 12 ticks ≈ 3.0 s of wall clock (the tick also costs a tree read), which covers that variance and
+     * still bounds the wait: past it the run says so and fails honestly rather than stalling.
+     */
+    private static final int MAX_SURFACE_NOWIN_TRIES = 12;
     // D-e (2026-09-25): the clipboard read is a *race* — our window must actually hold focus, and
     // setFocusable(true) alone does not grant it. So the read is retried a few times behind the tap.
     private int clipTries;
@@ -1674,6 +1685,18 @@ public class DowniFetcherService extends AccessibilityService {
      * platform app wins (for the steps that look for a Share row or "Copy link").
      */
     private AccessibilityNodeInfo pickShareRoot(String tag, boolean preferChooser) {
+        return pickShareRoot(tag, preferChooser, false);
+    }
+
+    /**
+     * The same pick, optionally silent.
+     *
+     * WHY the flag exists (§0z-8): the surface wait runs ~10×/s and this method logs two lines per
+     * call, so a quiet root is what lets that wait watch the sheet's own content tick by tick
+     * without pushing the run's real evidence out of the 100-event ring (the loss 0z-4 caught once).
+     * Loud by default: every existing caller keeps its narration.
+     */
+    private AccessibilityNodeInfo pickShareRoot(String tag, boolean preferChooser, boolean quiet) {
         AccessibilityNodeInfo app = null;
         AccessibilityNodeInfo chooser = null;
         for (AccessibilityWindowInfo w : getWindows()) {
@@ -1682,7 +1705,7 @@ public class DowniFetcherService extends AccessibilityService {
             if (r == null) continue;
             String pkg = r.getPackageName() == null ? "" : r.getPackageName().toString();
             if (pkg.equals("com.android.systemui")) {
-                log(tag + "_WINDOW_SKIPPED pkg=" + pkg + " why=shade_cannot_hold_share_targets");
+                if (!quiet) log(tag + "_WINDOW_SKIPPED pkg=" + pkg + " why=shade_cannot_hold_share_targets");
                 continue;
             }
             if (pkg.equals("android") || pkg.contains("intentresolver")) {
@@ -1696,8 +1719,23 @@ public class DowniFetcherService extends AccessibilityService {
         String which = pick == null ? "active_fallback"
                 : (pick == chooser ? "system_chooser" : "platform_app");
         if (pick == null) pick = getRootInActiveWindow();
-        log(tag + "_ROOT which=" + which);
+        if (!quiet) log(tag + "_ROOT which=" + which);
         return pick;
+    }
+
+    /**
+     * True when the platform's own tree currently shows the sheet's "Copy link" row — silently.
+     *
+     * On this IG version the share sheet is NOT its own window (measured §0z-8-2: `no_window=1`), so
+     * the surface-window contract has nothing to detect and the wait could only fall back to its
+     * deadline before looking. This is what the wait watches instead: the row itself, on every tick,
+     * which both removes that deadline from our latency and MEASURES when Instagram really shows it.
+     */
+    private boolean copyRowVisibleQuiet() {
+        ArrayList<AccessibilityNodeInfo> copyProbe = new ArrayList<>();
+        collectCandidates(pickShareRoot("CHAIN_PROBE", false, true), new ArrayList<AccessibilityNodeInfo>(),
+                copyProbe, new ArrayList<AccessibilityNodeInfo>(), new Counter(), 0);
+        return !copyProbe.isEmpty();
     }
 
     private void runChain(final boolean doClick) {
@@ -1834,6 +1872,21 @@ public class DowniFetcherService extends AccessibilityService {
             log("CHAIN_SURFACE_TIMEOUT fallback=scan no_window=1");
             disarmSurfacePoll();
             chainStep2();                        // OEM same-window sheets: scan anyway
+            return;
+        }
+        // §0z-8: no separate sheet window exists, so there is no window to wait for — watch the ROW.
+        // Until this change the wait could only sleep out its deadline and look afterwards, which made
+        // that deadline a floor on OUR latency rather than a description of Instagram's: the reading in
+        // 0z-8-2 cannot tell the two apart, because the first look happened at the deadline. Watching
+        // the platform tree each tick both removes the floor and measures what Instagram actually needs
+        // (`after_ms` on the line below is that number, not a guess).
+        if (copyRowVisibleQuiet()) {
+            long after = SURFACE_FIRST_PROBE_MS + attempt * SURFACE_POLL_MS;
+            log("CHAIN_SURFACE_OPEN after_ms=" + after + " content=ready via=platform_tree");
+            observer.onStep("sheet_open", "after_ms=" + after + " via=platform_tree");
+            if (core != null) core.setOrbitStep(90f);
+            disarmSurfacePoll();
+            chainStep2();
             return;
         }
         armSurfacePoll(attempt + 1, SURFACE_POLL_MS);
