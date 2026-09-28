@@ -763,8 +763,16 @@ def do_frames(args):
         print("no frames in " + args.path)
         return 1
     at = tuple(int(v) for v in args.at.split(","))
-    first = Image.open(files[0]).convert("RGB")
-    g = geometry(first, at, args.size_dp, args.density, args.fixed)
+    # M7 re-run (2026-09-28): the geometry used to be fitted from `files[0]` alone, and a pass whose
+    # recording starts before the Core is drawn (core_motion.ps1 `show`s it ~100 ms after the grab
+    # begins) fed the fit a frame with a half-faded ring: "only 54/360 spokes hit a rim edge", exit 1,
+    # 864 perfectly good frames refused. Walk the first frames until one actually carries a Core.
+    first, g = None, None
+    for probe in files[:30]:
+        first = Image.open(probe).convert("RGB")
+        g = geometry(first, at, args.size_dp, args.density, args.fixed)
+        if g is not None:
+            break
     if g is None:
         return 1
     cx, cy, r, r_in, r_edge, resid = g

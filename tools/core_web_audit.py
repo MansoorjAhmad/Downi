@@ -10,6 +10,12 @@ What each measurement is for:
 
   tap targets   every control smaller than 48 px in either direction. 48 is the platform's own minimum
                 for a touch target, so a small one is a defect for a thumb, not a matter of taste.
+                Since 2026-09-28 the tool also measures the box a thumb can actually HIT -- the nearest
+                `label`/`button`/`a`/`[onclick]` ancestor -- and reports both numbers: raw / covered /
+                real. A 20 px checkbox inside a 53 px <label> row is not a defect, and saying so needs
+                the number rather than an opinion (F3 of V3.3.1_COMPLETION_PLAN.md).
+  overflow      documentElement.scrollWidth - innerWidth: how far the layout is pushed sideways. 0 is
+                the guard a wider pill would otherwise slip past.
   below fold    interactive elements whose rect starts below window.innerHeight -- a primary action the
                 owner must scroll to reach (first seen by hand in DEVICE_TEST.md 0k).
   type scale    every distinct font-size/weight in use, with counts and one example selector each.
@@ -53,11 +59,32 @@ JS_AUDIT = r"""
   const nodes = [...document.querySelectorAll(
     'button,a,input,select,textarea,[role=button],[role=tab],[onclick],[class*=btn],[class*=chip],[class*=tab],[class*=dock]')]
     .filter(vis);
+  const HIT = 'label,button,a,[onclick],[role=button],[role=tab],select,textarea';
   const targets = nodes.map(el => {
     const r = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
+    // The box a thumb can actually hit: the nearest ancestor (or self) that receives the tap. A 20 px
+    // checkbox inside a 53 px <label> row is not a small target -- the ROW is the target. Measured, not
+    // assumed, and printed next to the raw box so the distinction is checkable (added 2026-09-28,
+    // F3 of V3.3.1_COMPLETION_PLAN.md: the instrument could not see this, so the checkbox read as a
+    // defect while the row was already tappable).
+    let hitEl = el, hop = 0;
+    while (hitEl && hitEl !== document.body && !hitEl.matches(HIT) && hop < 8) { hitEl = hitEl.parentElement; hop++; }
+    if (hitEl && hitEl.matches(HIT)) {
+      const hr = hitEl.getBoundingClientRect();
+      if (hr.width >= r.width && hr.height >= r.height && hr.width > 2 && hr.height > 2) {
+        var hx = px(hr.x), hy = px(hr.y), hw = px(hr.width), hh = px(hr.height),
+            hsel = sel(hitEl), covered = (hitEl !== el) && hw >= 48 && hh >= 48;
+      }
+    }
     return { sel: sel(el), label: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 34),
              x: px(r.x), y: px(r.y), w: px(r.width), h: px(r.height),
+             hit_sel: typeof hsel === 'undefined' ? sel(el) : hsel,
+             hit_x: typeof hx === 'undefined' ? px(r.x) : hx,
+             hit_y: typeof hy === 'undefined' ? px(r.y) : hy,
+             hit_w: typeof hw === 'undefined' ? px(r.width) : hw,
+             hit_h: typeof hh === 'undefined' ? px(r.height) : hh,
+             hit_covered: typeof covered === 'undefined' ? false : covered,
              fs: px(parseFloat(cs.fontSize) || 0), below: px(r.bottom - IH), top_below: px(r.top - IH) };
   });
   const sizes = {}, pads = {};
@@ -73,6 +100,7 @@ JS_AUDIT = r"""
   return { view: { w: window.innerWidth, h: IH },
            dpr: window.devicePixelRatio,
            doc: { w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight },
+           overflow: px(document.documentElement.scrollWidth - window.innerWidth),
            title: document.title, n_targets: nodes.length, targets: targets,
            active: (document.querySelector('.nav-item.on') || {}).id || '',
            marks: ['#inputManualUrl', '#btnInspectLink', '#lastGrabChip', '#vaultSearch', '#vaultChipAll',
@@ -125,14 +153,20 @@ def main():
     print("        active tab: %s   markers: %s"
           % (data.get("active") or "(none)", ", ".join(data.get("marks") or []) or "(none)"))
 
-    small = [t for t in data["targets"] if t["w"] < 48 or t["h"] < 48]
+    raw = [t for t in data["targets"] if t["w"] < 48 or t["h"] < 48]
+    covered = [t for t in raw if t.get("hit_covered")]
+    small = [t for t in raw if not t.get("hit_covered")]
     print("")
     print("TAP TARGETS under 48 px (the platform's own minimum for a thumb): %d of %d"
-          % (len(small), data["n_targets"]))
+          "   raw / -%d covered by a >=48 px hit area / %d real"
+          % (len(raw), data["n_targets"], len(covered), len(small)))
     for t in sorted(small, key=lambda t: min(t["w"], t["h"]))[:14]:
         print("  %-34s %5.1f x %5.1f  at %6.1f,%6.1f  %s"
               % (t["sel"][:34], t["w"], t["h"], t["x"], t["y"],
                  ("'" + t["label"] + "'") if t["label"] else ""))
+    for t in covered[:6]:
+        print("  (hit %-26s %5.1f x %5.1f)  <- %s"
+              % (t["hit_sel"][:26], t["hit_w"], t["hit_h"], t["sel"][:34]))
 
     below = [t for t in data["targets"] if t["top_below"] > 0]
     print("")
@@ -158,6 +192,8 @@ def main():
     if below:
         verdict.append("%d control(s) below the fold" % len(below))
     print("VERDICT  " + (", ".join(verdict) if verdict else "nothing small, nothing hidden on this screen"))
+    print("         overflow %+.1f px (scrollWidth - innerWidth; 0 = nothing is pushed sideways)"
+          % data.get("overflow", 0))
     print("         socket %s" % sock)
     return 0
 
