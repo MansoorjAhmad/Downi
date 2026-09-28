@@ -96,10 +96,13 @@ def main():
 
     cdp, sock = W.connect()
     if args.click:
+        sel = args.click
+        if sel[:1] not in ("#", ".", "["):
+            sel = "#" + sel                      # a bare word is an id: cmd eats a literal '#' otherwise
         got = cdp.js("(() => { const el = document.querySelector(%s);"
                      " if (!el) return 'missing'; el.click(); return el.tagName + '#' + el.id; })()"
-                     % json.dumps(args.click))
-        print("nav   clicked %s -> %s" % (args.click, got))
+                     % json.dumps(sel))
+        print("nav   clicked %s -> %s" % (sel, got))
         time.sleep(1.2)
     if args.tab:
         # The DOM's own click, not an injected tap: the page is a single document and this is exactly
