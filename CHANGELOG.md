@@ -3,7 +3,7 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
-## V3.3.1 — the foreground cost, the neutral read, and the loop audit — in progress, not shipped
+## V3.3.1 — the Core (Fetcher 2.0) ships — released 2026-09-28
 
 **The app's own UI was burning ~1.25 cores to run two animations nobody asked to see.** The M8 device
 pass measured the whole process at ~61 fps and ~25 s of CPU per 20 s of wall clock with MainActivity in
