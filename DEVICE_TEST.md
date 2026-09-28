@@ -539,6 +539,42 @@ cannot reach it at all.
 
 > Sign and date here when green: **2026-09-28** — 0n-1 … 0n-3 green; 0n-4 is a measured limit, stated.
 
+## 0o. V3.3.1 — the full M7 regression re-run on the fixed build — vivo V2058
+
+> Measured **2026-09-28**, spike-signed debug build, after the M5 audit's two fixes, the tracker and
+> verdict upgrades, and the failure file's exhale. Four passes + the JVM suite, the same shape as §0f.
+
+| # | Contract | Evidence |
+|---|---|---|
+| 0o-1 | M1/M2 state sweep | ✅ `tools\core_shots_live.ps1`: 17 shots in 53.0 s, **`CORE_ATTACH=1 SERVICE_UNBIND=0`** |
+| 0o-2 | C5 motion (in time) | ✅ `tools\core_motion.ps1`: 48.0 s, `CORE_ATTACH=1`, `SERVICE_UNBIND=0`; **`VERDICT 0 of the C5 motion claims failed`** — freeze 5 333 ms in one run with the arc still at 61 %, resume 220° = the arc before the pause, the ring closing at 21 867 ms with the merge at 22 567 ms (ring first), full circle held after |
+| 0o-3 | C3 touch | ✅ `tools\core_touch.ps1` → `VERDICT 0 … failed, 2 not decided here` — press 10.7 % at 3 000 ms with the rebound, drag followed the finger (539 → 301 vs 540 → 300), the magnet only near an edge (`x=0` vs its own `x=214` control), and the two claims the recorder/tracker cannot see now say so instead of passing |
+| 0o-4 | C6 recovery | ✅ `tools\core_c6.ps1` → **`VERDICT 0 of the C6 recovery claims failed`** (rose 1.37 s hue 9 → teal 633 ms; the retry's press/rebound 54 → 50 → 57 px; no trace) — §0m |
+| 0o-5 | The Reach, on a real session | ✅ `tools\core_reach.ps1` (new) → `CORE_TAP session=com.zhiliaoapp.musically` → `REACH_BEGIN core=540,1168` — §0n |
+| 0o-6 | The delivered states really play | ✅ the service's own log across the passes: `stage=core_idle_ready` (amb=1), `core_progress` (scrubbed, f=74 at p=0.62), `core_pause`, `resuming stage=null` (the static path), `completing stage=null`, `core_complete`, `core_failure`, `core_retry`, `idle` |
+| 0o-7 | JVM suite | ✅ **17 suites / 117 tests / 0 failures** |
+| 0o-8 | The release build itself | ✅ `assembleRelease` green, `apksigner verify --print-certs` → **`431131731d7b26dadd6dc6ffa3ef337853f30a63decbb863bcec2a61bb0785e5`**, `CN=Manso, O=OmniDownloader`; installed **in place** over the existing app (no uninstall) and the phone then reports **3.3.1 / versionCode 49** |
+
+> Sign and date here when green: **2026-09-28** — 0o-1 … 0o-8 green.
+
+## 0o. V3.3.1 — the RELEASE build's own pass (the launch gate) — vivo V2058
+
+> The one gate no rig can drive: the bench channels and the screenshot capability are `BuildConfig.DEBUG`
+> -only (`DowniFetcherService`:63-65, `src/main/res/xml/fetcher_service.xml`), so every other cell in this
+> file is the *debug* build. `app-release.apk` (versionCode 49, versionName 3.3.1, signed with the
+> unchanged key `4311317…`) was installed **in place over v3.2.0** — no uninstall — and driven by hand
+> (`adb shell input tap`) with the phone's own tooling.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0o-1 | It installs over 3.2.0 without an uninstall | ✅ `adb install -r` → `Success`; `dumpsys package` then reads `versionCode=49 versionName=3.3.1` |
+| 0o-2 | The Core appears over a real platform session | ✅ TikTok in the front (`mCurrentFocus=com.zhiliaoapp.musically/…SplashActivity`): `core_state_audit.py shot` → `rim rgb(29,163,177) hue=186 sat=0.84 -> teal`, `mark 1445 px teal = 15.5 %`, `ring lit 17 %` (nothing downloading — honest), `VERDICT 1 shot(s), 0 mismatch(es)` |
+| 0o-3 | One tap, and it delivers for real | ✅ `adb shell input tap 540 1168` (the Core's measured centre) → **a new file on disk: `/sdcard/Movies/DOWNI/2026 TikTok Monitization … .mp4`, 3 251 870 B at 14:02**, and the next shot's ring reads `painted 360 deg = 100 %` — the job's real progress and its COMPLETE hold |
+| 0o-4 | The tap does not kill the app (the §0g defect, in release) | ✅ `pidof com.omnidownloader.app` → 19238 after the tap; `logcat -b crash -T '09-28 13:59:00.000'` → no `AndroidRuntime`/`FATAL` |
+| 0o-5 | A surface with nothing to grab still refuses honestly | ✅ an earlier tap on a TikTok feed clip whose tree exposed no share row: no new file, no fake progress, no crash — the honest `share=0` path measured in §0n-3 |
+
+> Sign and date here when green: **2026-09-28** — 0o-1 … 0o-5 green. **The release-build pass is closed.**
+
 ## 3. Regression sweep (after any engine touch)
 
 - ✅ 09-24 Cancel mid-download (in-app card + DowniDrop): download stops, no file and no `.part`
