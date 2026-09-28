@@ -80,6 +80,12 @@
       border: 1px solid rgba(255, 255, 255, 0.10);
       border-radius: 16px;
       transition: transform .15s ease, background .15s ease;
+      /* Part 3 C2 (2026-09-28): the shared control height. The platform's own minimum for a touch
+         target is 48 dp, and this is Android - so 48, not the 44 this line first carried (44 left
+         four controls still under the line, which the audit caught on the next run). min-height
+         ONLY: no display change, because some of them are `flex-1` rows in the Vault and an
+         inline-flex override would collapse that layout. */
+      min-height: 48px;
     }
     .btn:active { transform: scale(0.97); background: rgba(255, 255, 255, 0.10); }
 
@@ -90,6 +96,9 @@
       border-radius: 18px;
       box-shadow: 0 12px 30px rgba(var(--accent-rgb), 0.30);
       transition: transform .15s ease, box-shadow .2s ease, opacity .2s ease;
+      /* Part 3 C1 (2026-09-28): the primary action measured 32.5 px tall - under the platform's own
+         48 px minimum for a touch target. This is the whole fix: the pill grows, nothing else moves. */
+      min-height: 48px;
     }
     .btn-hero:active { transform: scale(0.98); box-shadow: 0 8px 20px rgba(var(--accent-rgb), 0.4); }
     .btn-hero:disabled { opacity: .55; }
@@ -301,7 +310,7 @@
         <div>
           <div class="flex items-center gap-2">
             <span class="text-[19px] font-extrabold tracking-tight text-white leading-none">DOWNI</span>
-            <span id="headerVersionBadge" class="chip text-[9px] font-mono font-bold px-2 py-0.5"></span>
+            <span id="headerVersionBadge" class="chip text-[10px] font-mono font-bold px-2 py-0.5"></span>
           </div>
           <div class="flex items-center gap-1.5 mt-0.5">
             <span id="engineDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
@@ -348,7 +357,7 @@
 
           <div class="flex items-center gap-3">
             <div class="h-px flex-1" style="background:var(--line)"></div>
-            <span class="text-[9px] font-extrabold uppercase tracking-widest" style="color:var(--muted)">or paste a link</span>
+            <span class="text-[10px] font-extrabold uppercase tracking-widest" style="color:var(--muted)">or paste a link</span>
             <div class="h-px flex-1" style="background:var(--line)"></div>
           </div>
 
@@ -378,9 +387,9 @@
           </button>
 
           <div class="flex flex-wrap items-center justify-center gap-1.5 pt-1">
-            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-300">YouTube</span>
-            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-300">TikTok</span>
-            <span class="chip px-2.5 py-1 text-[9px] font-bold text-zinc-300">Instagram</span>
+            <span class="chip px-2.5 py-1 text-[10px] font-bold text-zinc-300">YouTube</span>
+            <span class="chip px-2.5 py-1 text-[10px] font-bold text-zinc-300">TikTok</span>
+            <span class="chip px-2.5 py-1 text-[10px] font-bold text-zinc-300">Instagram</span>
           </div>
 
           <button id="lastGrabChip" onclick="handleLastGrabClick()" class="hidden w-full btn mt-1 px-4 py-2.5 text-[10px] font-mono flex items-center gap-2">
@@ -438,15 +447,15 @@
         <div class="grid grid-cols-3 gap-3">
           <div class="card p-3.5 text-center">
             <p id="statActive" class="text-xl font-extrabold font-mono text-accent">0</p>
-            <p class="text-[9px] font-bold uppercase tracking-widest mt-0.5" style="color:var(--muted)">Active</p>
+            <p class="text-[10px] font-bold uppercase tracking-widest mt-0.5" style="color:var(--muted)">Active</p>
           </div>
           <div class="card p-3.5 text-center">
             <p id="statDone" class="text-xl font-extrabold font-mono text-emerald-300">0</p>
-            <p class="text-[9px] font-bold uppercase tracking-widest mt-0.5" style="color:var(--muted)">Completed</p>
+            <p class="text-[10px] font-bold uppercase tracking-widest mt-0.5" style="color:var(--muted)">Completed</p>
           </div>
           <div class="card p-3.5 text-center">
             <p id="statSize" class="text-xl font-extrabold font-mono text-violet-300">0</p>
-            <p class="text-[9px] font-bold uppercase tracking-widest mt-0.5" style="color:var(--muted)">MB grabbed</p>
+            <p class="text-[10px] font-bold uppercase tracking-widest mt-0.5" style="color:var(--muted)">MB grabbed</p>
           </div>
         </div>
 
@@ -538,7 +547,7 @@
                 <p id="engineVersionText" class="text-[11px] mt-0.5" style="color:var(--muted)">Checking…</p>
               </div>
             </div>
-            <span id="engineHealthBadge" class="chip px-3 py-1 text-[9px] font-mono font-bold">…</span>
+            <span id="engineHealthBadge" class="chip px-3 py-1 text-[10px] font-mono font-bold">…</span>
           </div>
           <button onclick="syncEngineRules()" class="btn w-full py-2.5 text-[11px] font-bold text-zinc-300">Verify engine health</button>
 
@@ -566,7 +575,7 @@
                 <p class="text-[10px] mt-0.5" style="color:var(--muted)">The Core over Instagram & TikTok</p>
               </div>
             </div>
-            <span id="fetcherBadge" class="chip px-3 py-1 text-[9px] font-mono font-bold">…</span>
+            <span id="fetcherBadge" class="chip px-3 py-1 text-[10px] font-mono font-bold">…</span>
           </div>
 
           <div id="fetcherStats" class="text-[10px] font-mono" style="color:var(--muted)">…</div>
@@ -593,7 +602,7 @@
               <li>Recents → long-press DOWNI → <b>Lock</b></li>
             </ol>
             <button onclick="openBatterySettings()" class="btn w-full py-2 text-[11px] font-bold text-zinc-300">Open battery settings</button>
-            <p class="text-[9px]" style="color:var(--muted)">vivo hides the real switch — steps 1 and 3 are manual.</p>
+            <p class="text-[10px]" style="color:var(--muted)">vivo hides the real switch — steps 1 and 3 are manual.</p>
           </div>
         </div>
 
@@ -719,7 +728,7 @@
     <div id="inspectorSheet" class="absolute inset-x-0 bottom-0 sheet p-5 pb-7 max-h-[88vh] overflow-y-auto max-w-xl mx-auto">
       <div class="grabber" data-drag-dismiss="inspectorSheet"></div>
       <div class="flex items-center justify-between mt-2 mb-4">
-        <span id="inspectorPlatformBadge" class="chip on px-3 py-1 text-[9px] font-extrabold uppercase tracking-widest">Video</span>
+        <span id="inspectorPlatformBadge" class="chip on px-3 py-1 text-[10px] font-extrabold uppercase tracking-widest">Video</span>
         <button onclick="closeInspector()" class="btn w-9 h-9 flex items-center justify-center text-zinc-400">
           <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
@@ -741,7 +750,7 @@
       <div id="playlistBanner" class="hidden card-accent card p-3 flex items-center justify-between gap-2 mt-3">
         <div class="min-w-0">
           <p class="text-[11px] font-extrabold text-white"><span id="playlistCount">0</span> videos in this playlist</p>
-          <p class="text-[9px] font-mono" style="color:var(--muted)">Batch mode — one tap grabs them all</p>
+          <p class="text-[10px] font-mono" style="color:var(--muted)">Batch mode — one tap grabs them all</p>
         </div>
         <button onclick="grabAllPlaylist()" class="btn-hero px-3 py-2 text-[10px] font-extrabold flex-shrink-0">Grab all</button>
       </div>
@@ -761,7 +770,7 @@
       <div class="grabber" data-drag-dismiss="updateSheet"></div>
       <div id="updateInfoSection" class="mt-3">
         <div class="flex items-center justify-between mb-3">
-          <span class="chip px-3 py-1 text-[9px] font-extrabold uppercase tracking-widest" style="color:var(--ok); border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.1)">Update available</span>
+          <span class="chip px-3 py-1 text-[10px] font-extrabold uppercase tracking-widest" style="color:var(--ok); border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.1)">Update available</span>
           <button onclick="closeUpdateModal()" class="btn w-9 h-9 flex items-center justify-center text-zinc-400">
             <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
@@ -806,7 +815,7 @@
       <div class="rounded-2xl bg-white/[0.03] border border-white/5 p-4 space-y-2">
         <p class="text-[12px] leading-relaxed text-zinc-200" id="errorModalMessage">The download could not be completed.</p>
         <div id="errorTechnicalDetailsBox" class="hidden pt-2 border-t border-white/5 space-y-1.5">
-          <p class="text-[9px] uppercase font-extrabold tracking-widest" style="color:var(--muted)">Technical details</p>
+          <p class="text-[10px] uppercase font-extrabold tracking-widest" style="color:var(--muted)">Technical details</p>
           <pre id="errorModalDetails" class="text-[10px] font-mono whitespace-pre-wrap max-h-28 overflow-x-auto rounded-xl p-2.5" style="color:rgba(251,113,133,.8); background:rgba(0,0,0,.4)"></pre>
         </div>
       </div>
@@ -1450,7 +1459,7 @@
             <span class="qx px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold flex-shrink-0 ${fmt.id === selectedInspectorQuality ? 'qx-on' : 'bg-white/5 text-accent'}">${fmt.badge || 'HD'}</span>
             <div class="min-w-0">
               <p class="text-[12px] font-bold text-white truncate">${fmt.label} ${idx === 0 ? '<span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md align-middle" style="background:rgba(52,211,153,.15);color:var(--ok)">BEST PICK</span>' : ''}</p>
-              <p class="text-[9px] font-mono uppercase mt-0.5" style="color:var(--muted)">${fmt.ext || 'mp4'}</p>
+              <p class="text-[10px] font-mono uppercase mt-0.5" style="color:var(--muted)">${fmt.ext || 'mp4'}</p>
             </div>
           </div>
           <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${fmt.id === selectedInspectorQuality ? 'qx-on' : 'bg-white/5 text-zinc-400'}">
@@ -2005,7 +2014,7 @@
             <p class="text-[12px] font-bold text-white truncate">${escapeHtml(item.title)}</p>
             <p class="text-[10px] font-mono mt-0.5" style="color:var(--muted)">${escapeHtml(item.destination)} · ${escapeHtml(item.date)}</p>
           </div>
-          <span class="text-[9px] font-extrabold font-mono px-2 py-1 rounded-lg flex-shrink-0" style="color:var(--ok); background:rgba(52,211,153,.1)">SAVED</span>
+          <span class="text-[10px] font-extrabold font-mono px-2 py-1 rounded-lg flex-shrink-0" style="color:var(--ok); background:rgba(52,211,153,.1)">SAVED</span>
         </div>
       `).join('');
     }
@@ -2340,7 +2349,7 @@
             <div class="card p-4 space-y-2">
               <p class="text-[10px] font-mono text-accent">${escapeHtml(item.date)}</p>
               <h4 class="text-[12px] font-bold text-white truncate">${escapeHtml(item.title)}</h4>
-              <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${escapeHtml(item.destination)}</p>
+              <p class="text-[10px] font-mono truncate" style="color:var(--muted)">${escapeHtml(item.destination)}</p>
             </div>
           `).join('');
           return;
@@ -2482,7 +2491,7 @@
           </div>
           <div class="p-3 space-y-1">
             <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
-            <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${dateStr ? ' · ' + dateStr : ''}${item.folder ? ' · ' + escapeHtml(item.folder) : ''}</p>
+            <p class="text-[10px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${dateStr ? ' · ' + dateStr : ''}${item.folder ? ' · ' + escapeHtml(item.folder) : ''}</p>
             <div class="flex gap-1.5 pt-1.5">
               <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Play</button>
               <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
@@ -2545,7 +2554,7 @@
           </div>
           <div class="p-3 space-y-1">
             <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
-            <p class="text-[9px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${item.modified ? ' · ' + new Date(item.modified).toLocaleDateString() : ''}</p>
+            <p class="text-[10px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${item.modified ? ' · ' + new Date(item.modified).toLocaleDateString() : ''}</p>
             <div class="flex gap-1.5 pt-1.5">
               <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn flex-1 py-1.5 text-[10px] font-bold text-white">Open</button>
               <button onclick="customVaultAction('${encodedKey}', 'share')" class="btn px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
