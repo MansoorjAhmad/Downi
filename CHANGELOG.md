@@ -3,6 +3,32 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.3.2 — the completion pass, published (versionCode 50) — released 2026-09-28
+
+**The same code as the completion pass in the v3.3.1 section below, under a new version number — because
+v3.3.1's tag and its published artefact predate all of it.** That is measured from the two APKs' own bytes,
+not from timestamps: the published v3.3.1 carries `assets/public/index.html` at **174 641 B**
+(`sha256 77073AD1…`), whose progress **sweep** and skeleton **shimmer** are still `infinite` and which has
+none of the touch-target rules (`.chip-btn`, `.btn-icon`, `.row-48`) or the pinned inspector action
+(`inspectorActionBar`); the verified build carries **180 230 B** (`B11770B0…`, and this release's copy
+differs from it by exactly the two version literals). Moving a published tag would have been worse than a
+new version, so the pass ships as **versionCode 50** with the tags left where they are.
+
+Nothing in it is new work and **no feature was added** — it is the pass the v3.3.1 section already describes
+with its own numbers (`F1…F9`, `M3`, and `DEVICE_TEST.md` §0q/§0r): **every control a thumb aims at is the
+platform's 48 px** (Vault 30 → 2, Settings 13 → 5, `+0.0 px` overflow on all four screens), **the
+inspector's primary action is a pinned row** instead of a control below the fold, **the last two looping
+animations rest** (the sweep and the bounded shimmer — 565 frames / 9 s and +12 s CPU per 9 s before, 0
+frames at rest after), and **the Core's state vocabulary is a typed table** (`Kind` +
+`settleTarget`/`isLegal`, wire names byte-identical, **18 suites / 123 tests**).
+
+The artefact was then verified the way §0r and §0s do it, on the phone and on the release build: signed with
+the unchanged key (`4311317…`), installed **in place** over v3.3.1 (settings and downloads preserved), and
+driven end to end from a real link to a file that is **byte-identical to the debug build's**
+(`sha256 DC816AC9…`), indexed in the Vault, with honest counters and an empty crash buffer — and the
+**installed binary hashed on the device to the local APK's own sha256**, so the thing tested is the thing
+published. **Again: no push, no tag, no release from this side** — the tag and the release are the owner's.
+
 ## V3.3.1 — the Core (Fetcher 2.0) ships — released 2026-09-28
 
 **The app's own UI was burning ~1.25 cores to run two animations nobody asked to see.** The M8 device

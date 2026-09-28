@@ -1,4 +1,4 @@
-# DOWNI V3.3.1 ⚡
+# DOWNI V3.3.2 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
@@ -6,7 +6,42 @@ DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application eng
 
 ---
 
-## 🆕 What's New in V3.3.1 — the Core
+## 🆕 What's New in V3.3.2 — the finish pass
+
+### The thumb, the battery, and the state machine
+
+- **Every control a thumb aims at is now the platform's 48 px.** The Vault's filter chips, per-item icon
+  buttons and rescan, the header gear, the player's close, the settings checkboxes (the whole row is the
+  target now) and the accent swatches all grew — **Vault 30 → 2** controls under the line, **Settings
+  13 → 5** — and the horizontal overflow reading stayed `+0.0 px` on all four screens. What is left is
+  labels, not controls.
+- **The inspector's primary action can't hide below the fold any more.** *Download Best Available Quality*
+  is a pinned row with *Cancel*, so a long quality list no longer needs a scroll before the tap. The first
+  attempt at this traded one defect for another (growing the Vault's icon buttons squeezed the card's Play
+  button to 40.9 px), and that regression was caught by the next audit run and fixed the same day.
+- **The last two animations that ran forever now rest.** The progress sweep and the skeleton shimmer were
+  the earlier vortex fix's own siblings: measured **565 frames / 9 s and +12 s of CPU per 9 s** for one
+  8 px bar. Both are compositor transforms now and the shimmer is bounded to four passes — the same window
+  then reads **0 frames and +1 s**.
+- **The Core's state vocabulary is data now** (M3): an explicit `Kind` (REST / TRANSIENT / HOLD / TOUCH)
+  plus a settle/legality table, so a beat with no settle target fails a test instead of freezing on
+  screen. **Wire names unchanged** — the debug channel and every gate read the same bytes — and the suite
+  is **18 suites / 123 tests, 0 failures**.
+- **Verified end to end on the shipped artefact.** A real Instagram reel typed into the field → the
+  inspector's own metadata and quality lanes → the pinned CTA → a file on disk that is **byte-identical to
+  the debug build's** (`sha256 DC816AC9…`, h264 720×1280 + aac stereo, 15.717 s), indexed in the Vault,
+  counters honest, no crash — and the installed binary was proved to *be* this artefact
+  (`/data/app/…/base.apk` hashed on the device = the local APK's own sha256).
+- **Why the number moved.** v3.3.1's tag and its published APK predate this pass — its web state is
+  174 641 B against this build's 180 230 B, and it still loops the sweep and the shimmer. Moving a
+  published tag would have been worse than a new version, so the pass ships as **versionCode 50**.
+  **No new features:** nothing here changes what DOWNI does — only how it feels and what it costs.
+
+Install directly over v3.3.1 — the signing key is unchanged, so your settings and downloads are preserved.
+
+---
+
+## What's New in V3.3.1 — the Core
 
 ### Fetcher 2.0, as the Core
 

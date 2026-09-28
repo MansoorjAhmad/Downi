@@ -16,9 +16,14 @@ Shipped in v3.1.0 ("The Polish Release"):
 
 Shipped in v3.3.1 ("The Core" — Fetcher 2.0, versionCode 49):
 - The Core: overlay state machine (14 wire states), the owner's own art, wake/detect/resolve/job binding, press/drag/snap with position memory, the C5 motion contract (freeze / resume / completion), C6 failure and recovery, the bench channel
-- Cost: the two `iterations: Infinite` hero animations now rest and play one pass on a tap (~0 time at rest), the progress sweep and the skeleton shimmer rest too (565 → 0 frames, 303 → 0 frames per 9 s window) — the vortex, sweep and shimmer fixes together end the "animations nobody asked to see" bill
-- UI: the touch-target sweep on all four screens (Vault 30 → 2 controls under 48 px, Settings 13 → 5), the inspector's primary action is a sticky row instead of a control below the fold
-- Core states: an explicit `Kind` (REST/TRANSIENT/HOLD/TOUCH) plus a settle/legality table — the state machine's rules are data now, and 18 suites / 123 tests hold them
+- Cost, part one: the two `iterations: Infinite` hero animations now rest and play one pass on a tap (~0 time at rest) — the vortex fix, in a window that read 606/607 frames and ~+25 s of CPU per 20 s before it
+- The published v3.3.1 artefact predates the completion pass and the Part 3 UI work — the web state in it is 174 641 B, and its sweep and shimmer still loop. Those ship in v3.3.2 below, not by moving this tag
+
+Shipped in v3.3.2 ("the finish pass" — versionCode 50):
+- UI: the touch-target sweep on all four screens (Vault 30 → 2 controls under 48 px, Settings 13 → 5 real, horizontal overflow `+0.0 px`), and the inspector's primary action is a pinned row instead of a control below the fold
+- Cost, part two: the progress sweep and the skeleton shimmer rest and bound too (565 → 0 frames, 303 → 0 frames per 9 s window) — with the vortex fix, the "animations nobody asked to see" bill is closed, and the release build at rest reads 0 frames / 0 janky
+- Core states: an explicit `Kind` (REST/TRANSIENT/HOLD/TOUCH) plus a settle/legality table — the state machine's rules are data now, the wire names are pinned byte-identical, and 18 suites / 123 tests hold them
+- Verified end to end on the shipped artefact: a real link → a byte-identical file → a Vault row, no crash, and the installed binary hashed on the device to the local APK's own sha256
 
 Deferred / next candidates:
 - The vivo ABE vendor-kill recount (§0h): how often the process is taken, over a longer window than any pass has had yet

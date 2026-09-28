@@ -726,6 +726,38 @@ rest state still holds, so nothing about the clearing touched the app.
 > Sign and date here when green: **2026-09-28** — 0s-1 … 0s-10 green on both builds, and the shipped build's
 > own file is byte-identical to the debug build's.
 
+## 0t. V3.3.2 — the artefact that ships: identity, install, rest, and the chain end to end — vivo V2058
+
+> Measured **2026-09-28**, after the version bump from 49/3.3.1 to **50/3.3.2**. Why a new version at all is
+> in `CHANGELOG.md`'s v3.3.2 section: v3.3.1's tag and its published artefact predate the completion pass and
+> the Part 3 UI work — its web state is 174 641 B and still loops the sweep and the shimmer — so the verified
+> build ships under a new number instead of moving a published tag. **No feature was added**: this section
+> checks that the thing that ships is the thing that was verified.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0t-1 | The build and the whole JVM suite | `:app:assembleRelease :app:testDebugUnitTest` → **BUILD SUCCESSFUL in 35 s**, `BUILD_EXIT=0`; JUnit XMLs: **18 suites / 123 tests / 0 failures / 0 errors** — the version bump broke nothing (`_v332_build.txt`) |
+| 0t-2 | Signed with the unchanged key | `apksigner verify --print-certs` → `DN: CN=Manso, O=OmniDownloader, C=US`, `SHA-256 431131731d7b26dadd6dc6ffa3ef337853f30a63decbb863bcec2a61bb0785e5` — the same digest §0p-1 and §0r-1 recorded, so the updater's promise holds |
+| 0t-3 | The version the artefact carries | read **from the artefact**: `package: name='com.omnidownloader.app' versionCode='50' versionName='3.3.2'` (`aapt dump badging`). The three spots the code comment calls "the version spots bumped at release" all moved together: `build.gradle`, `DowniEnginePlugin`'s fallback (`3.3.2`/`50L`), and `www/index.html`'s `installedVersion`/`installedVersionCode` |
+| 0t-4 | The web state inside the artefact | `assets/public/index.html` **extracted from the APK** = **`0C7B0E7A16B2F86D521628CC0456BEB5D4E84F6ADC17A0E7B389FF6929D5C7C1`**, 180 230 B = **byte-identical to `www/index.html`**. It differs from §0q/§0r's audited copy (`B11770B0…`) by **exactly the two version literals** — 4 diff lines of 3 367, measured with `Compare-Object`, nothing else |
+| 0t-5 | Installed in place over v3.3.1 | `adb install -r` → `Success`, no uninstall; the phone then reads `versionCode=50 versionName=3.3.2`, `flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]` and **no `DEBUGGABLE`** in `flags` or `privateFlags`. The grab ledger survived: Queue still carried its completed jobs before this pass's own |
+| 0t-6 | The installed binary is the artefact | `pm path` → `/data/app/~~K85IKT…/base.apk`, hashed **on the device**: `sha256 cb11ce7648a8c31c4a0c00af88374268e948830ab88024f5ba14451a52eb75cb`, 44 809 989 B = the local `app-release.apk` (parked as `test_out/v332/DOWNI-v3.3.2-local.apk`) |
+| 0t-7 | The release build rests | `MainActivity` focused, `dumpsys gfxinfo` after a reset + 8 s → **`Total frames rendered: 0`**, `Janky frames (legacy): 0 (0.00%)` — §0r-6's reading, still holding after the version bump |
+| 0t-8 | The chain, end to end, on the artefact | a real reel typed into `#inputManualUrl` (539,1166) → `#btnInspectLink` (539,1365) → the inspector resolved it for real: `INSTAGRAM` badge, a live thumbnail, *Video by marvinachi / Marvin Achi*, and its quality lanes → **`btnConfirmDownloadQuality` inside `inspectorActionBar [0,1911][1067,2263]`** — F1's pinned row sitting **above** the 480p/audio rows it overlays → tap (534,2016) at 17:41:51 → `/sdcard/Movies/DOWNI/Video by marvinachi (7).mp4`, **3 608 924 B at 17:41** — 22 s after the tap (`test_out/v332/e2e_typed.png`, `e2e_inspector.png`, `ui_inspector.xml`) |
+| 0t-9 | The output is byte-identical to the debug build's | pulled and hashed: **`DC816AC92AEEE8E0CEE25BD7F669D38A7435312602A51AEFEB186C521FC05F70`** — the same digest as §0s-5's three files; `tools\ffprobe.exe`: **h264 720×1280 @ 30 fps + aac stereo**, `duration=15.717052`, `bit_rate=1836947`, `size=3608924`, `format_name=mov,mp4,m4a,3gp,3g2,mj2` (`test_out/v332/marvinachi-7-v332.mp4`) |
+| 0t-10 | The counters and the Vault, on the shipped build | Queue: `statActive 0 / statDone 5 / statSize 23` **MB GRABBED** — 4 → 5 completed and 19 → 23 MB, +3.6 ≈ the job this pass added — with the in-app `Saved ✓ / Video by marvinachi · Gallery / Movies` toast; Vault: `1 item · 3.4 MB` (the owner had cleared the earlier test downloads, §0s), first tile `Video by marvinachi (7).mp4` (`ui_queue.xml`, `ui_vault.xml`) |
+| 0t-11 | **The Vault's delete path — the app's only destructive action, measured for the first time** | On this artefact: the card's own 48 px delete button (292,1918) → the **system** asks *"Allow DOWNI to delete this video?"* (`DENY` / `ALLOW`, `com.google.android.providers.media.module`) → ALLOW at 17:43:38 → the file is **gone from disk** (the folder reads `total 0`), **its MediaStore row is gone** (only the directory row remains), and the delete is **permanent — no trash row** in `content://media/external/file?includeTrashed=1`, which is also exactly what the owner's own earlier clearing left behind, so that is now explained rather than mysterious. No crash, pid unchanged (27205). **The one nit it exposed**: the Vault keeps showing the deleted tile and the "Delete requested / Confirm it in the system dialog." toast, because `deleteVaultMedia`'s `setTimeout(refreshVault, 1200)` fires while the dialog is still open and nothing re-reads after the confirm. Bounded and pre-existing (3.3.1 behaves the same): leaving the tab and returning re-reads it → `0 items · 0 MB`. Recorded, not patched — a build that had just been verified byte-for-byte is not the place for a drive-by change (`ui_delete_dialog.xml`, `ui_vault_after_delete.xml`, `ui_vault_reentered.xml`) |
+| 0t-12 | What is **not** re-run here, and why | No extraction-layer or accessibility-layer code changed between §0o-b's release build and this one, so the three-platform × three-entry-point matrix is not triggered and the M1…M7 rigs are not repeated. **One honest exception:** M3's state table *is* inside this artefact and no release build has had the Core tapped on it since M3 landed at 16:19 (§0o-b's build predates it). M3 was verified on the debug build — M7's `VERDICT 0 of the C5 motion claims failed`, with the wire byte-identical — so what is untested is the release *entry* to the same code, not the code. It is a five-minute check on a real platform session and is written here as outstanding rather than implied (`V3.3.1_COMPLETION_PLAN.md` §4, F4's gate) |
+
+**Why the version moved, in one line, for the next reader.** The tag says 3.3.1 and the published APK's web
+state says 174 641 B; the verified build's says 180 230 B. Everything in §0q/§0r/§0s exists to make that
+difference countable, and `CHANGELOG.md`'s v3.3.2 section carries it. The tags were left where they are: a
+published tag is not moved, a new version is cut.
+
+> Sign and date here when green: **2026-09-28** — 0t-1 … 0t-11 green on the signed v3.3.2 artefact
+> (`CB11CE76…`, versionCode 50), 0t-12 recorded as the one outstanding nicety, and the local APK parked in
+> `test_out/v332/` until the owner publishes.
+
 ## 3. Regression sweep (after any engine touch)
 
 - ✅ 09-24 Cancel mid-download (in-app card + DowniDrop): download stops, no file and no `.part`
