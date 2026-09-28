@@ -58,7 +58,38 @@ measures: that window contains the app's own Python download in the same process
 Settings are provably at rest, and the updater's `bar live` is `hidden` unless an update is downloading.
 `DEVICE_TEST.md` §0k.
 
-## V3.3.0 — Fetcher 2.0 ("Core" redesign) — in progress, not shipped
+**Two defects the M5 audit found in the Core's own physics — fixed, device confirmation owed.** The C3
+edge-snap verdict had never been *measured*: it read the ring's *aspect*, whose vertical solve is
+ill-conditioned on the owner's art. Reading the **contact axis** instead, off the M5 pass's own stored
+frames, turned up two real faults. First, `DowniCore.finishDrag` decided the contact axis by asking
+whether the magnet had to *move* the Core (`horizontalHit = nearX != lp.x`) — and a finger that drags the
+Core flush to an edge leaves `moveTo` clamped, so a **left-edge hit was deformed as if it were a vertical
+one**: at the envelope's peak the Core *widened* on the row by ~8 % (membrane inner extent 95 → 103 px)
+where sheet C3 asks for a flattening. The axis now comes from which edge is in range. Second,
+`CoreHost.drawArt` set the alpha on `p` and drew with `artPaint`, which never gets one — so the one fade
+the static path owns, **RESUMING's `barAlpha`** ("the flow returns smoothly"), was a hard cut. The
+instrument that found them is stricter now too: a claim the tracker cannot see prints *NOT DECIDED HERE*
+instead of a PASS from a fallback, and the verdict line counts them. JVM green with both fixes (17 suites
+/ 117 tests / 0 failures). **Confirmed on the phone** (`DEVICE_TEST.md` §0l): `CORE_SQUASH t=0.74
+env=0.071957536 sx=0.9280425` — the row flattens on a left-edge snap, `sx = 1 − env` — with the view's
+own draw count climbing 9 → 13 → 17, and the envelope zero at both ends (0.0 and 0.99). The pixel
+instrument cannot add to that yet: the screen recorder drops the animation's frames (19 byte-identical
+frames across one snap, measured, §0l-5), so the deformation's proof is the service's own account, as
+position claims already are.
+
+**C6.1's second cell now exists: the stable failure exhales.** `core_failure` held one slow contraction
+and no settle at all; the state table now reads shift-by-frame-14 → a small settle to 97.5 % at frame 21
+→ rest at 98.5 % by frame 30 — quiet by design, no pulse, nothing that reads as an alarm. The file plays
+on the phone (the gate's `CORE_STATE failed stage=core_failure`), and the settle's 2.5 % is deliberately
+below a 1080p pixel trace's resolution, so this cell's confirmation is the file and the play
+(`DEVICE_TEST.md` §0m) — never a claim of pixels.
+
+
+### The Core (Fetcher 2.0) — the 3.3.0 section, folded into 3.3.1
+
+> Version 3.3.0 never shipped on its own: these are the sections that describe the Core itself. They
+> ride in **v3.3.1** (versionCode 49) together with the fixes below — a changelog must not imply a
+> release that never existed.
 
 **Milestone 1 — the Core is the owner's own art, not a re-drawing of it.** Fetcher 1.0's
 procedural pebble is *deleted*, not retuned: the lobed body path, the body/bounce/gloss shaders,

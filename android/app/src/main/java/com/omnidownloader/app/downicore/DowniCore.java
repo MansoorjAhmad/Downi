@@ -400,6 +400,8 @@ public final class DowniCore {
         return next;
     }
 
+    private int sqLog = 0;      // V3.3.1: how many snap frames the debug log has reported
+
     private void finishDrag() {
         if (edgeAnim != null) { edgeAnim.cancel(); edgeAnim = null; }
         swpx = screenW();
@@ -411,8 +413,16 @@ public final class DowniCore {
         int nearX = lp.x;
         int nearY = lp.y;
         boolean magnetic = false;
-        if (lp.x <= near) { nearX = 0; magnetic = true; }
-        else if (lp.x >= maxX - near) { nearX = maxX; magnetic = true; }
+        // The contact axis is the axis whose EDGE the Core met — not whether the magnet had to move
+        // it: `moveTo` clamps, so a finger that already dragged the Core flush to an edge leaves
+        // `nearX == lp.x`, and the old `horizontalHit = nearX != lp.x` then called a left-edge hit a
+        // VERTICAL one. Measured on the M5 pass's own frames (2026-09-28): a left-edge snap widened
+        // the Core on the row by ~8 % at the envelope's peak — the bulge — where sheet C3 asks for
+        // the flattening. A corner (both axes in range) keeps the horizontal contact; every gesture
+        // in `tools\core_touch.ps1` is horizontal.
+        boolean magnetX = false;
+        if (lp.x <= near) { nearX = 0; magnetic = true; magnetX = true; }
+        else if (lp.x >= maxX - near) { nearX = maxX; magnetic = true; magnetX = true; }
         if (lp.y <= near) { nearY = 0; magnetic = true; }
         else if (lp.y >= maxY - near) { nearY = maxY; magnetic = true; }
 
@@ -430,7 +440,7 @@ public final class DowniCore {
         final int fromY = lp.y;
         // Gel physics (V-3): the body flattens against the edge it meets — squash on the contact
         // axis, slight bulge on the other — then settles back. No trace after the snap.
-        final boolean horizontalHit = (nearX != lp.x);
+        final boolean horizontalHit = magnetX;
         view.setState(CoreStates.SNAPPED);
         edgeAnim = ValueAnimator.ofFloat(0f, 1f);
         edgeAnim.setDuration(CoreMotion.SNAP_MS);
@@ -444,6 +454,14 @@ public final class DowniCore {
                     view.setGelSquash(1f - env, 1f + env * CoreMotion.SNAP_BULGE_FRACTION);
                 } else {
                     view.setGelSquash(1f + env * CoreMotion.SNAP_BULGE_FRACTION, 1f - env);
+                }
+                // V3.3.1: the snap's own account - the envelope, what the view holds, and how many
+                // draws have carried it. The pixels froze through a whole snap once; this settles
+                // that with the device's own log instead of an argument. DEBUG only (bench channel).
+                if (com.omnidownloader.app.BuildConfig.DEBUG && (sqLog++ % 4 == 0)) {
+                    listener.onCoreLog("CORE_SQUASH t=" + Math.round(t * 100f) / 100f
+                            + " env=" + env + " sx=" + view.gelSquashX()
+                            + " draws=" + view.squashDraws);
                 }
             }
         });

@@ -1013,12 +1013,15 @@ def axis_crossings(img, axis, fixed, lo, hi):
     if len(prof) < 5:
         return []
     top = max(prof)
-    if top < 40:
-        return []
+    if top < 24:                 # 40 until 2026-09-28. The membrane's spread DROPS as the snap
+        return []                # compresses it, so the old absolute floor erased exactly the frames
+                                 # the claim was meant to measure: the dip hid its own signal. Safe to
+                                 # lower now because the diameter pairing below is what rejects
+                                 # non-rings; this floor only rejects what is not a crossing at all.
     # NO smoothing: the ring's crossings are only ~3 px wide, and a 5-tap average pulls them under
     # any floor high enough to exclude the art's own cyan chevron (which is WIDER and brighter than
     # the membrane - measured: chevron spread 176-182, crossings 116 and 153).
-    floor = max(30.0, TOUCH_PEAK_FLOOR * top)
+    floor = max(18.0, TOUCH_PEAK_FLOOR * top)    # 30.0 until 2026-09-28, same reason as the gate above
     peaks = []
     for k in range(1, len(prof) - 1):
         if prof[k] >= floor and prof[k] >= prof[k - 1] and prof[k] >= prof[k + 1]:
@@ -1031,11 +1034,15 @@ def axis_crossings(img, axis, fixed, lo, hi):
 def axis_centre_radius(img, axis, fixed, expect, r_rest):
     """One axis through the Core: (centre, radius) from the pair of ring crossings it should have.
 
-    The pair is chosen as the two peaks nearest where the ring is *expected* to be - `expect +/- the
-    rest radius` - rather than the outermost two, because the Core's own chevron is cyan too and sits
-    between them (and the app behind can be colourful as well). The rest radius is the pass's own
-    prior: a press shrinks the ring 10 % and the snap's squash stays inside 5 %, both far inside the
-    pairing tolerance. None when no such pair exists, and the caller carries the last value forward.
+    The pair is the **ring's own promise**: two crossings about a diameter apart. The expected centre
+    is only a tie-breaker between candidate pairs. It used to be the rule - "the two peaks nearest
+    `expect +/- r_rest`" - and a fast drag defeats it: measured 2026-09-28, a frame mid-drag read
+    peaks [252, 304, 311, 318, 358], where the ring is (252, 358) and 304/311/318 is the chevron's
+    own (wider, brighter) cyan cluster, so nothing paired and the tracker froze 135 px behind the
+    Core. Pairing by separation survives it, because the chevron never sits a diameter away from
+    itself. The diameter gate is generous on purpose - the press shrinks it to 0.90 and the snap's
+    squash stays inside 0.10 - and the cyan gate plus the three widening windows are what still
+    reject the app behind. None when no pair exists; the caller carries the last value forward.
 
     The window opens at expect +/- 3 r and WIDENS twice: the edge snap glides the Core 216 px in
     300 ms (24 px a frame), so a single missed frame can put the ring outside a tight window, and
@@ -1045,22 +1052,23 @@ def axis_centre_radius(img, axis, fixed, expect, r_rest):
         peaks = axis_crossings(img, axis, fixed, expect - mult * r_rest, expect + mult * r_rest)
         if len(peaks) < 2:
             continue
-        want_lo = expect - r_rest
-        want_hi = expect + r_rest
-        c0 = min(peaks, key=lambda p: abs(p - want_lo))
-        c1 = min(peaks, key=lambda p: abs(p - want_hi))
-        if c0 >= c1:
+        best = None
+        for i in range(len(peaks)):
+            for j in range(i + 1, len(peaks)):
+                sep = peaks[j] - peaks[i]
+                err = abs(sep - 2.0 * r_rest)
+                if err > 0.30 * 2.0 * r_rest:
+                    continue                         # not a diameter: not this ring
+                mid = (peaks[i] + peaks[j]) / 2.0
+                score = err + 0.5 * abs(mid - expect)   # the nearest of the ring-shaped pairs
+                if best is None or score < best[0]:
+                    best = (score, peaks[i], peaks[j], sep / 2.0)
+        if best is None:
             continue
-        radius = (c1 - c0) / 2.0
-        # A loose band on purpose: the press compresses the ring to 0.90 and the snap's bulge stays
-        # inside 1.05, but a *tight* envelope around those numbers also broke the pairing during the
-        # horizontal glide (the frame where the search window has to jump). The cyan gate and the
-        # three widening windows are what reject the backdrop; the band only rejects the absurd.
-        # Position claims have a better instrument than this tracker anyway: the service logs every
-        # landing as `CORE_MOVED x= y=`, which is exact.
+        radius = best[3]
         if radius < 0.55 * r_rest or radius > 1.45 * r_rest:
             continue                             # not our ring
-        return (c0 + c1) / 2.0, radius
+        return (best[1] + best[2]) / 2.0, radius
     return None
 
 
@@ -1170,6 +1178,7 @@ def touch_verdicts(rows, segs, r_rest, moves=None, half=None, density=DENSITY_DE
     print("")
     print("the C3 touch contract (M5):")
     bad = 0
+    pending = 0
     by = {name: (t0, end) for name, t0, end, eff in segs}
     if not by:
         print("  no segments read - verdicts need the pass's own table")
@@ -1257,6 +1266,7 @@ def touch_verdicts(rows, segs, r_rest, moves=None, half=None, density=DENSITY_DE
             print("             (the pixel tracker read x %.1f; it loses the Core through the" % xend)
             print("              snap's glide - its pairing needs the ring in a small window.)")
         else:
+            pending += 1
             print("  magnet     the pixel tracker last held the Core at x %.1f" % xend)
             print("             NOT DECIDED HERE - touch.log carries %d CORE_MOVED line(s), and this"
                   % len(moves))
@@ -1264,23 +1274,62 @@ def touch_verdicts(rows, segs, r_rest, moves=None, half=None, density=DENSITY_DE
             print("             touch.log next to segments.csv, to have the exact instrument decide: a")
             print("             release 20 px off the edge must read x=0, one 218 px off it x=218 (the")
             print("             far drag is the magnet's own control).")
-        ratios = [r[5] for r in de if r[5]]
-        lo_aspect = min(ratios) if ratios else 1.0
-        print("  squash     the snap's contact-axis flattening: rx/ry bottomed at %.3f" % lo_aspect)
-        print("             NOT DECIDED HERE. The vertical extent cannot be measured on this look -")
-        print("             the art's membrane is dark along its bottom, so no column or chord scan")
-        print("             finds it (the chord solve is also ill-conditioned at rest: 2 px of noise")
-        print("             swings it 50 -> 70 px). The deformation itself is pinned in code:")
-        print("             CoreMotion.snapSquash peaks at 0.10 and DowniCore applies it as")
-        print("             (1-env, 1+env*0.5) on the contact axis, mirrored on the other.")
+        # --- the snap's contact-axis flattening (W1, 2026-09-28) ----------------------------------
+        # Sheet C3: "compress on the contact axis, bulge the other". This pass's gesture is a
+        # LEFT-edge snap, so the contact axis is the ROW - `rx`, the pair of ring crossings on the
+        # centre row, the same number the press claim above is built on. The cell used to read only
+        # the ASPECT rx/ry, and ry's chord solve is ill-conditioned on this art (the membrane is
+        # genuinely dark along its bottom), so the claim dead-ended on a number it never needed.
+        # The perpendicular bulge is SNAP_BULGE_FRACTION (0.5) x SNAP_SQUASH (0.10) = 5 % of the
+        # radius = ~1.3 px of edge travel at 64 dp / 2.75x: below what a 1080-p screenrecord can
+        # resolve, so it stays code-pinned while the squash does not.
+        rx_de = [r[3] for r in de if r[3]]
+        cover = (len(rx_de) / float(len(de))) if de else 0.0
+        if len(rx_de) < 3 or cover < 0.5:
+            pending += 1
+            print("  squash     the tracker held rx on only %d of %d frames of the edge step"
+                  % (len(rx_de), len(de)))
+            print("             NOT DECIDED HERE - the contact axis needs the ring in view; re-run")
+            print("             tools/core_touch.ps1 to have it re-read on a fresh pass.")
+        elif not r0:
+            print("  squash     no rest baseline to compare the contact axis against")
+        else:
+            rmin = min(rx_de)
+            dip = 100.0 * (1.0 - rmin / r0)
+            tmin = [r for r in de if r[3] == rmin][0][0]
+            imin = [i for i, r in enumerate(de) if r[3] == rmin][0]
+            seq = ["%.0f" % r[3] if r[3] else "-" for r in de[max(0, imin - 7):imin + 8]]
+            print("  squash     the contact axis fell to %.1f px = a %.1f %% flattening of the rest"
+                  % (rmin, dip))
+            print("             ring (%.1f px) at %d ms, on %d of %d frames of the edge step"
+                  % (r0, tmin, len(rx_de), len(de)))
+            print("             rx through the snap: %s" % " ".join(seq))
+            if 4.0 <= dip <= 16.0:
+                print("             the snap compressed the gel on its contact axis        PASS")
+            else:
+                print("             the snap did NOT deform on its contact axis             FAIL")
+                bad += 1
+            print("             the perpendicular bulge (~1.3 px here) is below this capture's")
+            print("             resolution: code-pinned in CoreMotion, not pixel-claimed.")
 
     st = win(*by["settle"]) if "settle" in by else []
+    st_rx = [r[3] for r in st if r[3]]
+    cover = (len(st_rx) / float(len(st))) if st else 0.0
     if not st:
         print("  settle     no SETTLE segment in the table")
         bad += 1
+    elif len(st_rx) < 3 or cover < 0.5:
+        # The old form fell back to the rest values when the tracker had no data, so "no trace left"
+        # could be printed having measured ZERO frames - a PASS from a fallback. Seen on the M8 pass
+        # of 2026-09-28: the tracker lost the Core during the drag, and the settle claim still read
+        # PASS. Same guard as the squash claim: no data, no verdict.
+        pending += 1
+        print("  settle     the tracker held rx on only %d of %d frames after the drag"
+              % (len(st_rx), len(st)))
+        print("             NOT DECIDED HERE - re-run tools/core_touch.ps1 to have it re-read")
     else:
-        rend = med([r[3] for r in st], r0)
-        aend = med([r[5] for r in st], 1.0)
+        rend = med(st_rx, r0)
+        aend = med([r[5] for r in st if r[5]], 1.0)
         print("  settle     back to ring %.1f px (rest %.1f), aspect %.3f" % (rend, r0, aend))
         if abs(rend / r0 - 1.0) <= 0.05 and abs(aend - 1.0) <= 0.05:
             print("             no trace left after the snap                             PASS")
@@ -1288,7 +1337,10 @@ def touch_verdicts(rows, segs, r_rest, moves=None, half=None, density=DENSITY_DE
             print("             the gel did not come fully back to rest                   FAIL")
             bad += 1
     print("")
-    print("VERDICT %d of the C3 touch claims failed" % bad)
+    if pending:
+        print("VERDICT %d of the C3 touch claims failed, %d not decided here" % (bad, pending))
+    else:
+        print("VERDICT %d of the C3 touch claims failed" % bad)
     return 1 if bad else 0
 
 

@@ -490,6 +490,55 @@ cannot reach it at all.
 
 > Sign and date here when green: **2026-09-28** — 0k-1 … 0k-6 green; 0k-7 is a measured limit.
 
+## 0l. V3.3.1 — the snap deforms the RIGHT axis now, and the view draws it — vivo V2058
+
+> Measured **2026-09-28** on the spike-signed debug build, `tools\core_touch.ps1 -NoRecord` (logs only,
+> so the device's own account is the instrument) — after the C3 audit found the axis defect by reading
+> the *previous* M5 pass's frames: a left-edge snap had **widened** the Core by ~8 % at the envelope's
+> peak, because `DowniCore.finishDrag` inferred the contact axis from whether the magnet had to move it.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0l-1 | The contact axis is the row on a LEFT-edge snap | ✅ `13:48:37.609 CORE_SQUASH t=0.74 env=0.071957536 **sx=0.9280425**` — `sx = 1 − env`; the axis now comes from *which edge is in range* (`magnetX`) |
+| 0l-2 | The envelope is the sheet's, and both ends are exactly zero | ✅ `t=0.0 env=0.0 sx=1.0` … `t=0.99 env=0.004039214 sx=0.9959608` (peak 0.10 lands between samples; `CoreMotion.snapSquash` is pinned by test) |
+| 0l-3 | The view actually **draws** the deformation | ✅ `draws` climbs **9 → 13 → 17** across the snap (`CoreHost.squashDraws`, counted in `onDraw` whenever the squash is live) |
+| 0l-4 | The magnet and the axis agree | ✅ the pass's own log: `CORE_TOUCH up dragging=true` 13:47:57.630 → `CORE_MOVED x=0 y=1080` 13:47:57.937 (**+307 ms** = the 300 ms snap) |
+| 0l-5 | Why the *video* pass could not see it | ⚠️ a measured limit of the recorder: in the 13:47 video pass, frames spanning a whole snap are **byte-identical** (19 frames, outer extent 135 px) while `draws` climbs behind them — the encoder drops the animation's frames. The deformation is proven by the service's own account (0l-1…0l-3), the way position claims already prefer `CORE_MOVED` over the pixel tracker. |
+
+> Sign and date here when green: **2026-09-28** — 0l-1 … 0l-4 green; 0l-5 is a measured limit, stated.
+
+## 0m. V3.3.1 — the C6 gate re-run on the fixed build: recovery green, and the exhale ships in the file
+
+> Measured **2026-09-28** on the spike-signed debug build, `tools\core_c6.ps1` → `test_out\core_c6`
+> (190 frames, 18.8 s, `CORE_ATTACH=2`, `SERVICE_UNBIND=0`), analyzed with `core_state_audit.py hues`.
+> First run of this gate since the M5 audit's fixes and since the failure file gained C6.1's exhale.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0m-1 | The failure reads rose, and holds | ✅ 41 frames of rose, **1.37 s** (t=1967..3300 ms), hue 9 — `the failure reads rose, as sheet C6 says  PASS` |
+| 0m-2 | The retry returns to teal | ✅ **633 ms** after the rose ends: hue 198 — `the rose reads back to teal, as C6 asks  PASS` |
+| 0m-3 | The retry carries its own press/rebound | ✅ edge 54.0 → 50.0 px (7.4 % down), then 57.0 px (5.6 % over) inside its 600 ms — PASS |
+| 0m-4 | No trace of the rose afterwards | ✅ 0 of 45 frames still rose (hue 195) — PASS. **`VERDICT 0 of the C6 recovery claims failed`** |
+| 0m-5 | The states' authored files really play | ✅ the service's own log: `CORE_STATE failed stage=core_failure` → `CORE_STATE retry stage=core_retry` → `CORE_STATE idle stage=null` (with `core_orb.png` **and** `core_orb_rose.png` both in the failed composition) |
+| 0m-6 | C6.1's quiet exhale | ⚠️ authored (`core_lottie_build.py`: shift by f14, settle to 97.5 % at f21, rest 98.5 % at f30) and contract-validated (10/10 states) — but deliberately **below this trace's resolution**: the rose run reads a flat 54.0 px across 1.37 s. Its proof is the file and the play (0m-5), never a pixel claim. |
+
+> Sign and date here when green: **2026-09-28** — 0m-1 … 0m-5 green; 0m-6 stated as authored + played.
+
+## 0n. V3.3.1 — the Reach on a real session: it fires on TikTok, and what the pixels cannot say
+
+> Measured **2026-09-28** on the spike-signed debug build with the new `tools\core_reach.ps1`:
+> relaunch → Core on screen → the platform app on a video → record 7 s → one tap on the Core's centre →
+> pull + extract (210 frames) → grep the service's own log.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0n-1 | A tap with a real session engages the Reach | ✅ `CORE_TAP session=com.zhiliaoapp.musically action=FETCH state=detected` → **`REACH_BEGIN core=540,1168`** (the live Core's own centre) |
+| 0n-2 | TikTok is the surface that can carry a session | ✅ its tree yields what the resolver needs; **Instagram's Reels view cannot** — `STEP3_DUMP_8..14 confidence=NONE note=no_url_or_id_in_tree` on the Reel URL *and* the `/reels/<id>/` permalink, where the Core honestly refuses (`CORE_TAP session=null` → `CORE_TAP_NO_SESSION`) |
+| 0n-3 | A session without a share row still fails honestly | ✅ `CHAIN_SCAN pkg=com.zhiliaoapp.musically share=0 copylink=0 downi=0` → `CHAIN_NO_SHARE_CLICK` → `RUN_END delivered=false route=- ms=149`; no crash, nothing downloaded |
+| 0n-4 | The tether's pixels | ⚠️ not isolated, and stated: the chain aborted at 149 ms (0n-3), so only the grow phase could play — and a frame-difference probe cannot separate a thin filament from a **playing video** (the content changed 20 000–90 000 px per frame by itself, `test_out/_reach_probe.txt`). The tether's proof stays the service's account (0n-1, §0g-2). |
+
+> Sign and date here when green: **2026-09-28** — 0n-1 … 0n-3 green; 0n-4 is a measured limit, stated.
+
 ## 3. Regression sweep (after any engine touch)
 
 - ✅ 09-24 Cancel mid-download (in-app card + DowniDrop): download stops, no file and no `.part`

@@ -424,6 +424,12 @@ public final class CoreHost extends View {
         invalidate();
     }
 
+    /** The live squash, so the rig's own log can say what the view actually holds (V3.3.1). */
+    public float gelSquashX() { return squashX; }
+
+    /** How many draws ran with a gel squash applied — the other half of the same proof (V3.3.1). */
+    int squashDraws = 0;
+
     // ---------- R6: the RETURN fade (sheet C5) ----------
 
     private CoreLook.Look fadeFrom;        // the settled look the fade starts from
@@ -516,6 +522,7 @@ public final class CoreHost extends View {
         // animation, and it is the one deformation the Core always applies itself.
         float artScale = (stage != null && fadeFrom == null) ? 1f : L.scale;
         c.scale(artScale * squashX, artScale * squashY, cx, cy);
+        if (squashX != 1f || squashY != 1f) squashDraws++;   // V3.3.1: the snap's deform draws
 
         // 1) ambient bloom (restrained; the halo breathes with the download flow)
         p.setStyle(Paint.Style.FILL);
@@ -1013,7 +1020,13 @@ public final class CoreHost extends View {
         }
         p.setShader(null);
         p.setStyle(Paint.Style.FILL);
-        p.setAlpha(Math.round(255f * clamp01(alpha)));
+        // The tile is drawn with artPaint (it carries the tint's colour filter), so the alpha has to
+        // live THERE: setting it on `p` and then drawing with artPaint made every faded draw opaque.
+        // The one shipping path that fades is RESUMING's barAlpha - it has no file of its own by
+        // design, so the static path always draws it - where the paused bars used to cut out instead
+        // of fading ("the flow returns smoothly", sheet C5). Found while measuring the snap: the
+        // alpha was set on the wrong Paint, 2026-09-28.
+        artPaint.setAlpha(Math.round(255f * clamp01(alpha)));
         c.drawBitmap(art, null, artDst, artPaint);
         p.setAlpha(255);
     }

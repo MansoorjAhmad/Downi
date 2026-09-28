@@ -1,8 +1,33 @@
-# DOWNI V3.1.2 ⚡
+# DOWNI V3.3.1 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
+
+---
+
+## 🆕 What's New in V3.3.1 — the Core
+
+### Fetcher 2.0, as the Core
+
+- **The bubble becomes the Core.** Your own approved orb art, ten authored animations (dormant, wake,
+  idle, press, progress, pause, complete, failure, retry, unsupported) and the sheets' C2/C3/C5/C6
+  behaviour: a real progress ring (it *is* the download's percentage), a real pause, an honest failure,
+  no red anywhere, no alarms. The chevron, the gel, the drop shadow — the material is the one you
+  approved.
+- **The edge snap now deforms the way the sheet says.** It was compressing the *wrong axis* whenever a
+  finger dragged the Core flush to an edge and let go — found by measuring the phone's own frames as an
+  ~8 % widening where C3 asks for a flattening, fixed, and confirmed on the device
+  (`CORE_SQUASH sx=0.9280425`).
+- **Resume fades back in** ("the flow returns smoothly", sheet C5) instead of cutting.
+- **The home screen stopped burning battery.** Two infinite animations were the app's entire foreground
+  cost: measured ~61 fps and ~25 s of CPU per 20 s of wall clock with nobody touching the screen. They
+  rest now and play one pass on the tap that wakes them — the same window then reads 0 frames and +0 s.
+- **C6's neutral read matches the design sheet** for hosts and paths, not only for photo posts.
+- **The failure state exhales.** C6.1's second cell — a quiet settle after the rose shift — now exists.
+
+Install directly over v3.2.0 — the signing key is unchanged, so your settings and downloads are
+preserved.
 
 ---
 

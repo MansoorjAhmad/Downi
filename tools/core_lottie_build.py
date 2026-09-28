@@ -287,7 +287,10 @@ STATES = {
         frames=30, art="core_orb.png", art2="core_orb_rose.png", note="C6 failure, plays once",
         fade_out=[(0, 100), (14, 0), (30, 0)],
         fade_in=[(0, 0), (14, 100), (30, 100)],
-        scale=[(0, 100), (30, 98.5)],
+        # C6.1's two cells: the energy SHIFTS to muted rose by frame 14, and then the stable failure
+        # exhales - a small settle, no pulse, nothing that reads as an alarm. (Before 2026-09-28 the
+        # row held one slow contraction to 98.5 and no exhale at all.)
+        scale=[(0, 100), (14, 98.9), (21, 97.5), (30, 98.5)],
     ),
     "core_retry": dict(            # C6: rose -> teal with the C3 press/rebound
         frames=36, art="core_orb_rose.png", art2="core_orb.png", note="C6 retry, plays once",
