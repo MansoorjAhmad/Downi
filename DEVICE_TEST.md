@@ -714,6 +714,15 @@ in-flight percentage is the *debug* build's (`test_out/e2e_progress.png`); the r
 frame reads `instagram.com 100 %` on the *Active downloads* card, which is the job's completion hold captured
 7 s after the CTA (ACTIVE read 0 by 17:03), so the release cell counts the delivery, not a mid-flight number.
 
+**The phone is not the archive.** The owner cleared these test downloads afterwards (they were test captures), so
+`/sdcard/Movies/DOWNI` is empty again and MediaStore holds only that directory's own row — and **no trash rows**,
+so the clearing was permanent rather than a 30-day trashed delete, which is the right way to dispose of test
+data. The file named in 0s-4/0s-5/0s-7 therefore exists where this pass put it, not on the phone:
+`test_out/e2e_release/marvinachi-6-release.mp4` (and the debug run's `test_out/e2e/marvinachi-5.mp4`).
+Re-checked on the same installed build after the clearing (2026-09-28, `MainActivity` focused, pid 20054
+unchanged): `dumpsys gfxinfo` after a reset reads **0 frames / 0 janky / 1 ViewRootImpl** over 7 s — §0r-6's
+rest state still holds, so nothing about the clearing touched the app.
+
 > Sign and date here when green: **2026-09-28** — 0s-1 … 0s-10 green on both builds, and the shipped build's
 > own file is byte-identical to the debug build's.
 
