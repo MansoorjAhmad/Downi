@@ -366,6 +366,66 @@ video screen (see the M8 entry in `CHANGELOG.md`).
 | Share via text selection | ✅ 09-24 — Chrome select → DOWNI (PROCESS_TEXT) → instant background grab |
 | Updater | ✅ 09-24 — Settings → Check Updates → "Up to date" |
 
+
+## 0i. V3.3.1 — the app's own foreground cost (the vortex stops looping) — vivo V2058
+
+> Pass run **2026-09-28**, vivo V2058, on the build that was **already installed** — the device's
+> `base.apk` sha256 `cc2c38ac…` (46 211 402 B) = `app-spike-signed.apk` as built 10:24 that morning,
+> versionCode 48 / v3.2.0, prod cert `4311317…`. Nothing was rebuilt for this pass: the web-only change
+> was already inside that APK, so every number below is the shipped binary's.
+
+**Why.** M8's second half (§0h, and `V3.3_PLAN.md` §8) left the app's own foreground UI as the last
+"feels slow" suspect: with MainActivity in the front `dumpsys gfxinfo` counted ~61 fps and the process
+burned ~25 s of CPU per 20 s of wall clock (~1.25 cores) with nobody touching the screen.
+`tools/core_web_anim.py` then asked the WebView's own DevTools socket what was animating, and the answer
+was **two declarations and nothing else** — both on the home screen's hero button, both on
+pseudo-elements, both `iterations: Infinite`:
+
+    spin     div.vortex::before   transform: rotate(360deg) over a conic-gradient + -webkit-mask
+    breathe  div.vortex::after    opacity .55->1 + transform: scale(.96->1.05) on a radial gradient
+
+**What changed.** `www/index.html` only. The pair rests **still** (frozen at the keyframes' own resting
+pose) and plays **one pass** on the tap that wakes them — `.vortex.waking::before` 1.1 s, `::after`
+1.4 s — with one 1.5 s timer dropping the class, so a fast double-tap cannot stack wakes. Same "energy
+builds, then settles" grammar as the Core's C2 wake. No Java, no asset, no API.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0i-1 | At rest the app draws nothing | ✅ MainActivity focused (read in the same call): `Total frames rendered: 0` over 10 s and **cpu `00:01:08` → `00:01:08`, +0 s** across that window — the window that read 606/607 frames and ~+25 s before the fix |
+| 0i-2 | Nothing runs forever any more | ✅ the renderer's own account, `python tools\core_web_anim.py list`: **`0 running / 3 in the document`** — `toastLine … iter=1 finished`, two `fadeIn … iter=1 finished`. `spin` and `breathe` are **absent**; before the fix the same command printed `2 running / 5` with both at `iter=forever` |
+| 0i-3 | A real touch still wakes it — and it stops again | ✅ `input tap 540 537` (the box `core_web_anim.py rect` reported for `.vortex`: 132×132 CSS at dpr 2.75, viewport 392×823, screen 393×876 → centre 540,537 device px): **126 frames** in the following 3 s, then **0 frames** in a 10 s window starting 6 s after the tap. Focus checked before the tap |
+| 0i-4 | One pass each, then the class leaves | ✅ `core_web_anim.py wake` (the page's own handler clicked, sampled every 150 ms on **one** live connection): `t=+0 class='vortex waking' transition+spin+breathe, all iter=1 running` → `spin` last seen at `t=+1059` (t=1033 ms = its 1.1 s) → `breathe` last at `t=+1406` (t=1382 = its 1.4 s) → `t=+1559 class='vortex' none`. VERDICT **3 name(s), at most 3 at once; forever animations: none** |
+| 0i-5 | It really is back at rest | ✅ two stills — `rest_home.png` (11:38, before any tap) and `settled_home.png` (11:44, after the tap + settle) — differ in **894 px of 2 600 640 (0.034 %)**, box `(124, 21, 745, 52)` = the status bar's clock; **below y=150: 0 differing pixels**, i.e. the page is pixel-identical to the pre-tap page |
+| 0i-6 | The tap really landed on the phone | ✅ `wake_mid.png` (11:43, a real `input tap`) shows the app's own toast *"The Vortex needs a link"* with its progress hairline and the ring caught **mid-rotation** with the glow at its brightest — the toast is the tap's own consequence (`toastLine … iter=1 dur=3.5s`, which only `handleVortexClick` shows) |
+
+Notes kept rather than hidden:
+
+- **The first "settle" window read 52 frames, and it was the toast — not a regression.** That window
+  began 3 s after the tap, i.e. inside the app's own 3.5 s `toastLine` animation that an empty clipboard
+  produces. The re-run starts past it (6 s) and reads 0. `core_web_anim.py list` names the toast.
+- **Playing is still expensive; *looping* was the defect.** Across this pass's three taps and two wake
+  runs the process went from cpu `00:00:24` to `00:01:07` — that is the animations doing what they are
+  for, and then stopping. The claim is that the app is parked, not that animating is free.
+- **`wake` grew a `--dry` before any of this.** A tap on `.vortex` calls `handleVortexClick()`, which
+  grabs the clipboard *after* the wake, so `--dry` asks the page's own `grabClipboardUrl()` what the tap
+  would download. It read `''` — which is why this pass spent no mobile data.
+- **`rect`'s device-pixel mapping is CSS × dpr with the window's origin at 0,0, and this pass validated
+  it by use:** the tap at 540,537 woke the ring *and* raised the toast, which is only reachable by
+  hitting `.vortex` itself. (The WebView is inset — `innerHeight` 823 CSS vs `screen.height` 876 — so
+  that assumption was worth testing rather than assuming.)
+
+**The screenshot that killed the previous session (10:25 that morning).** `rest_home.png` was captured
+with `& $adb exec-out screencap -p > file.png`, and PowerShell 5.1 rewrites a native command's stdout as
+UTF-16 text: the file began `FF FE`, not `89 50 4E 47`, and attaching it failed the run with
+`Failed to load image: cannot identify image file <_io.BytesIO object>` — *exactly* the 2026-09-24
+incident `tools/safe_shot.ps1` was written for, whose own header quotes that same error string. It is
+kept as `rest_home.png.broken` (`safe_shot.ps1 -Check` reports `UTF16-TEXT-BROKEN`), and every still in
+this section was captured with `safe_shot.ps1 -Out` (device-side `screencap` + `adb pull`) and verified
+before being read. Stills: `test_out\v331_vortex\{rest_home,wake_mid,settled_home}.png`.
+
+> Sign and date here when green: **2026-09-28** — 0i-1 … 0i-6 green.
+
+
 ## 3. Regression sweep (after any engine touch)
 
 - ✅ 09-24 Cancel mid-download (in-app card + DowniDrop): download stops, no file and no `.part`

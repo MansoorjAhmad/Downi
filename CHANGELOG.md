@@ -3,6 +3,40 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.3.1 — the foreground cost (the vortex stops looping) — in progress, not shipped
+
+**The app's own UI was burning ~1.25 cores to run two animations nobody asked to see.** The M8 device
+pass measured the whole process at ~61 fps and ~25 s of CPU per 20 s of wall clock with MainActivity in
+the front and nobody touching the screen (`DEVICE_TEST.md` §0h). The new `tools/core_web_anim.py`
+forwarded the debug WebView's DevTools socket and asked the renderer what it was doing — and the answer
+was **two declarations, both on the home screen's hero button, both `iterations: Infinite`**: `spin` on
+`.vortex::before` (a rotating conic-gradient ring under a `-webkit-mask`) and `breathe` on
+`.vortex::after` (opacity + scale over a radial glow), inside a page that also runs
+`backdrop-filter: blur(30px)` on the dock.
+
+They rest **still** now — frozen at the keyframes' own resting pose — and play **one pass** on the tap
+that wakes them: `.vortex.waking::before` 1.1 s, `::after` 1.4 s, with one 1.5 s timer dropping the
+class so a fast double-tap cannot stack wakes. That is the same "energy builds, then settles" grammar
+as the Core's C2 wake. `www/index.html` only: no Java, no asset, no API.
+
+Measured on the vivo V2058 on the build that was already installed (`base.apk` sha256 `cc2c38ac…` =
+`app-spike-signed.apk`, versionCode 48), MainActivity in the front every time:
+
+- at rest, over 10 s: **0 frames and +0 s of CPU** — the window that read 606/607 frames and ~+25 s
+  before the fix
+- the renderer's own account: **`0 running / 3 in the document`** (the toast and two card fades, all
+  `finished`), where the pre-fix reading was `2 running / 5` with both at `iter=forever`
+- a real tap still wakes it: **126 frames** in the following 3 s, then **0 frames** in a 10 s window
+  starting 6 s later, with `spin`/`breathe`/the press transition caught as `iter=1` one-shots that the
+  1.5 s timer clears
+- two stills, one before the tap and one after it settled, are **pixel-identical below the status bar**
+  (894 differing px of 2 600 640 — all of them the clock)
+
+Not the whole story, kept in writing: playing is still as expensive as looping was — *looping* was the
+defect — and this pass spent no mobile data because `core_web_anim.py wake --dry` reads what a tap would
+grab before tapping anything. Full cell: `DEVICE_TEST.md` §0i; stills in `test_out/v331_vortex/`.
+
+
 ## V3.3.0 — Fetcher 2.0 ("Core" redesign) — in progress, not shipped
 
 **Milestone 1 — the Core is the owner's own art, not a re-drawing of it.** Fetcher 1.0's
