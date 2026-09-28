@@ -37,8 +37,11 @@ public class PlatformProfileTest {
     @Test public void routeOrdersFollowTheMeasuredAttribution() {
         String[] ig = PlatformProfile.INSTAGRAM.routes;
         assertEquals(Route.LEDGER, ig[0]);
-        assertEquals(Route.SHEET_TREE, ig[1]);
-        assertEquals(Route.COPY_LINK, ig[2]);
+        // §0z-7 (owner ruling 2026-09-28): Instagram's copy-link route comes BEFORE the sheet tree —
+        // it is the one measured to deliver the RIGHT reel (5.01 s), while the sheet-tree URL carried
+        // a different video 8 s later in the same run. This assertion is the ruling's cage.
+        assertEquals(Route.COPY_LINK, ig[1]);
+        assertEquals(Route.SHEET_TREE, ig[2]);
 
         String[] tt = PlatformProfile.TIKTOK.routes;
         assertEquals(Route.SHEET_TREE, tt[0]);

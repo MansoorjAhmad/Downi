@@ -35,6 +35,7 @@ import com.omnidownloader.app.fetcher.ShareRows;
 import com.omnidownloader.app.fetcher.ShareSurface;
 import com.omnidownloader.app.fetcher.SheetSwipe;
 import com.omnidownloader.app.fetcher.AttentionLedger;
+import com.omnidownloader.app.fetcher.ClipboardGate;
 import com.omnidownloader.app.fetcher.DeliveryGuard;
 import com.omnidownloader.app.fetcher.MediaUrl;
 import com.omnidownloader.app.fetcher.PlatformProfile;
@@ -248,24 +249,67 @@ public class DowniFetcherService extends AccessibilityService {
     private int sheetWaits;                          // re-scans while the sheet is still animating
     private int sheetScans;                          // sheet-tree fast-lane retries (budget: profile)
     private static final int MAX_SHEET_WAITS = 1;
+    /**
+     * How long a run waits, ONCE, for a sheet that has not appeared at all (was a flat 900 ms —
+     * device 2026-09-28, §0z-7-6: the failure path spent 2.68 s in the surface timeout and then
+     * another 0.90 s here, for a run that could not succeed). One short beat is enough to catch a
+     * sheet that opened late; after that the run says so and fails fast, so the owner can re-tap
+     * immediately instead of watching a stall.
+     */
+    private static final long SHEET_ABSENT_WAIT_MS = 250;
+    /**
+     * How long the platform gets to commit its copy after the "Copy link" click, before the sheet is
+     * dismissed and the clipboard is read (was a blind **1200 ms** — the single largest removable
+     * item in the run, §0z-7-6: click 21:08:09.261 → panel closed 21:08:10.637). Instagram writes the
+     * link within ~100 ms of the click, and {@link ClipboardGate} now makes an early read SAFE
+     * (a value that differs from the pre-click baseline is proof of a fresh write), so this is a
+     * settle for the platform's own handler, not a wait for an animation to finish.
+     */
+    private static final long COPY_CLICK_SETTLE_MS = 400;
+    /**
+     * The sheet-surface probe's own numbers (was: a fixed 300 ms lead-in, then a 250 ms quantum).
+     * The probe is a tree read, so a tighter cadence costs nothing and reacts sooner — and
+     * {@link #nudgeSettleWait()} makes a content-change event probe IMMEDIATELY, so the common case
+     * no longer waits for a sample boundary at all.
+     */
+    private static final long SURFACE_FIRST_PROBE_MS = 120;
+    private static final long SURFACE_POLL_MS = 120;
+    private static final int MAX_SURFACE_TRIES = 25;      // ~3.0 s while the sheet's content loads
+    private static final int MAX_SURFACE_NOWIN_TRIES = 8; // ~1.0 s when no sheet window at all
     // D-e (2026-09-25): the clipboard read is a *race* — our window must actually hold focus, and
     // setFocusable(true) alone does not grant it. So the read is retried a few times behind the tap.
     private int clipTries;
     private static final int MAX_CLIP_TRIES = 6;
-    // M8: the three numbers of that window, as numbers. They were literals spread across chainStep3
+    // M8: the numbers of that window, as numbers. They were literals spread across chainStep3
     // and clipAttempt, including a hand-computed focus hold (`500 + 6 * 250 + 400`) that had to be
     // re-derived by hand whenever one of them moved — the drift this file's other budgets live in
-    // named constants to avoid. The first read is 350 ms, not 500: the focus pre-warm (chainStep3
-    // asks for focus the moment the share panel closes) already existed when the 500 was authored,
-    // and every retry below still covers a copy that lands late, so this only removes dead time.
-    private static final long CLIP_READY_MS = 350;
-    private static final long CLIP_RETRY_MS = 250;
+    // named constants to avoid.
+    //
+    // §0z-7 (2026-09-28): the first read was 350 ms and every retry a flat 250 ms — 1.85 s of
+    // patience for a copy the platform commits in ~100 ms. The CADENCE now lives in
+    // `ClipboardGate` (fast first, patient after), because the same numbers are what make an
+    // immediate read safe; here only the lead-in and the tail remain.
+    private static final long CLIP_READY_MS = 120;
     private static final long CLIP_HOLD_TAIL_MS = 400;
 
     /** How long the Core stays focusable for the whole read window — derived, never hand-added. */
     private static long clipFocusHoldMs() {
-        return CLIP_READY_MS + MAX_CLIP_TRIES * CLIP_RETRY_MS + CLIP_HOLD_TAIL_MS;
+        return ClipboardGate.budgetMs(CLIP_READY_MS, MAX_CLIP_TRIES, CLIP_HOLD_TAIL_MS);
     }
+
+    /**
+     * The clipboard's text as it stood BEFORE the platform's "Copy link" was clicked, or null when
+     * nothing readable was there. This is what makes the immediate read safe: a value that differs
+     * from it proves the platform wrote (see {@link ClipboardGate}).
+     */
+    private String clipBaseline;
+
+    /**
+     * Latency stamps (§0z-7): the owner's metric is **tap → link in hand**, so the run reports its
+     * own split instead of leaving it to be reconstructed from timestamps by hand. `tapAt` is set at
+     * the tap, the others at each beat; the line is emitted once, when the run ends.
+     */
+    private long tapAt, shareClickAt, copyClickAt;
 
     /**
      * Run generation, bumped by every {@link #beginChainRun()}. A run's delayed steps capture it
@@ -768,7 +812,12 @@ public class DowniFetcherService extends AccessibilityService {
                 ledger.onScrollTransition();     // the feed paged: pre-scroll candidates are gone
                 scheduleSettleDump("scroll_settle");
             } else if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-                maybeDump("content_changed");
+                // §0z-7: while a run is waiting on the sheet, a content change IS the signal that wait
+                // exists for — probe it immediately and skip the dump. The dump could only add the
+                // measured noise (15 × `identical_to_previous` during one sheet phase, §0z-3), and
+                // the Core's detection already ran on the window-state dump above.
+                if (chainRunning && surfacePoll != null) asyncNudge();
+                else maybeDump("content_changed");
             }
         } catch (Throwable t) {
             log("EVENT_ERROR " + t);
@@ -1131,6 +1180,7 @@ public class DowniFetcherService extends AccessibilityService {
      */
     private void onCoreTap() {
         if (chainRunning) { log("CORE_TAP_BUSY ignored"); return; }
+        tapAt = SystemClock.elapsedRealtime();   // §0z-7: the owner's metric starts here
         tapScan();                               // TAP_SCAN: what the app offers at this instant
         String base = CoreArbiter.baseState(jobState, chainRunning, videoDetected);
         String tracked = jobBinding != null ? jobBinding.trackedUrl() : null;
@@ -1241,6 +1291,16 @@ public class DowniFetcherService extends AccessibilityService {
         sheetSwipes = 0;
         sheetWaits = 0;
         sheetScans = 0;
+        // §0z-7: the clipboard baseline and the latency stamps belong to ONE run — a newer run must
+        // never inherit the previous one's baseline (that value is exactly what makes an early read
+        // safe) nor report the previous one's timings.
+        clipBaseline = null;
+        // NOTE: `tapAt` is NOT cleared here — it is the TAP's own stamp, taken in onCoreTap before
+        // this run begins, and clearing it here is what made the first CHAIN_LATENCY line vanish
+        // (measured 2026-09-28 22:09: the run reported ms=2292 but no tap-to-link split). A run with
+        // no tap behind it (the debug bench channel) clears it at its own call site instead.
+        shareClickAt = copyClickAt = 0;
+        disarmSurfacePoll();
         runGen++;
         runStartedAt = SystemClock.elapsedRealtime();
         runRoute = null;
@@ -1364,6 +1424,17 @@ public class DowniFetcherService extends AccessibilityService {
             return;
         }
         long now = SystemClock.elapsedRealtime();
+        // §0z-7: the owner's metric, measured by the run itself — **tap → link in hand**. Emitted at
+        // the only moment the URL is actually held (past the media-page check), so it can never
+        // report a timing for a link that was refused. `-1` means that beat never happened on this
+        // route (e.g. no share click on the ledger route), never "zero ms".
+        if (tapAt > 0) {
+            log("CHAIN_LATENCY route=" + route
+                    + " tap_to_link_ms=" + (now - tapAt)
+                    + " share_click_ms=" + (shareClickAt == 0 ? -1 : shareClickAt - tapAt)
+                    + " copy_click_ms=" + (copyClickAt == 0 ? -1 : copyClickAt - tapAt)
+                    + " link_after_copy_ms=" + (copyClickAt == 0 ? -1 : now - copyClickAt));
+        }
         String platform = platformOf(url);
         if (!delivery.allow(url, now)) {
             // A second tap on the same video seconds apart (clipboard still holding the link) used
@@ -1585,6 +1656,7 @@ public class DowniFetcherService extends AccessibilityService {
             // dump path treated the run as "not running" and could deliver without claiming while
             // the clipboard route claimed separately (the original D-a duplicate shape).
             if (click) beginChainRun();
+            tapAt = click ? 0 : tapAt;   // a commanded run has no tap behind it: no tap-to-link split
             runChain(click);
         }
         catch (Throwable t) { log("CHAIN_ERR " + t); chainReset(); }
@@ -1678,10 +1750,14 @@ public class DowniFetcherService extends AccessibilityService {
             routeUsed = clickNode(t);
         }
         log("CHAIN_SHARE_CLICK text=" + clip(nodeText(t), 120) + " route=" + routeUsed);
+        shareClickAt = SystemClock.elapsedRealtime();          // §0z-7 latency stamp
         // Event-driven wait (§H2): poll for the share surface's own window instead of sleeping a
         // fixed 1300 ms — the sheet opens in ~700 ms on this ROM, so step 2 starts sooner; the
         // deadline fallback keeps OEM same-window sheets working.
-        postStep(new Runnable() { @Override public void run() { waitShareSurface(0); } }, 300);
+        // §0z-7: the lead-in is no longer a flat 300 ms and the poll is no longer a 250 ms quantum —
+        // `armSurfacePoll` holds the single in-flight probe, and a content-change event can fire it
+        // EARLY (`asyncNudge`), so the wait ends the moment the sheet's content exists.
+        armSurfacePoll(0, SURFACE_FIRST_PROBE_MS);
     }
 
     /**
@@ -1736,30 +1812,84 @@ public class DowniFetcherService extends AccessibilityService {
             collectCandidates(pickShareRoot("CHAIN_CONTENT_PROBE", false), new ArrayList<AccessibilityNodeInfo>(),
                     copyProbe, new ArrayList<AccessibilityNodeInfo>(), new Counter(), 0);
             if (!copyProbe.isEmpty()) {
-                observer.onStep("sheet_open", "after_ms=" + (300 + attempt * 250));
+                long after = SURFACE_FIRST_PROBE_MS + attempt * SURFACE_POLL_MS;
+                observer.onStep("sheet_open", "after_ms=" + after);
                 // Wave 2: the orbit light steps to 90 — the sheet is open (sheet C4 STEPS).
                 if (core != null) core.setOrbitStep(90f);
-                log("CHAIN_SURFACE_OPEN after_ms=" + (300 + attempt * 250) + " content=ready");
+                log("CHAIN_SURFACE_OPEN after_ms=" + after + " content=ready");
+                disarmSurfacePoll();             // this wait is over; no stale probe may follow it
                 chainStep2();
                 return;
             }
-            if (attempt >= 15) {                 // ~3.7 s total: scan anyway, scrolls take over
+            if (attempt >= MAX_SURFACE_TRIES) {  // ~3.0 s total: scan anyway, scrolls take over
                 log("CHAIN_SURFACE_TIMEOUT fallback=scan");
+                disarmSurfacePoll();
                 chainStep2();
                 return;
             }
-            postStep(new Runnable() { @Override public void run() { waitShareSurface(attempt + 1); } }, 250);
+            armSurfacePoll(attempt + 1, SURFACE_POLL_MS);
             return;
         }
-        if (attempt >= 7) {
-            log("CHAIN_SURFACE_TIMEOUT fallback=scan");
+        if (attempt >= MAX_SURFACE_NOWIN_TRIES) {
+            log("CHAIN_SURFACE_TIMEOUT fallback=scan no_window=1");
+            disarmSurfacePoll();
             chainStep2();                        // OEM same-window sheets: scan anyway
             return;
         }
-        postStep(new Runnable() { @Override public void run() { waitShareSurface(attempt + 1); } }, 250);
+        armSurfacePoll(attempt + 1, SURFACE_POLL_MS);
+    }
+
+    /** The single in-flight surface probe — see {@link #armSurfacePoll} and {@link #asyncNudge}. */
+    private Runnable surfacePoll;
+    private long lastNudgeAt;
+
+    /** One nudge per this window: a content-change burst is one signal, not a hundred probes. */
+    private static final long NUDGE_MIN_GAP_MS = 80;
+
+    /**
+     * Arm (or re-arm) the surface probe. Exactly one probe is ever in flight: re-arming removes the
+     * pending one, so the nudge below can never run two poll chains side by side.
+     */
+    private void armSurfacePoll(final int attempt, long delayMs) {
+        disarmSurfacePoll();
+        surfacePoll = new Runnable() {
+            @Override public void run() {
+                surfacePoll = null;
+                try { waitShareSurface(attempt); }
+                catch (Throwable t) { log("CHAIN_STEP_ERR " + t); chainReset(); }
+            }
+        };
+        main.postDelayed(surfacePoll, delayMs);
+    }
+
+    private void disarmSurfacePoll() {
+        if (surfacePoll != null) {
+            main.removeCallbacks(surfacePoll);
+            surfacePoll = null;
+        }
+    }
+
+    /**
+     * Event-driven nudge (§0z-7): while a run is waiting for the sheet, a content change IS the
+     * signal that wait exists for, so probe NOW instead of at the next sample boundary.
+     *
+     * Measured (§0z-7-6): IG exposes its "Copy link" row about 2.9 s after the share tap — that is
+     * the platform's own latency, and it is not ours to remove; what WAS ours is reacting to it up to
+     * a full poll quantum late (250 ms before this change, 120 ms now). This closes the gap to the
+     * event itself, and it can only ever make a run earlier: it re-runs the same probe, and the
+     * probe's own verdicts (open → step 2, deadline → scan) are unchanged.
+     */
+    private void asyncNudge() {
+        if (!chainRunning || surfacePoll == null) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastNudgeAt < NUDGE_MIN_GAP_MS) return;   // storm guard
+        lastNudgeAt = now;
+        main.removeCallbacks(surfacePoll);
+        main.post(surfacePoll);
     }
 
     private void chainStep2() {
+        disarmSurfacePoll();                 // the surface wait is over: this scan replaces it
         logWindows("CHAIN_STEP2");
         AccessibilityNodeInfo root = pickShareRoot("CHAIN_STEP2", false);
         if (root == null) { log("CHAIN_STEP2_ROOT_NULL"); chainReset(); return; }
@@ -1784,36 +1914,42 @@ public class DowniFetcherService extends AccessibilityService {
         // target here is the platform's own **Copy link**: DOWNI reads the link it just copied and
         // starts the download. Nothing is shared with anyone, and nothing downloads without a tap.
         //
-        // THE SHEET-TREE FAST LANE (measured 2026-09-26 08:41): on Instagram the OPEN SHEET's own
-        // window tree holds the reel's page URL (quiet-watch dumps are 21/21 clean, but sheet-time
-        // dumps carried it). When it is here, deliver straight from the sheet — skipping the
-        // copy-link click AND the focus/clipboard dance saves ~1.5-2 s and one fragile step.
-        // The sheet gets its BACK press before delivery; nothing else changes.
-        java.util.ArrayList<String> sheetUrls = corpusUrls(root);
-        for (String cand : sheetUrls) {
-            if (MediaUrl.reason(cand) != null) continue;
-            observer.onStep("sheet_tree_hit", "");
-            log("CHAIN_SHEET_TREE_DELIVER url=" + clip(cand, 200));
-            chainSheetNeedsClose = false;
-            closeSheetIfOpen("sheet_tree_route");
-            deliverByTap(cand, "sheet_tree");
-            chainReset();
-            return;
-        }
-        // Wave 1: the sheet-tree retry beat and the swipe budget are the profile's call —
-        // Instagram's sheet web content needs one extra beat to expose its URL; TikTok's
-        // sheet tree never holds a URL and skips this entirely (measured, see PlatformProfile).
-        PlatformProfile p = profile();
-        int sheetTreeRetries = p != null ? p.sheetTreeRetries : 0;
-        int maxSwipes = p != null ? p.maxSheetSwipes : 2;
-        if (sheetTreeRetries > 0 && shareSurfaceOpen() && sheetScans < sheetTreeRetries) {
-            sheetScans++;
-            log("CHAIN_SHEET_TREE_RETRY n=" + sheetScans + " why=awaiting_sheet_webview");
-            postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 350);
-            return;
-        }
+        // §0z-7 (owner ruling, 2026-09-28): **Copy link is the primary route.** It is the measured
+        // fast-and-CORRECT one — `CHAIN_CLIPBOARD got=yes` → delivered in 5.01 s, and the file on disk
+        // was the reel that was tapped — while the sheet-tree URL surfaced a DIFFERENT video 8 s later
+        // in the same run (0z-7-6), harmless only because handoff is disabled. So an on-screen Copy
+        // link is clicked the moment it exists, and the sheet's webview is NEVER waited for while one
+        // is visible: that wait is what produced the 9–16 s variants of this route.
         AccessibilityNodeInfo c = firstClickable(copy);
         if (c == null) {
+            // No Copy link on screen yet. Only now is the sheet's own tree worth reading: IG exposes
+            // the reel's page URL through the open sheet's window (quiet-watch dumps are 21/21 clean,
+            // but sheet-time dumps carried it), and delivering from it skips the click AND the
+            // clipboard dance. It stays a FALLBACK because of the identity risk above.
+            java.util.ArrayList<String> sheetUrls = corpusUrls(root);
+            for (String cand : sheetUrls) {
+                if (MediaUrl.reason(cand) != null) continue;
+                observer.onStep("sheet_tree_hit", "");
+                log("CHAIN_SHEET_TREE_DELIVER url=" + clip(cand, 200));
+                chainSheetNeedsClose = false;
+                closeSheetIfOpen("sheet_tree_route");
+                deliverByTap(cand, "sheet_tree");
+                chainReset();
+                return;
+            }
+            // Wave 1: the sheet-tree retry beat and the swipe budget are the profile's call —
+            // Instagram's sheet web content needs one extra beat to expose its URL; TikTok's
+            // sheet tree never holds a URL and skips this entirely (measured, see PlatformProfile).
+            PlatformProfile p = profile();
+            int sheetTreeRetries = p != null ? p.sheetTreeRetries : 0;
+            int maxSwipes = p != null ? p.maxSheetSwipes : 2;
+            if (sheetTreeRetries > 0 && shareSurfaceOpen() && sheetScans < sheetTreeRetries) {
+                sheetScans++;
+                log("CHAIN_SHEET_TREE_RETRY n=" + sheetScans + " why=awaiting_sheet_webview");
+                postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 350);
+                return;
+            }
+            AccessibilityNodeInfo c2 = null;   // no Copy link in this scan — see the block below
             // IG's sheet lists DM targets first; its own action rows ("share", "copy link")
             // sit below the fold unless the sheet is scrolled (device 2026-09-25).
             //
@@ -1842,7 +1978,9 @@ public class DowniFetcherService extends AccessibilityService {
                 sheetWaits++;
                 log("CHAIN_SHEET_WAIT n=" + sheetWaits + "/" + MAX_SHEET_WAITS
                         + " why=surface_not_open_no_swipe");
-                postStep(new Runnable() { @Override public void run() { chainStep2(); } }, 900);
+                // §0z-7: 900 ms → SHEET_ABSENT_WAIT_MS. Nothing is animating here (there is no sheet);
+                // the old flat sleep was pure stall on a run that could not succeed.
+                postStep(new Runnable() { @Override public void run() { chainStep2(); } }, SHEET_ABSENT_WAIT_MS);
                 return;
             }
             if (!surface && !chainTriedOverflow) {
@@ -1858,6 +1996,10 @@ public class DowniFetcherService extends AccessibilityService {
         }
         chainClickedCopy = true;
         chainSheetNeedsClose = true;
+        // §0z-7: remember what the clipboard held BEFORE the platform's own copy, so the read that
+        // follows the click can tell a fresh write from the previous reel's link (ClipboardGate).
+        // This is what bought the right to read immediately instead of after a blind 1.2 s.
+        clipBaseline = readClipboardText();
         observer.onStep("copy_link_clicked", "");
         // Wave 2: the tether moves to the copy-link row (the orbit steps to 180 — sheet C4).
         try {
@@ -1868,7 +2010,13 @@ public class DowniFetcherService extends AccessibilityService {
         } catch (Throwable ignored) {}
         log("CHAIN_TARGET_CLICK which=copylink text=" + clip(nodeText(c), 120)
                 + " route=" + clickNode(c));
-        postStep(new Runnable() { @Override public void run() { chainStep3(); } }, 1200);
+        copyClickAt = SystemClock.elapsedRealtime();          // §0z-7 latency stamp
+        // §0z-7: 1200 ms → COPY_CLICK_SETTLE_MS. The 1.2 s was a blind wait for an animation and the
+        // single largest removable item in the run (measured: click 21:08:09.261 → panel closed
+        // 21:08:10.637, §0z-7-6). The platform writes the link within ~100 ms of this click, and the
+        // early read that follows is SAFE because a value differing from `clipBaseline` is proof of a
+        // fresh write — so this settle only covers the platform's own handler, not its animating sheet.
+        postStep(new Runnable() { @Override public void run() { chainStep3(); } }, COPY_CLICK_SETTLE_MS);
     }
 
     /**
@@ -2166,7 +2314,8 @@ public class DowniFetcherService extends AccessibilityService {
         if (url == null) {
             clipTries++;
             if (clipTries < MAX_CLIP_TRIES) {
-                postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } }, CLIP_RETRY_MS);
+                postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } },
+                        ClipboardGate.retryDelayMs(clipTries));
                 return;
             }
             log("CHAIN_CLIPBOARD got=null text= tries=" + clipTries);
@@ -2175,6 +2324,26 @@ public class DowniFetcherService extends AccessibilityService {
             resolverFailed("clipboard_empty");
             endPendingRun(false);           // the async window's true outcome (Wave 1 honesty)
             return;
+        }
+        // §0z-7: a readable value is not automatically THIS video's link — the read can beat the
+        // platform's write and return the PREVIOUS reel, which is the one failure the owner's rules
+        // cannot tolerate. `clipBaseline` (taken just before the Copy link click) is what separates
+        // the two, and `ClipboardGate` is that rule set, unit-tested.
+        long sinceClick = copyClickAt == 0 ? Long.MAX_VALUE : SystemClock.elapsedRealtime() - copyClickAt;
+        ClipboardGate.Verdict verdict = ClipboardGate.accept(url, clipBaseline, sinceClick);
+        if (verdict != ClipboardGate.Verdict.ACCEPT) {
+            clipTries++;
+            if (clipTries < MAX_CLIP_TRIES) {
+                log("CHAIN_CLIP_SAME n=" + clipTries + "/" + MAX_CLIP_TRIES + " ms_since_click=" + sinceClick);
+                postStep(new Runnable() { @Override public void run() { clipAttempt(gen); } },
+                        ClipboardGate.retryDelayMs(clipTries));
+                return;
+            }
+            // Out of tries with only the pre-click value: accepting it now is exactly what the chain
+            // always did (a same-reel re-grab), so the run keeps its old outcome instead of inventing
+            // a failure — but the box says which value it was, so a stale read is never silent.
+            log("CHAIN_CLIP_SAME_VALUE attempts=" + clipTries + " ms_since_click=" + sinceClick
+                    + " note=accepted_as_before_the_change");
         }
         log("CHAIN_CLIPBOARD got=yes text=" + clip(url, 200));
         String why = MediaUrl.reason(url);      // D-b: a media page, not a bio/redirect link

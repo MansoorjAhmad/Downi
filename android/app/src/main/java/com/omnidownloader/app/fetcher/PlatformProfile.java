@@ -22,11 +22,19 @@ import java.util.Locale;
  */
 public final class PlatformProfile {
 
-    /** Instagram and TikTok, videos only (locked ruling D2). */
+    /**
+     * Instagram and TikTok, videos only (locked ruling D2).
+     *
+     * Route order, corrected 2026-09-28 (§0z-7, owner ruling): **copy_link before sheet_tree**. The
+     * order is the tap's advertised plan (`RUN_START plan=…`), and it now matches what the chain
+     * measures best: the copy-link route delivered the RIGHT reel in 5.01 s while the sheet-tree URL
+     * surfaced a DIFFERENT video 8 s later in the same run (0z-7-6 — benign only because handoff is
+     * disabled). The sheet tree stays in the plan as the fallback for a sheet that shows no Copy link.
+     */
     public static final PlatformProfile INSTAGRAM = new PlatformProfile(
             "instagram", new String[]{"com.instagram.android"},
             true /* passiveCapable */, 1 /* sheetTreeRetries */, 2 /* maxSheetSwipes */,
-            new String[]{Route.LEDGER, Route.SHEET_TREE, Route.COPY_LINK});
+            new String[]{Route.LEDGER, Route.COPY_LINK, Route.SHEET_TREE});
 
     public static final PlatformProfile TIKTOK = new PlatformProfile(
             "tiktok", new String[]{"com.zhiliaoapp.musically", "com.ss.android.ugc.trill"},
