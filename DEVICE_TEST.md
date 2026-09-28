@@ -575,6 +575,21 @@ cannot reach it at all.
 
 > Sign and date here when green: **2026-09-28** — 0o-1 … 0o-5 green. **The release-build pass is closed.**
 
+## 0p. V3.3.1 — the published APK's smoke (the Law §9's post-release cell) — vivo V2058
+
+> The CI-built artefact itself: `DOWNI-v3.3.1.apk` (41 995 009 B) fetched from the release
+> (`gh release download v3.3.1`), its signature verified **before** installing it, then smoked by hand.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0p-1 | The published APK is the prod-signed build | ✅ `apksigner verify --print-certs` → `CN=Manso, O=OmniDownloader` / SHA-256 `4311317…` — the same key as every release, so the updater's promise holds |
+| 0p-2 | It installs over the previous version without an uninstall | ✅ `adb install -r DOWNI-v3.3.1.apk` → `Success`; `dumpsys package` reads `versionCode=49 versionName=3.3.1` |
+| 0p-3 | A tap on the published build's Core delivers | ✅ TikTok in the front, one `input tap 540 1168` → **two real files in `/sdcard/Movies/DOWNI`: `tiktok_7685706012287880470.mp4` (6 879 033 B, 14:13) and a 3 475 019 B clip (14:12)** |
+| 0p-4 | The taps did not crash it | ✅ `pidof com.omnidownloader.app` → 21697 after the taps; `logcat -b crash -T '09-28 14:05:00.000'` → empty across both |
+| 0p-5 | The release page is correct | ✅ `gh release view v3.3.1` → title `DOWNI v3.3.1`, `prerelease: false`, `asset: DOWNI-v3.3.1.apk`, published 2026-09-28T09:06:28Z; both workflows green (`Release DOWNI APK` 2 m 7 s, `Test — Engine Smoke + Debug Build` 1 m 45 s) |
+
+> Sign and date here when green: **2026-09-28** — 0p-1 … 0p-5 green. **v3.3.1 is launched.**
+
 ## 3. Regression sweep (after any engine touch)
 
 - ✅ 09-24 Cancel mid-download (in-app card + DowniDrop): download stops, no file and no `.part`
