@@ -3,6 +3,39 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.3.3 — the Fetcher's Instagram link-grab, fixed (versionCode 51) — released 2026-09-28
+
+**The v3.3.2 release was withdrawn because of this bug, and the fix ships under a new number rather than by
+moving that tag** — the same ruling the v3.3.2 section below records, for two separate reasons: a moved tag is
+worse than a new version, and the in-app updater compares version **names**, so a fixed build still called
+`3.3.2` would have read as *"Up to date"* for everyone who had installed the bad one.
+
+**What was wrong** (owner report: *"noticeably sluggish compared to TikTok (5–8× slower)"*). Measured in
+`DEVICE_TEST.md` §0z: the engine was innocent — Instagram resolved in **4.65 s** against TikTok's 4.69 s, and
+the felt difference sat in the **Fetcher's link-grab in front of it**: **5.01 s** on Instagram (13–22 s on its
+worse runs) against ~1 s on TikTok, all of it spent waiting *before* the engine ever saw a URL.
+
+**What changed** — engine, `yt-dlp` and the whole download path untouched; the tap stays the only trigger:
+
+- **Copy link is the primary route**, ahead of the sheet-tree lane — the copy-link route is the one measured
+  to deliver the *right* reel, while the sheet-tree URL surfaced a **different** video 8 s later in the same run.
+- **The blind sleeps are gone**: 1200 ms after the Copy link click → **400 ms**, the 350 ms clipboard lead-in
+  → **120 ms**, the sheet-absent stall 900 → **250 ms**, the surface poll quantum 250 → **120 ms**. Reading
+  that early is safe because of a new pure-logic `ClipboardGate` (7 unit tests): the chain remembers what the
+  clipboard held *before* the platform's copy, and a value that differs from it is **proof** of a fresh write —
+  an equal one waits out a grace instead of being delivered as a maybe-previous video.
+- **The waits react instead of sampling**: one probe in flight, fired immediately by a content change, and the
+  Copy link row itself is watched per tick rather than slept-towards on a deadline.
+- **The flakiness is fixed at its cause**: Instagram's action rows populate **last**, after the DM list, and
+  variably (~1.3–2.2 s) — two scans 250 ms apart could miss them, which is exactly what *"it just fails
+  sometimes"* was. The watch now covers that variance and still bounds the wait.
+
+**Measured after, by the run itself** (`CHAIN_LATENCY route=clipboard tap_to_link_ms=1621 share_click_ms=481
+copy_click_ms=965 link_after_copy_ms=656`): **tap → link in hand 1.62 s**, with 2.29 s and 2.45 s as the other
+readings that night, against **5.01 s** before — and the Copy link row is reached **0.97 s** after the tap
+instead of 1.81 s. Full record, including the two instruments behind it: `DEVICE_TEST.md` §0z-7 and §0z-8.
+
+
 ## V3.3.2 — the completion pass, published (versionCode 50) — released 2026-09-28
 
 **The same code as the completion pass in the v3.3.1 section below, under a new version number — because

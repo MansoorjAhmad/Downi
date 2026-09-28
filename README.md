@@ -1,12 +1,48 @@
-# DOWNI V3.3.2 ⚡
+# DOWNI V3.3.3 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
 
 ---
+## 🆕 What's New in V3.3.3 — the Instagram link-grab, fixed
 
-## 🆕 What's New in V3.3.2 — the finish pass
+### The link, not the download
+
+- **The grab is 3× faster where it felt slow.** On Instagram the Fetcher took **5.01 s** to get the link in
+  hand — and 13–22 s on its worse runs — against ~1 s on TikTok. It measures **1.62 s** now (2.29 s and
+  2.45 s on the other runs that night), with the share control answered in **0.48 s** instead of 1.38 s.
+- **The engine was never the problem, and it was left alone.** In the same grab, Instagram resolved in
+  **4.65 s** against TikTok's 4.69 s — identical. The felt difference was entirely the wait *in front of* it:
+  `yt-dlp`, the extraction path and the whole download engine are untouched by this release.
+- **The blind waits are gone.** The chain used to sleep **1200 ms** after tapping *Copy link* before even
+  reading the clipboard, plus another 350 ms before the first read. Those are **400 ms and 120 ms** now, and
+  the read starts the instant the platform writes: the chain remembers what the clipboard held *before* the
+  copy, so a value that differs is **proof** of a fresh write, and a value that doesn't waits out a grace
+  instead of being trusted.
+- **It reacts instead of sampling a timer.** The *Copy link* row is taken when it **appears** — **0.97 s**
+  from the tap instead of 1.81 s. A content change now drives the wait, and the old 250 ms polling and its
+  fixed deadlines are gone.
+- **"Sometimes it just fails" is fixed at its cause.** Instagram's action rows load **last**, after the DM
+  list, and variably (~1.3–2.2 s) — two scans 250 ms apart could miss them completely, which is exactly what
+  those failures were. The wait now covers that variance, and still gives up quickly when a sheet is truly
+  not coming.
+- **Why the number moved.** The v3.3.2 release was withdrawn for this bug, and the fix ships as
+  **versionCode 51** rather than by moving the `v3.3.2` tag — a published tag is not moved, and the in-app
+  updater compares version *names*, so a fixed build still called 3.3.2 would read as *"Up to date"* for
+  everyone who had installed the bad one.
+- **The tap is still the only trigger,** nothing downloads without it, and the engine is untouched. The one
+  thing that changes on screen is the Core's orbit light, which now syncs to the open share sheet on
+  Instagram exactly as it always has on TikTok.
+
+Install directly over any earlier version — the signing key is unchanged, so your settings and downloads are
+preserved.
+
+---
+
+
+
+## What's New in V3.3.2 — the finish pass
 
 ### The thumb, the battery, and the state machine
 
