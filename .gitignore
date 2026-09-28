@@ -7,7 +7,17 @@ node_modules/
 .npm-cache/
 android-sdk/
 test_out/
-tools/
+# The verification toolkit is TRACKED (2026-09-28): the scripts that made every v3.3 gate
+# reproducible - the Lottie generator behind the committed art, the state/motion/touch gates,
+# safe_shot.ps1 (the UTF-16 screenshot rule) and core_web_anim.py (the foreground-cost instrument).
+# Everything vendored around them stays out: tools/jdk and tools/python311 are whole toolchain
+# distributions, and the installers/packages are caught by the *.exe / *.zip rules below.
+tools/*
+!tools/*.py
+!tools/*.ps1
+!tools/*.cmd
+!tools/*.md
+!tools/*.json
 __pycache__/
 *.pyc
 *.pyo
