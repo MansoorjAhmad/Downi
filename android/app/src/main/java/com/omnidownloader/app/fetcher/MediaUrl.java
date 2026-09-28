@@ -84,6 +84,34 @@ public final class MediaUrl {
     }
 
     /**
+     * C6's **unsupported read**: the link is not a video the Fetcher can grab, as opposed to a grab
+     * that failed to resolve (a transient failure, which keeps the rose FAILED look and the
+     * retry-ready feel).
+     *
+     * Sheet C6 names both halves — *"link not from TikTok/Instagram, or can't be resolved"*:
+     *
+     *   host_not_supported   a host that is neither TikTok nor Instagram  (C6: "not from ...")
+     *   not_a_media_path     a profile / bio / redirect page, not a video  (C6: "can't be resolved")
+     *   tt_photo_post        a TikTok photo post (recognised, not a video)
+     *
+     * Everything else {@link #reason} can say about a *string* — `not_http`, `unparseable`, `empty`,
+     * `no_host`, `null` — is a clipboard that is not a link at all; it stays out of this set, and so
+     * does every resolver failure (`no_share_row`, `clipboard_empty`, `root_null`, …). That boundary is
+     * pinned in {@link com.omnidownloader.app.fetcher.MediaUrlTest}, not assumed.
+     *
+     * Callers reach this through `resolverFailed`, which PREFIXES the reason (`rejected_<why>`), so the
+     * match is a `contains` over the reason's own tokens and never an equality — the reason
+     * `rejected_host_not_supported` is the case that matters, and an equality check silently read it
+     * as rose FAILED until 2026-09-28.
+     */
+    public static boolean isUnsupportedReason(String why) {
+        if (why == null) return false;
+        return why.contains("host_not_supported")
+                || why.contains("not_a_media_path")
+                || why.contains("tt_photo_post");
+    }
+
+    /**
      * Strip known per-share tracking parameters so the same post always yields the same
      * string for the dedup layers (DeliveryGuard, activeStateFor, the engine's own name
      * dedup). The media path is never touched; anything unparseable returns unchanged.

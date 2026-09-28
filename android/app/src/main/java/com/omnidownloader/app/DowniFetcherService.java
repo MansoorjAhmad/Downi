@@ -437,7 +437,7 @@ public class DowniFetcherService extends AccessibilityService {
         if (failedHold != null) main.removeCallbacks(failedHold);
         jobState = CoreStates.FAILED;
         jobProgress = 0f;
-        boolean unsupported = why != null && (why.contains("photo_post") || why.contains("unsupported"));
+        boolean unsupported = MediaUrl.isUnsupportedReason(why);
         applyCoreState();
         if (core != null) core.setUnsupported(unsupported);
         if (screenOn && core != null && core.isShown()) {

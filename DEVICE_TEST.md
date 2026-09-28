@@ -426,6 +426,37 @@ before being read. Stills: `test_out\v331_vortex\{rest_home,wake_mid,settled_hom
 > Sign and date here when green: **2026-09-28** — 0i-1 … 0i-6 green.
 
 
+## 0j. V3.3.1 — C6's unsupported read: the boundary holds, and the trigger is narrower than the sheet
+
+> Device pass **2026-09-28**, vivo V2058, the v3.2.0/48 build re-signed and installed over the
+> prod-signed one (`assembleDebug` + `testDebugUnitTest` green in 23 s, `sign_spike.ps1` exit 0,
+> `adb install -r` exit 0; **17 suites / 117 tests / 0 failures / 0 errors**). The service's DevTools
+> socket rotated after the install (`…29416` → `…32336`), so the build this section measured is the one
+> the commit carries.
+
+**Why.** 1c of the v3.3.1 plan asked whether C6's "Unsupported variant" is wired to real detection or is
+"a state that exists in code but nothing triggers it". The check found something worse than a stale
+question: `DowniFetcherService` matched `why.contains("photo_post") || why.contains("unsupported")`
+against `MediaUrl.reason()`'s vocabulary (`host_not_supported|not_a_media_path|tt_photo_post`), and
+**only `tt_photo_post` ever matched** — so the sheet's own first case, *"a link not from
+TikTok/Instagram"*, was reading as rose FAILED. `MediaUrl.isUnsupportedReason()` is that rule as a named,
+tested predicate now.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0j-1 | The rule is pinned, not eyeballed | ✅ `MediaUrlTest` +2 tests → suite **117/0**: the three reasons bare, **prefixed** (the form the service actually passes, `rejected_<why>`) and derived from real links (`https://youtu.be/…`, an Instagram profile, a TikTok photo post) all → neutral; every resolver failure (`no_share_row`, `clipboard_empty`, `root_null`, `sheet_never_opened`, `no_copy_link`, `deliver_*`, `passive_*`) and every not-a-link clipboard (`not_http`, `unparseable`, `empty`, `null`) → rose |
+| 0j-2 | A transient failure still reads rose, on the phone | ✅ a real Core tap (`CORE_TOUCH up dragging=false` → `CORE_TAP session=com.instagram.android action=FETCH state=idle`) → `CORE_RESOLVE_FAIL why=no_share_row` → rose FAILED, **twice** (12:51:33, 12:52:03) |
+| 0j-3 | The two reasons this change adds are unreachable in the Core's own flow | ⚠️ **measured, and recorded as a limit**: `host_not_supported` needs a foreign link on the clipboard — one was seeded through the app's own Clipboard plugin and verified by the app's own reader (`the tap would grab 'https://youtu.be/dQw4w9WgXcQ'`), and the chain **overwrote it** with Instagram's own copy-link before reading it (`CHAIN_CLIPBOARD got=yes text=https://www.instagram.com/reel/Dd0CdGRJpWM/…`) → an ordinary delivery. `not_a_media_path` needs a non-media page's share row, and an Instagram profile page exposes none: `CHAIN_SCAN pkg=com.instagram.android share=0 copylink=0 downi=0` → `no_share_row` |
+
+**What that means, written down rather than glossed.** The rule is now true in code, and any route that
+yields those reasons reads neutral instead of rose — but the reachable trigger today is still the TikTok
+photo post, because the Core only harvests URLs from surfaces that expose a share row and those hand back
+media paths. So this is a **correctness fix, not a user-visible one**; it becomes visible the moment a
+route produces one of those reasons (an IG `/p/` photo post through the engine's own reject, a seeded
+clipboard, a future surface).
+
+> Sign and date here when green: **2026-09-28** — 0j-1 and 0j-2 green; 0j-3 is a measured limit.
+
 ## 3. Regression sweep (after any engine touch)
 
 - ✅ 09-24 Cancel mid-download (in-app card + DowniDrop): download stops, no file and no `.part`
