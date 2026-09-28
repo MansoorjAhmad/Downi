@@ -3,7 +3,7 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
-## V3.3.1 — the foreground cost (the vortex stops looping) — in progress, not shipped
+## V3.3.1 — the foreground cost, the neutral read, and the loop audit — in progress, not shipped
 
 **The app's own UI was burning ~1.25 cores to run two animations nobody asked to see.** The M8 device
 pass measured the whole process at ~61 fps and ~25 s of CPU per 20 s of wall clock with MainActivity in
@@ -36,6 +36,27 @@ Not the whole story, kept in writing: playing is still as expensive as looping w
 defect — and this pass spent no mobile data because `core_web_anim.py wake --dry` reads what a tap would
 grab before tapping anything. Full cell: `DEVICE_TEST.md` §0i; stills in `test_out/v331_vortex/`.
 
+
+**C6's unsupported read now matches the sheet, not one of its reasons.** The Core's neutral blue/grey was
+selected by `why.contains("photo_post") || why.contains("unsupported")` against `MediaUrl.reason()`'s own
+vocabulary, where only `tt_photo_post` matches — so a host that is neither TikTok nor Instagram, and a
+profile/bio/redirect path, both read as **rose FAILED**. That rule is `MediaUrl.isUnsupportedReason()` now:
+pure, documented, and pinned by two new tests (17 suites / 117 tests / 0 failures), including the prefixed
+form the service actually passes (`rejected_<why>`). Measured honestly: the boundary holds on the phone (a
+real Core tap with no share row reads `no_share_row` and keeps the rose failure, twice), but the two
+reasons it adds are **not reachable** through the Core's own flow today — a seeded foreign clipboard link
+is overwritten by Instagram's own copy-link before the chain reads it, and a profile page exposes no share
+row at all. A correctness fix, not a visible one. `DEVICE_TEST.md` §0j.
+
+**The job card's `sweep` is the last looping animation, and it is bounded.** The renderer's own account
+shows `sweep @ div::after` running from the moment a job card appears until the moment it leaves — on the
+**Grab** tab (not just Queue, which is where this was first suspected), one instance only, because the
+second copy lives in the hidden tab's container — then stopping, with the app's own completion burst
+(26 × `confettiFly` + `pulseOk` + `toastLine`) as the tail. It is "this download is live" feedback, not
+the vortex defect's twin, and its own cost is **not** what the job window's 421 frames / +12 s CPU
+measures: that window contains the app's own Python download in the same process. Queue, Vault and
+Settings are provably at rest, and the updater's `bar live` is `hidden` unless an update is downloading.
+`DEVICE_TEST.md` §0k.
 
 ## V3.3.0 — Fetcher 2.0 ("Core" redesign) — in progress, not shipped
 

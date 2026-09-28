@@ -409,10 +409,12 @@ Notes kept rather than hidden:
 - **`wake` grew a `--dry` before any of this.** A tap on `.vortex` calls `handleVortexClick()`, which
   grabs the clipboard *after* the wake, so `--dry` asks the page's own `grabClipboardUrl()` what the tap
   would download. It read `''` — which is why this pass spent no mobile data.
-- **`rect`'s device-pixel mapping is CSS × dpr with the window's origin at 0,0, and this pass validated
-  it by use:** the tap at 540,537 woke the ring *and* raised the toast, which is only reachable by
-  hitting `.vortex` itself. (The WebView is inset — `innerHeight` 823 CSS vs `screen.height` 876 — so
-  that assumption was worth testing rather than assuming.)
+- **`rect`'s device-pixel mapping is CSS × dpr with the window's origin at 0,0 — and the tap did NOT
+  prove it.** All the 540,537 tap established is that a tap inside the vortex's ~363 px box wakes it,
+  which *either* origin mapping would also do; §0k then measured the mapping pointing clean off the
+  screen (the inspector's confirm control at device y=2416 on a 2408-px display). Treat `rect` as an aim
+  a real tap must confirm, never as ground truth. (The WebView is inset — `innerHeight` 823 CSS vs
+  `screen.height` 876 — which is why the assumption was worth testing in the first place.)
 
 **The screenshot that killed the previous session (10:25 that morning).** `rest_home.png` was captured
 with `& $adb exec-out screencap -p > file.png`, and PowerShell 5.1 rewrites a native command's stdout as
@@ -456,6 +458,37 @@ route produces one of those reasons (an IG `/p/` photo post through the engine's
 clipboard, a future surface).
 
 > Sign and date here when green: **2026-09-28** — 0j-1 and 0j-2 green; 0j-3 is a measured limit.
+
+## 0k. V3.3.1 — the job card's `sweep` runs for the whole download, and the other screens are clean
+
+> Measured **2026-09-28** on the vivo V2058, Grab tab in the front (`mCurrentFocus=…MainActivity`), with
+> the renderer's own DevTools account (`tools/core_web_anim.py watch`) and the job started from the app's
+> own sheet control. Full change-log: `test_out/v331_sweep/watch.log`.
+
+**Why.** Part 3's first candidate had to be measured rather than guessed. `www/index.html` still carried
+two `animation: … infinite` declarations — `.bar.live > div::after { animation: sweep 1.4s linear
+infinite }` and `.skel { animation: shimmer 1.3s infinite }` — and `.bar` gets `live` from the job card
+itself (`jobCardHtml`: `${job.done ? '' : 'live'}`), i.e. for the whole life of every download. The
+question was whether that is the vortex defect's twin or the app's own "active" feedback.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0k-1 | At rest, nothing runs on this screen | ✅ before the tap: `cards=0 live=0 hidden=True  nothing running` |
+| 0k-2 | The sweep runs for the **whole** job, on the Grab tab | ✅ `t=+2691 ms cards=2 live=2 hidden=False 4 running: fadeIn@card, pulseOk, sweep@div::after, toastLine`, and `sweep` is present at **every** 250 ms sample through `t=+7913`; at `t=+8276 cards=0 live=0` and it is gone |
+| 0k-3 | Exactly one sweep runs | ✅ `cards=2 live=2` because the card is painted into `#activeDownloads` **and** `#queueActiveContainer`, but only one `sweep` is in the running set — the hidden tab's copy is `display:none` and animates nothing |
+| 0k-4 | It stops with the job, and the tail is the app's own | ✅ completion at `t=+8276`: 26 × `confettiFly` + `pulseOk` + `toastLine` (~3.9 s), then `t=+12176 nothing running` |
+| 0k-5 | Where else it can run | ✅ the updater's `bar live` (L779) sits inside `#updateProgressSection`, `class="hidden"` — it sweeps only while an update is actually downloading; `.skel` exists only as loading placeholders (3 of them during an inspect) |
+| 0k-6 | The app's other screens are clean at rest | ✅ Queue: 5 `fadeIn` → parked at +1627 ms · Vault: 4 `fadeIn` + 2 `img.vault-thumb` fades → parked at +2638 ms · Settings: 1 `fadeIn` → parked at +1824 ms · Grab: 4 one-shots (incl. a leftover `shakeX`) → parked at +1638 ms |
+| 0k-7 | The magnitude is **not** attributed to the sweep | ⚠️ a job window reads **421 frames / +12 s CPU per 10 s** against **0 frames / +0 s** with no job — but that window contains the app's own Python download, extraction and merge **in the same process**, so it prices "a grab", not the animation. Pricing the sweep needs a job held open, and the test reel's job lasts ~5.6 s — shorter than one CDP connect |
+
+**Correction owed from §0i.** That section said `rect`'s CSS→device mapping was "validated by use" because
+the vortex tap woke the ring. It was not: the vortex is ~363 device px across, so *either* origin mapping
+lands inside it. §0k then measured the mapping pointing clean off the screen — the inspector's confirm
+control sits at **device y=2416 on a 2408-px screen** (viewport y≈878 CSS against `innerHeight` 823) —
+which is itself a Part 3 candidate: **the sheet's primary action is below the fold**, and a coordinate tap
+cannot reach it at all.
+
+> Sign and date here when green: **2026-09-28** — 0k-1 … 0k-6 green; 0k-7 is a measured limit.
 
 ## 3. Regression sweep (after any engine touch)
 

@@ -34,6 +34,8 @@ Usage (the app must be in the FRONT: a backgrounded WebView throttles to nothing
     python tools/core_web_anim.py waking                 the `.vortex` class and its own animations
     python tools/core_web_anim.py wake --dry             what a tap on the Vortex would grab right now
     python tools/core_web_anim.py wake                   the wake, sampled in time (class + animations)
+    python tools/core_web_anim.py watch --seconds 30 --tap "#lastGrabChip" --tap-after 3000 --out <log>
+                                                         what runs while a real job is on screen
 
 It finds and forwards the socket itself (`adb forward tcp:9222 ...`), so the only setup is a
 connected phone with the app in the front
@@ -255,7 +257,10 @@ class Cdp(object):
         res = self.send("Runtime.evaluate", {
             "expression": expr, "returnByValue": True, "awaitPromise": await_promise})
         if res.get("exceptionDetails"):
-            raise SystemExit("page error: %s" % res["exceptionDetails"].get("text"))
+            d = res["exceptionDetails"]
+            # `text` is only ever "Uncaught"; the cause is in the exception's own description.
+            why = (d.get("exception") or {}).get("description") or d.get("text")
+            raise SystemExit("page error: %s" % str(why).splitlines()[0])
         return res.get("result", {}).get("value")
 
 
@@ -416,6 +421,119 @@ def cmd_wake(cdp, sel, ms, interval, dry):
     return 0
 
 
+# What `watch` samples: only the animations the renderer is *running* (so the change-log stays
+# legible), plus the app's own account of whether a job is on screen - the job cards, how many of
+# them carry the `live` class (the sweep), and which tab is in the front.
+JS_WATCH_SAMPLE = r"""
+(() => {
+  const out = [];
+  for (const a of document.getAnimations()) {
+    if (a.playState !== 'running') continue;
+    const ef = a.effect || {}, t = ef.target;
+    let sel = t && t.tagName ? t.tagName.toLowerCase() : '?';
+    if (t && t.id) sel += '#' + t.id;
+    if (t && t.classList && t.classList.length) sel += '.' + Array.from(t.classList).join('.');
+    if (ef.pseudoElement) sel += ef.pseudoElement;
+    out.push((a.animationName || '(transition)') + ' @ ' + sel);
+  }
+  const wrap = document.getElementById('activeDownloadsWrap');
+  return {
+    t: Math.round(performance.now()),
+    anims: out.sort(),
+    cards: document.querySelectorAll('.jbar').length,
+    live: document.querySelectorAll('.jbar.live').length,
+    wrapHidden: wrap ? wrap.classList.contains('hidden') : null,
+    tab: ((document.querySelector('.nav-item.on') || {}).textContent || '').trim(),
+    last: ((document.getElementById('lastGrabText') || {}).textContent || '').trim()
+  };
+})()
+"""
+
+
+JS_CLICK = r"""
+(() => {
+  const el = document.querySelector(%s);
+  if (!el) return false;
+  try { el.scrollIntoView({block: 'center'}); } catch (e) {}
+  el.click();
+  return true;
+})()
+"""
+
+
+def centre_of(cdp, sel):
+    """The element's centre in device px - the same mapping `rect` prints, for aiming a real tap."""
+    r = cdp.js(JS_RECT % (json.dumps(sel), json.dumps(sel)))
+    if not r:
+        return None
+    c, dpr = r["css"], r["dpr"]
+    if c["w"] <= 0 or c["h"] <= 0:
+        return None                       # exists but is not laid out (display:none)
+    return ((c["x"] + c["w"] / 2.0) * dpr, (c["y"] + c["h"] / 2.0) * dpr)
+
+
+def cmd_js(cdp, expr):
+    """Arbitrary page-side evaluation - for the controls a click or a coordinate tap cannot reach.
+
+    Always awaits, so a promise-returning expression reports its value instead of `{}`.
+    """
+    res = cdp.js(expr, await_promise=True)
+    print("JS  %s -> %r" % (expr[:72], res))
+    return 0
+
+
+def cmd_watch(cdp, seconds, interval, tap_sel, click_sel, tap_after, out):
+    emit = print
+    if out:
+        handle = open(out, "w", encoding="utf-8", errors="replace")
+
+        def emit(line, _h=handle):
+            print(line)
+            _h.write(line + "\n")
+            _h.flush()
+    emit("WATCH  every %d ms for %.1f s - only the CHANGES are printed" % (interval, seconds))
+    if tap_sel or click_sel:
+        which = ("a real `input tap` on %s" % tap_sel) if tap_sel else \
+                ("a PAGE click on %s (no coordinates - for controls a coordinate tap cannot reach)"
+                 % click_sel)
+        emit("       %s, %d ms into the window" % (which, tap_after))
+    t0, last_key, acted = None, None, False
+    while True:
+        s = cdp.js(JS_WATCH_SAMPLE) or {}
+        if t0 is None:
+            t0 = s.get("t")
+        rel = (s.get("t") or 0) - (t0 or 0)
+        anims = s.get("anims") or []
+        key = (tuple(anims), s.get("cards"), s.get("live"), s.get("wrapHidden"))
+        if key != last_key:
+            last_key = key
+            emit("  t=%+6d ms  tab=%-8s cards=%s live=%s hidden=%-5s  %s" %
+                 (rel, s.get("tab"), s.get("cards"), s.get("live"), s.get("wrapHidden"),
+                  ("%d running: %s" % (len(anims), ", ".join(anims))) if anims else "nothing running"))
+            if s.get("last"):
+                emit("            last grab: %r" % s.get("last"))
+        if not acted and rel >= tap_after and (tap_sel or click_sel):
+            if click_sel:
+                ok = cdp.js(JS_CLICK % json.dumps(click_sel))
+                emit("  t=%+6d ms  CLICKED %s (page click)%s" %
+                     (rel, click_sel, "" if ok else " - NOT FOUND"))
+            else:
+                pt = centre_of(cdp, tap_sel)
+                if pt:
+                    adb("shell", "input", "tap", "%.0f" % pt[0], "%.0f" % pt[1])
+                    emit("  t=%+6d ms  TAPPED %s at %.0f,%.0f device px" % (rel, tap_sel, pt[0], pt[1]))
+                else:
+                    emit("  t=%+6d ms  TAP SKIPPED - %s is not laid out (hidden?)" % (rel, tap_sel))
+            acted = True
+        if rel >= seconds * 1000:
+            break
+        time.sleep(interval / 1000.0)
+    if out:
+        handle.close()
+    print("WATCH  log -> %s" % out) if out else None
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -435,6 +553,15 @@ def main():
     p.add_argument("--ms", type=int, default=2200)
     p.add_argument("--interval", type=int, default=150)
     p.add_argument("--dry", action="store_true", help="only report what the tap would grab - no tap")
+    p = sub.add_parser("watch", help="sample the running animations as they change (optionally tapping mid-window)")
+    p.add_argument("--seconds", type=float, default=30.0)
+    p.add_argument("--interval", type=int, default=250)
+    p.add_argument("--tap", default="", help="CSS selector to `input tap` once, mid-window")
+    p.add_argument("--click", default="", help="CSS selector to click through the page (no coordinates)")
+    p.add_argument("--tap-after", type=int, default=3000, help="when to fire the tap/click, ms into the window")
+    p.add_argument("--out", default="", help="also write the change-log here (the rig writes it itself)")
+    p = sub.add_parser("js", help="evaluate an expression in the page and print the result")
+    p.add_argument("--expr", required=True)
     args = ap.parse_args()
 
     cdp, sock = connect()
@@ -453,6 +580,10 @@ def main():
         rc = cmd_waking(cdp, args.match)
     elif args.cmd == "wake":
         rc = cmd_wake(cdp, args.match, args.ms, args.interval, args.dry)
+    elif args.cmd == "watch":
+        rc = cmd_watch(cdp, args.seconds, args.interval, args.tap, args.click, args.tap_after, args.out)
+    elif args.cmd == "js":
+        rc = cmd_js(cdp, args.expr)
     else:
         rc = cmd_metrics(cdp)
     sys.exit(rc)
