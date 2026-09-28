@@ -30,6 +30,7 @@ import com.omnidownloader.app.downicore.DowniCore;
 import com.omnidownloader.app.fetcher.ChainObserver;
 import com.omnidownloader.app.fetcher.CoreTapAction;
 import com.omnidownloader.app.fetcher.Route;
+import com.omnidownloader.app.fetcher.ShareSurface;
 import com.omnidownloader.app.fetcher.SheetSwipe;
 import com.omnidownloader.app.fetcher.AttentionLedger;
 import com.omnidownloader.app.fetcher.DeliveryGuard;
@@ -144,6 +145,18 @@ public class DowniFetcherService extends AccessibilityService {
     private boolean chainClickedCopy;
     /** True once this run has confirmed the platform share sheet is open (panel must be closed). */
     private boolean chainSheetNeedsClose;
+
+    /**
+     * The share-surface window THIS run saw open, as an identity (package + title + bounds).
+     * The close gate asks {@link ShareSurface#stillOpen} about this window instead of asking
+     * "does any non-systemui window exist?" — which on this ROM is always true (the
+     * `com.vivo.upslide` gesture bar, and the IME while a keyboard is up), so a BACK press meant
+     * for an already-dismissed sheet landed on the FEED and advanced the reel (owner report
+     * 2026-09-28, 5/5 on TikTok). Recorded by `waitShareSurface`, cleared by the close gate.
+     */
+    private ShareSurface.Win chainSheetWin;
+    /** The descriptor the policy picked in the last {@link #sheetSurfaceWindow()} call. */
+    private ShareSurface.Win lastSurfaceWin;
 
     /**
      * Defect D-a (found on device 2026-09-25): one tap could deliver the SAME url **twice**. Two
@@ -1030,6 +1043,8 @@ public class DowniFetcherService extends AccessibilityService {
         chainDelivered = false;
         chainClickedCopy = false;
         chainSheetNeedsClose = false;
+        chainSheetWin = null;
+        lastSurfaceWin = null;
         sheetSwipes = 0;
         sheetWaits = 0;
         sheetScans = 0;
@@ -1454,8 +1469,9 @@ public class DowniFetcherService extends AccessibilityService {
 
     private void waitShareSurface(final int attempt) {
         if (!chainRunning) return;               // the run ended under us
-        if (shareSurfaceOpen()) {
+        if (sheetSurfaceWindow() != null) {      // picks per WINDOW and stashes lastSurfaceWin
             chainSheetNeedsClose = true;         // a sheet is up — somebody must close it
+            chainSheetWin = lastSurfaceWin;      // remember WHICH window: the close gate needs it
             // The window opens BEFORE its content loads (device 2026-09-26 08:57: TikTok's
             // sheet tree was still showing feed rows at +80 ms, and an early scan read the
             // feed instead of the sheet -> no_copy_link). Wait for the sheet's own content:
@@ -1646,19 +1662,34 @@ public class DowniFetcherService extends AccessibilityService {
     }
 
     /**
-     * Close the platform sheet — but ONLY if it is still on screen. Wave 1 (owner report):
-     * a sheet that auto-dismissed after Copy link made this BACK press land on the FEED,
-     * where it exits/advances the reel — the second half of the "reel scrolled" report.
+     * Close the platform sheet — but ONLY if the sheet we opened is still there.
+     *
+     * Wave 1 (owner report "the reel scrolled") guarded this with "is any window that is not ours
+     * on screen?" and Wave 3 (owner report 2026-09-28, "the video jumped to the next one", TikTok,
+     * 5/5) found why that guard never held: this ROM always has such a window (the
+     * `com.vivo.upslide` gesture bar; the IME too, while typing), so a BACK press aimed at a sheet
+     * that had ALREADY dismissed itself (TikTok dismisses on Copy link) landed on the FEED and
+     * advanced the reel. The gate now asks the two questions that can only be true of a real sheet:
+     *   - is the window WE saw open still present ({@link ShareSurface#stillOpen}, by identity), or
+     *   - is the sheet's own "Copy link" row still visible (same-window sheets on other OEMs)?
+     * If neither, nothing is pressed and the platform is left exactly as it was.
      */
     private void closeSheetIfOpen(String why) {
-        boolean open = shareSurfaceOpen();
+        boolean sheetHere = ShareSurface.stillOpen(chainSheetWin, currentSurfaceWins());
+        boolean contentHere = !sheetHere && copyRowVisible("CHAIN_CLOSE_PROBE");
+        boolean open = sheetHere || contentHere;
+        String evidence = sheetHere ? "sheet_window_present"
+                : (contentHere ? "copy_row_present" : "sheet_gone_no_content");
         if (open) {
-            log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK) + " why=" + why);
+            log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK)
+                    + (why == null ? "" : " why=" + why) + " evidence=" + evidence);
         } else {
-            log("CHAIN_CLOSE_PANEL skipped why=" + why + " already_closed=1");
+            log("CHAIN_CLOSE_PANEL skipped"
+                    + (why == null ? "" : " why=" + why) + " already_closed=1 evidence=" + evidence);
         }
         observer.onStep("panel_closed", open ? "" : "already_closed");
         chainSheetNeedsClose = false;
+        chainSheetWin = null;
     }
 
     // ---------- deleted 2026-09-25 ~18:20 by owner ruling ----------
@@ -1678,42 +1709,101 @@ public class DowniFetcherService extends AccessibilityService {
     // fallback is clamped inside the sheet window's own bounds by `SheetSwipe.endpoints`.
 
     /**
-     * True when a share surface (the platform's sheet or the system chooser) is verifiably on
-     * screen as its OWN window. This ROM's sheet is a separate `com.vivo.upslide` window; other
-     * devices use the system resolver — anything that is not the target app, our overlay, or the
-     * system UI counts. This is the gate that keeps the sheet-scroll swipe OFF the feed: no
-     * share surface, no swipe (the feed's next-video gesture must never fire from a fetch).
+     * True when a share surface is verifiably on screen — the gate that keeps the sheet-scroll
+     * swipe and the BACK press OFF the feed. Wave 3 (2026-09-28): the decision moved to
+     * {@link ShareSurface}, which judges each WINDOW (type + title + geometry). The deleted rule
+     * accepted any window that was "not ours, not the system UI, not the platform app", and this
+     * ROM always has one — `com.vivo.upslide`'s always-present `SideSlideGestureBar-Bottom`, plus
+     * the IME whenever a keyboard is up — which is how the feed's next-video gesture could fire
+     * from a fetch.
      */
     private boolean shareSurfaceOpen() {
-        try {
-            for (AccessibilityWindowInfo w : getWindows()) {
-                AccessibilityNodeInfo r;
-                try { r = w.getRoot(); } catch (Throwable t) { continue; }
-                if (r == null || r.getPackageName() == null) continue;
-                String wp = r.getPackageName().toString();
-                if (wp.equals(getPackageName())) continue;                  // our overlay
-                if (wp.equals("com.android.systemui")) continue;            // shade / keys
-                if (wp.equals(sessionPkg) || PlatformProfile.isTarget(wp)) continue; // the platform app itself
-                return true;                                                // a share surface exists
-            }
-        } catch (Throwable ignored) {}
-        return false;
+        return sheetSurfaceWindow() != null;
     }
 
-    /** The share surface's own window root (this ROM: com.vivo.upslide), or null when closed. */
-    private AccessibilityNodeInfo shareSurfaceRoot() {
+    /**
+     * The window that IS the share surface, or null when no window qualifies. Picks the topmost
+     * acceptable window (the same preference the old loop had) and stashes it in
+     * {@link #lastSurfaceWin} so the run can remember the sheet's identity for the close gate.
+     * Logs its verdict whenever the picked window changes — a bench run then explains itself.
+     */
+    private AccessibilityWindowInfo sheetSurfaceWindow() {
+        ArrayList<ShareSurface.Win> wins = new ArrayList<>();
+        ArrayList<AccessibilityWindowInfo> refs = new ArrayList<>();
+        mapWindows(wins, refs);
+        int idx = ShareSurface.pickIndex(wins, surfaceExcluded());
+        lastSurfaceWin = idx < 0 ? null : wins.get(idx);
+        if (idx >= 0 && !ShareSurface.sameWindow(chainSheetWin, lastSurfaceWin)) {
+            log("CHAIN_SURFACE_SEEN " + ShareSurface.describe(lastSurfaceWin, getPackageName()));
+        }
+        return idx < 0 ? null : refs.get(idx);
+    }
+
+    /** Packages that can never be the share surface: ours, the shade, and the platform apps. */
+    private String[] surfaceExcluded() {
+        return new String[]{
+                getPackageName(),
+                "com.android.systemui",
+                sessionPkg,
+                PlatformProfile.INSTAGRAM.packages[0],
+                PlatformProfile.TIKTOK.packages[0],
+                PlatformProfile.TIKTOK.packages[1],
+        };
+    }
+
+    /**
+     * Maps the current windows into policy descriptors. {@code refs} receives the live
+     * AccessibilityWindowInfo objects in the same order, so an index into one is an index into
+     * the other.
+     */
+    private void mapWindows(ArrayList<ShareSurface.Win> wins,
+                            ArrayList<AccessibilityWindowInfo> refs) {
         try {
+            int dw = getResources().getDisplayMetrics().widthPixels;
+            int dh = getResources().getDisplayMetrics().heightPixels;
             for (AccessibilityWindowInfo w : getWindows()) {
                 AccessibilityNodeInfo r;
                 try { r = w.getRoot(); } catch (Throwable t) { continue; }
-                if (r == null || r.getPackageName() == null) continue;
-                String wp = r.getPackageName().toString();
-                if (wp.equals(getPackageName()) || wp.equals("com.android.systemui")) continue;
-                if (wp.equals(sessionPkg) || PlatformProfile.isTarget(wp)) continue;
-                return r;
+                String pkg = (r == null || r.getPackageName() == null)
+                        ? "" : r.getPackageName().toString();
+                Rect b = new Rect();
+                try { w.getBoundsInScreen(b); } catch (Throwable ignored) {}
+                CharSequence ti = null;
+                int type = 0;
+                try { ti = w.getTitle(); } catch (Throwable ignored) {}
+                try { type = w.getType(); } catch (Throwable ignored) {}
+                wins.add(ShareSurface.win(pkg, ti == null ? "" : ti.toString(), type,
+                        b.left, b.top, b.right, b.bottom, dw, dh));
+                refs.add(w);
             }
         } catch (Throwable ignored) {}
-        return null;
+    }
+
+    /** The share surface's own window root, or null when no share surface is on screen. */
+    private AccessibilityNodeInfo shareSurfaceRoot() {
+        AccessibilityWindowInfo w = sheetSurfaceWindow();
+        if (w == null) return null;
+        try { return w.getRoot(); } catch (Throwable t) { return null; }
+    }
+
+    /** Every window right now, as the policy sees them — the close gate's evidence list. */
+    private ArrayList<ShareSurface.Win> currentSurfaceWins() {
+        ArrayList<ShareSurface.Win> wins = new ArrayList<>();
+        mapWindows(wins, new ArrayList<AccessibilityWindowInfo>());
+        return wins;
+    }
+
+    /**
+     * True when the platform tree currently shows the sheet's own "Copy link" row. This is the
+     * fallback evidence for OEMs whose sheet lives INSIDE the platform app's window (there is no
+     * separate window to identify): a live copy row means a live sheet, and its absence means no
+     * sheet — which is what keeps the BACK press off the feed on those devices too.
+     */
+    private boolean copyRowVisible(String tag) {
+        ArrayList<AccessibilityNodeInfo> copyProbe = new ArrayList<>();
+        collectCandidates(pickShareRoot(tag, false), new ArrayList<AccessibilityNodeInfo>(),
+                copyProbe, new ArrayList<AccessibilityNodeInfo>(), new Counter(), 0);
+        return !copyProbe.isEmpty();
     }
 
     /**
@@ -1756,16 +1846,10 @@ public class DowniFetcherService extends AccessibilityService {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         String pkg = root != null && root.getPackageName() != null ? root.getPackageName().toString() : "?";
         if (chainSheetNeedsClose) {
-            // Wave 1: guarded — a sheet that auto-dismissed after Copy link must NOT receive
-            // a BACK press (it would land on the feed and exit/advance the reel).
-            boolean open = shareSurfaceOpen();
-            if (open) {
-                log("CHAIN_CLOSE_PANEL back=" + performGlobalAction(GLOBAL_ACTION_BACK));
-            } else {
-                log("CHAIN_CLOSE_PANEL skipped already_closed=1");
-            }
-            observer.onStep("panel_closed", open ? "" : "already_closed");
-            chainSheetNeedsClose = false;
+            // Wave 1 guarded this ("a sheet that auto-dismissed after Copy link must NOT receive
+            // a BACK press"); Wave 3 (2026-09-28) fixes it — the gate now asks about the sheet WE
+            // saw, never about "any window that is not ours". See closeSheetIfOpen().
+            closeSheetIfOpen(null);
             // Wave 1 focus-overlap experiment (D-e): ask for focus NOW, while the sheet's
             // close animation plays, instead of at the first clipboard attempt. Android
             // usually grants window focus within the next ~500 ms, so the first read can
