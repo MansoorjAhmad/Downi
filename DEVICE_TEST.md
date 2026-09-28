@@ -291,10 +291,31 @@ detached — it is `nodeAnim` now, cancelled by `cancelAnim()` on every `reachTo
 
 ## 0h. V3.3 Core 2.0 — M8 the render budget (the Core's own animation vs the vendor kill)
 
-> Pass started **2026-09-27**, vivo V2058, build **48 / v3.2.0** (spike-signed). **The phone dropped
-> off USB mid-pass** (`adb devices` empty, no mDNS/wireless target), so the cells that MEASURE this
-> change are **owed** and are written out below as commands rather than as results. The forensic
-> cells that motivated it were read off the live device in the same pass and keep their raw evidence.
+> Pass started **2026-09-27**, closed **2026-09-28** — vivo V2058, build **48 / v3.2.0** (spike-signed,
+> 46 211 402 B, sha256 `A0777EB0…`; the installed `base.apk` on the device hashes to the same
+> `a0777eb0…`). The 2026-09-27 attempt lost the phone off USB mid-pass, so the forensic cells were read
+> then and the cells that MEASURE the change were run in this pass. **Two of them changed their
+> instrument first** — the app did not change at all (see the two notes under the table). The forensic
+> cells that motivated M8 keep their raw evidence from the first attempt.
+
+**Note 1 — the frames counter was the wrong door.** `core_idle_cost.ps1`'s `dumpsys gfxinfo` counter is
+PROCESS-wide, and this package has two windows: the Core overlay and MainActivity. Measured here, the
+foreground activity alone draws **~61 fps and burns ~25 s of CPU per 20 s of wall clock**, which makes
+the old cell unsatisfiable on any build. The rig now samples the Core's **own** `draws` (from the
+`stage` note the M4 gates already read) and takes `-Offscreen`, which sends the activity to the back
+and leaves the Core overlay shown — so the frames column means the Core.
+
+**Note 2 — the C3 pixel tracker lost the Core, and said the Core had stopped.** `core_state_audit.py
+touch` pairs the ring's two crossings on a row inside a window around the centre it last held. Through
+`drag_far`'s 237 px travel the tracker fell behind (`x 539 -> 357`, then a carried-forward 357) while
+the service's own line for that same gesture read `CORE_MOVED x=215` — the Core's centre at **303**,
+three px from where the finger stopped, which is exactly what C3 asks for. `core_touch.ps1` now writes
+the service's `CORE_TOUCH` / `CORE_MOVED` / `CORE_TAP` lines to `touch.log` beside `segments.csv`, and
+the analyzer decides the **drag** and the **magnet** from those (the exact instrument, per its own
+words), printing the tracker's reading next to them and saying when it lost the Core. The press and the
+settle — shape, not position — stay the tracker's.
+
+
 
 **Why.** The owner's report is that DOWNI goes slow and then the Core is simply *gone*.
 `dumpsys activity exit-info com.omnidownloader.app` answers the second half with eight FORCE STOPs,
@@ -319,15 +340,18 @@ video screen (see the M8 entry in `CHANGELOG.md`).
 
 | # | Check | Evidence |
 |---|---|---|
-| 0h-1 | **Owed** — the ambient window really ends: the Core stops drawing once it is over | ⏳ `powershell -NoProfile -ExecutionPolicy Bypass -File tools\core_idle_cost.ps1 -State detected -Minutes 3 -SampleSeconds 30`. Expect `frames` to grow in the first sample and then be **flat** — the pre-M8 build climbs forever. Same cell with `-State progress` shows the sheen's capped cadence |
-| 0h-2 | **Owed** — the budget is readable and a hidden Core is parked | ⏳ `state detected` + `stage` in the same push (`amb=1 run=true`), again after 6 s (`amb=0 run=false`), then `hide` + `stage` (`held=1 run=false`). `tools\core_motion_probe.ps1` already probes in exactly this shape |
-| 0h-3 | **Owed** — the M4/M5/M6 gates still pass at the new cadences | ⏳ `tools\core_motion.ps1` + `python tools\core_state_audit.py frames test_out\core_motion` (C5), `tools\core_touch.ps1` (C3), `tools\core_c6.ps1` (C6). The DETECTED control step is a 2.6 s hold — inside the 6 s window — so `control motion >= 5.0` must still pass |
-| 0h-4 | **Owed** — the zero-touch tap still delivers with the shorter first read | ⏳ a Core tap on a Reel: `CHAIN_CLIP_TRY n=1/6 focus=true got=yes` → `CHAIN_DELIVER_OK route=clipboard` → `RUN_END delivered=true ms=…` (3 909 ms on the previous build; the first read is 150 ms earlier, so it must not be slower) and the file on disk |
+| 0h-1 | The ambient window really ends: the Core stops drawing once it is over | ✅ `tools\core_idle_cost.ps1 -State detected -Minutes 3 -SampleSeconds 30 -Offscreen`: **frames +18 in 90 s** — all 18 inside the first sample (the tail of the 6 s window), then `+18, +18` flat — and **the Core's own draws +7 across the same 90 s** (`core=draws=600 run=false amb=0` from the first sample on), cpu 00:11:19 → **00:11:22 (+3 s per 90 s, whole process)**, `ourWakeLocks=0`. The control on the same build: `am start` MainActivity → **+1 217 frames / 20 s (~61 fps)** and **+25 s cpu / 20 s** while the Core's own counter stayed at 481 — the climb is the app's UI and the Core is parked through it |
+| 0h-2 | The budget is readable and a hidden Core is parked | ✅ `tools\core_ambient_probe.ps1` (**new**, `test_out\core_ambient_probe`, 19.3 s, `SERVICE_UNBIND=0`): `state detected` + `stage` in ONE poller tick → `core_idle_ready f=0 run=true amb=1`; **+3.2 s** → `f=71 run=true amb=1 draws=62` (≈20 fps — the 42 ms cadence, not the display's 60); **+7.3 s** → `f=118 run=false amb=0` (window over, drawable paused); `hide` + `stage` → `held=1 run=false`. `CLAIMS armed(amb=1 run=true)=2 ended(amb=0 run=false)=3 parked(held=1)=1` |
+| 0h-3 | The M4/M5/M6 gates still pass at the new cadences | ✅ C5 **`VERDICT 0 of the C5 motion claims failed`** (`exit=0`); M1/M2 sweep **`VERDICT 17 shot(s), 0 mismatch(es)`** (`exit=0`); C6 **`VERDICT 0 of the C6 recovery claims failed`** (`exit=0`: rose 39 frames = 1.30 s at hue 8 → teal hue 198 in **633 ms**, its own press/rebound 55.0 → 50.0 → 57.0 px, **0 of 121 frames rose** after); C3 **`VERDICT 0 of the C3 touch claims failed`** (`exit=0`: press 50.0 px = **10.7 %** at 3000 ms then 98.2 % — and it is a TAP, `up dragging=false`; drag `CORE_MOVED x=219` → centre **307** vs the finger's 300; magnet `CORE_MOVED x=0` with the far release `x=219` as its own control; settle ring 53.0 px, aspect 1.000). One whole re-run of the three rigs: `_m7_regression.log` (C5 exit 0, C3 exit 0, M1/M2 exit 0) |
+| 0h-4 | The zero-touch tap still delivers with the shorter first read | ✅ measured later the same day, on a live Reel: Instagram Reels in the front (`SESSION_START pkg=com.instagram.android`), the Core shown at `at 452 1080` / `size 64`, one real tap on it → `CORE_TOUCH up dragging=false` → `CORE_TAP session=com.instagram.android action=FETCH state=detected` → **`CHAIN_CLIP_TRY n=1/6 focus=true got=yes`** (the FIRST read had it — which is what the shorter 350 ms constant is for) → `CHAIN_CLIPBOARD got=yes text=https://www.instagram.com/reel/DdzXsmbyKgt/…` → `CHAIN_DELIVER_OK route=clipboard tap=1` → **`RUN_END delivered=true route=clipboard ms=3623`** (286 ms faster than the 3 909 ms the previous build needed) and the file landed: `/sdcard/Movies/DOWNI/Video by marvinachi (1).mp4`, 1 834 524 B at 09:54. The same walk-out read the M8 budget on a real target app: `stage=core_idle_ready f=0 run=true amb=1`, `draws=194` by the completing stage, and `held=1 run=false amb=1` again the moment it was hidden over the Reel |
 | 0h-5 | The kill trigger is real, named, and not a crash | ✅ six `stop by com.vivo.abe` FORCE STOPs in `dumpsys activity exit-info` (raw lines above), no `reason=4` among them |
-| 0h-6 | Build and suite | ✅ `assembleDebug` green; `tools\sign_spike.ps1` → prod cert SHA-256 `4311317…`; **115 tests / 0 failures** across 17 suites (M8 adds `CoreMotionTest.theAmbientLoopIsBudgetedAndEnds`) |
-| 0h-7 | The APK that carries it | ⏳ `app-spike-signed.apk` is built and signed; `adb install -r -d android\app\build\outputs\apk\debug\app-spike-signed.apk` was not reached — the phone was gone |
+| 0h-6 | Build and suite | ✅ `assembleDebug` green; `tools\sign_spike.ps1` → prod cert SHA-256 `4311317…`; **115 tests / 0 failures** across 17 suites (M8 adds `CoreMotionTest.theAmbientLoopIsBudgetedAndEnds`) — re-verified on this tree **2026-09-28**: 17 suites / 115 tests / 0 failures / 0 errors |
+| 0h-7 | The APK that carries it | ✅ `adb install -r -d android\app\build\outputs\apk\debug\app-spike-signed.apk` → **Success** (2026-09-28 09:00:29); local sha256 `A0777EB0…` (46 211 402 B) = the installed `base.apk`'s `a0777eb0…`; `versionCode=48 versionName=3.2.0` |
+| 0h-8 | The two instruments this pass had to fix | ✅ `tools\core_idle_cost.ps1` (+ `-Offscreen`, + the Core's own `draws` column), `tools\core_ambient_probe.ps1` (**new**), `tools\core_touch.ps1` (+ `touch.log`), `tools\core_state_audit.py` (+ `read_service_moves`: the drag and the magnet are decided by the service's account, and the tracker's shortfall is printed beside them). Each re-run green after its change |
+| 0h-9 | The vendor kill has not come back | ⏳ **not provable in a lab pass** — `dumpsys activity exit-info` needs a real session (hours of use, videos playing, the phone in a pocket). What this pass proves is that the drain that provoked it is gone: the loop now draws 122 frames in its 6 s and stops, where it used to draw 60 fps forever at ~55 % of a core |
 
-> Sign and date here when green: ______________
+> Sign and date here when green: **2026-09-28** — 0h-1, 0h-2, 0h-3, 0h-4, 0h-6, 0h-7, 0h-8 green;
+> 0h-9 wants a real session (a day or two of normal use, then recount the vendor stops).
 
 
 

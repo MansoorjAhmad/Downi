@@ -339,11 +339,50 @@ app that sat at 10 %.
 Verified in the build: suite **115 tests / 0 failures** across 17 suites (the new
 `CoreMotionTest.theAmbientLoopIsBudgetedAndEnds` pins the three claims — the cadence is not the
 display's, the window *ends* but outlasts the 2.6 s M4 control step, and the sheen's `setFrameDelay`
-is additive), `assembleDebug` + `tools/sign_spike.ps1` = BUILD SUCCESSFUL, prod-signed
-(`4311317…`). **Device pass owed**: the phone dropped off USB mid-session, so the two cells that
-measure this are unrun and written out as commands in `DEVICE_TEST.md` §0h —
-`core_idle_cost.ps1 -State detected` must show the frames counter stop growing once the window is
-over, and the C4/C5/C6 rigs must still be green with the new cadences.
+is additive), `assembleDebug` + `tools/sign_spike.ps1` = BUILD SUCCESSFUL, prod-signed (`4311317…`),
+and the APK that carries it is installed (`adb install -r -d`, sha256 `A0777EB0…` = the device's own
+`base.apk`).
+
+**Verified on the phone the next morning (2026-09-28) — and the pass rewrote two instruments to get
+there.** The ambient budget is real: `core_idle_cost.ps1 -State detected -Minutes 3 -SampleSeconds 30
+-Offscreen` reads **+18 frames in 90 s** — all 18 inside the first sample, the tail of the 6 s window,
+then flat (`+18, +18`) — and **+7 on the Core's own draw counter across the same 90 s**, cpu 00:11:19 →
+00:11:22, no wake locks, `amb=0 run=false` from the first sample on. `tools/core_ambient_probe.ps1`
+(new) catches the window itself: `state detected` + `stage` in one poller tick → `f=0 run=true amb=1`;
++3.2 s → `f=71 run=true amb=1 draws=62` (**≈20 fps, not the display's 60**); +7.3 s → `f=118 run=false
+amb=0`; `hide` + `stage` → `held=1`. Every M4/M5/M6 rig re-ran green at the new cadences: C5 `VERDICT 0
+of the C5 motion claims failed`, C6 `VERDICT 0 of the C6 recovery claims failed` (rose 1.30 s at hue 8 →
+teal in 633 ms, its own press/rebound, 0 of 121 frames rose after), the M1/M2 sweep `17 shot(s), 0
+mismatch(es)`, C3 `VERDICT 0 of the C3 touch claims failed`.
+
+**The instrument that lied was the frame counter, and it lied by including the app's own UI.** The
+package has two windows — the Core overlay and MainActivity — and `dumpsys gfxinfo` counts both. The
+control this pass measured: with MainActivity in the front the process draws **~61 fps and burns ~25 s
+of CPU per 20 s of wall clock**, while the Core's own counter sits still at 481. So the old frames-only
+cell could not answer its own question on any build (the first run of it read +5 535 / 90 s and looked
+like a regression when the Core had drawn 7 times), and `core_idle_cost.ps1` now samples the Core's own
+`draws` from the `stage` note and takes `-Offscreen` — the activity away, the overlay still shown —
+which is the reading that has to be flat.
+
+**The third defect, and the one the app did not cause.** C3's drag claim first read FAIL: the pixel
+tracker in `core_state_audit.py touch` reported "the Core travelled 184 px (x 539 -> 357)". The
+service's own line for that same gesture said `CORE_MOVED x=215` — the Core's centre at **303**, three
+px from where the finger stopped, which is exactly what sheet C3 asks for — and the frames agree (the
+art's left edge moves 486 → 246 px). The tracker pairs the ring's two crossings on one row inside a
+window around the centre it last held, so a 237 px travel over the app's own teal UI loses the Core and
+the last good centre is carried forward. `core_touch.ps1` now writes the service's `CORE_TOUCH` /
+`CORE_MOVED` / `CORE_TAP` lines to `touch.log` beside `segments.csv`, and the analyzer decides the drag
+and the magnet from them — the exact instrument, in its own words — printing the tracker's reading
+beside them; the re-run reads `CORE_MOVED x=219` → centre **307**, and the magnet `x=0` with the far
+release `x=219` as its own control. **The tap was measured on a live Reel the same day**: Instagram
+Reels in the front, the Core shown and tapped once — `CORE_TOUCH up dragging=false` → `CORE_TAP
+session=com.instagram.android action=FETCH state=detected` → `CHAIN_CLIP_TRY n=1/6 focus=true got=yes`
+(**the first read had it**, which is what the shorter 350 ms constant exists for) → `CHAIN_DELIVER_OK
+route=clipboard tap=1` → **`RUN_END delivered=true ms=3623`**, 286 ms faster than the previous build's
+3 909 ms — with the file on disk (`Video by marvinachi (1).mp4`) and the Core reading `held=1 run=false
+amb=1` over the Reel as soon as it was hidden again. One cell stays open, honestly: the kill itself
+(0h-9) — `dumpsys activity exit-info` after hours of real use — because what this pass proves is that
+the drain is gone, not that `com.vivo.abe` has stopped watching.
 `TYPE_ACCESSIBILITY_OVERLAY` window that draws idle / detected / pressed / dragging / snapped /
 progress / paused / resuming / completing / complete / failed, at 48 / 56 / 64 dp. Phase A is
 visual only — no touch handling (`FLAG_NOT_TOUCHABLE`), no detection, no download path — and it is
