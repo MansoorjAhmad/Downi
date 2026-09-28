@@ -30,6 +30,7 @@ import com.omnidownloader.app.downicore.DowniCore;
 import com.omnidownloader.app.fetcher.ChainObserver;
 import com.omnidownloader.app.fetcher.CoreTapAction;
 import com.omnidownloader.app.fetcher.Route;
+import com.omnidownloader.app.fetcher.EventRing;
 import com.omnidownloader.app.fetcher.ShareRows;
 import com.omnidownloader.app.fetcher.ShareSurface;
 import com.omnidownloader.app.fetcher.SheetSwipe;
@@ -91,6 +92,31 @@ public class DowniFetcherService extends AccessibilityService {
      */
     public static boolean isBound() {
         return live != null;
+    }
+
+    /**
+     * The black box (Wave 5): the last 50 events of every build, not just debug ones. The plugin
+     * reads this when the service is alive, and the persisted copy ("downi_fetcher"/"lastEvents")
+     * when it is not — so the events before a vendor kill are still readable afterwards.
+     */
+    private static final EventRing BLACKBOX = new EventRing();
+
+    public static EventRing blackbox() {
+        return BLACKBOX;
+    }
+
+    /**
+     * Persists the ring so it survives a kill and can be read without adb. Called every few events
+     * (EventRing.FLUSH_EVERY) and at milestones; one small prefs entry, no file I/O.
+     */
+    private void persistBlackbox() {
+        try {
+            getSharedPreferences("downi_fetcher", MODE_PRIVATE).edit()
+                    .putString("lastEvents", BLACKBOX.dump())
+                    .putLong("lastEventAt", System.currentTimeMillis())
+                    .apply();
+            BLACKBOX.markFlushed();
+        } catch (Throwable ignored) {}
     }
 
     /**
@@ -462,6 +488,7 @@ public class DowniFetcherService extends AccessibilityService {
      */
     private void resolverFailed(String why) {
         log("CORE_RESOLVE_FAIL why=" + why);
+        persistBlackbox();                            // a failure is a milestone: keep it on disk
         if (failedHold != null) main.removeCallbacks(failedHold);
         jobState = CoreStates.FAILED;
         jobProgress = 0f;
@@ -567,6 +594,21 @@ public class DowniFetcherService extends AccessibilityService {
                 .edit().putBoolean("wasArmed", true).apply();
         } catch (Throwable ignored) {}
 
+        // Wave 5: the black box carries the PREVIOUS session over, and says out loud when that session
+        // never stopped cleanly — which is the only trace a vendor kill leaves, since logcat is empty
+        // for release builds. The events before the kill then stay readable after it.
+        try {
+            String prev = getSharedPreferences("downi_fetcher", MODE_PRIVATE)
+                    .getString("lastEvents", "");
+            if (prev != null && !prev.isEmpty()) {
+                String last = prev.substring(prev.lastIndexOf('\n') + 1).trim();
+                BLACKBOX.seed(prev);
+                if (!last.contains("SERVICE_DESTROY") && !last.contains("SESSION_STOP")) {
+                    BLACKBOX.add(ts() + " SESSION_DIED_UNEXPECTEDLY prev_last=" + EventRing.clean(last));
+                }
+            }
+        } catch (Throwable ignored) {}
+
         // Bench plumbing (log file, handoff gate, screenshots) lives in FetcherBench —
         // debug builds only; a release build does no bench I/O at all. The screenshot
         // capability itself is declared ONLY in the debug source set's a11y config.
@@ -578,6 +620,7 @@ public class DowniFetcherService extends AccessibilityService {
         log("SERVICE_CONNECTED sdk=" + Build.VERSION.SDK_INT + " handoff=" + handoffEnabled);
         log("CONTRACT target=DowniDownloadService.startShared(context,url)");
         log("BENCH armed: fetch-spike/chain.cmd (dry|click) + core.cmd, debug builds only");
+        persistBlackbox();   // the session's opening lines are on disk before anything can kill us
 
         // The approved Core is now the live control over IG/TikTok. The legacy spike bubble is
         // no longer instantiated; its proven tap resolver remains unchanged underneath.
@@ -1107,6 +1150,7 @@ public class DowniFetcherService extends AccessibilityService {
      * {@link #resolverFailed}). Applying the arbiter keeps both honest.
      */
     private void chainReset() {
+        persistBlackbox();                  // a run end is a milestone: the box keeps it for the UI
         boolean delivered = chainDelivered;
         String route = runRoute;
         long ms = SystemClock.elapsedRealtime() - runStartedAt;
@@ -2262,7 +2306,11 @@ public class DowniFetcherService extends AccessibilityService {
     private void log(String msg) {
         String line = ts() + " " + msg;
         Log.i(TAG, line);
-        FetcherBench.logRaw(line);                  // no-op in release; no queue growth there
+        FetcherBench.logRaw(line);                  // debug builds only: no release bench I/O
+        // Wave 5: the release-safe black box. Measured 2026-09-28: on this ROM logcat returns zero
+        // lines for a release build, so without this an install that "did nothing" leaves no trace.
+        BLACKBOX.add(line);
+        if (BLACKBOX.shouldFlush()) persistBlackbox();
     }
 
     // ---------- helpers ----------
@@ -2284,6 +2332,8 @@ public class DowniFetcherService extends AccessibilityService {
     public void onDestroy() {
         live = null;
         log("SERVICE_DESTROY");
+        BLACKBOX.add(ts() + " SESSION_STOP clean=1");
+        persistBlackbox();                            // a clean stop leaves the box readable
         main.removeCallbacks(chainPoll);
         main.removeCallbacks(coreTickPoll);
         main.removeCallbacks(heartbeat);

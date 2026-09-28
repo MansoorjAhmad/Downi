@@ -639,6 +639,20 @@
 
           <div id="fetcherStats" class="text-[10px] font-mono" style="color:var(--muted)">…</div>
           <div id="fetcherRoutes" class="hidden text-[10px] font-mono space-y-0.5" style="color:var(--muted)"></div>
+          <!-- Wave 5: the black box. Release builds write nothing to logcat on this ROM, so the
+               Fetcher keeps its own last 50 events — shown here, copyable, and exportable to a file. -->
+          <div class="space-y-2 pt-1">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] uppercase font-extrabold tracking-widest" style="color:var(--muted)">Black box</span>
+              <span class="flex gap-1.5">
+                <button onclick="loadBlackbox()" class="btn px-2.5 py-1.5 text-[10px] font-bold text-zinc-300">Show</button>
+                <button onclick="copyBlackbox()" class="btn px-2.5 py-1.5 text-[10px] font-bold text-zinc-300">Copy</button>
+                <button onclick="exportBlackbox()" class="btn px-2.5 py-1.5 text-[10px] font-bold text-zinc-300">Export</button>
+              </span>
+            </div>
+            <p id="blackboxMeta" class="text-[10px] font-mono" style="color:var(--muted)">the last 50 events the Fetcher saw — readable here, no PC needed</p>
+            <pre id="blackboxText" class="hidden text-[9px] leading-relaxed font-mono whitespace-pre-wrap break-all p-2 rounded-lg" style="background:rgba(255,255,255,0.03); color:#a1a1aa; max-height:280px; overflow:auto"></pre>
+          </div>
           <button id="fetcherResumeAll" class="hidden w-full py-2 text-[11px] font-extrabold text-white rounded-xl" style="background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.35)" onclick="resumeAllPausedGrabs()">▶ Resume all paused grabs</button>
 
           <button id="fetcherToggleBtn" onclick="toggleFetcher()" class="btn-hero w-full py-2.5 text-[11px] font-extrabold">…</button>
@@ -3420,6 +3434,48 @@
     }
     async function openFetcherSettings() {
       try { await getEngine()?.openAccessibilitySettings(); } catch (e) {}
+    }
+
+    // ---------- Wave 5: the black box ----------
+    // Measured 2026-09-28: logcat returns nothing for a release build on this ROM, so a release
+    // install that "did nothing" left no evidence at all. The Fetcher now keeps its own last 50
+    // events, flushed to its own storage every few events and — the point of the exercise — carried
+    // over after a kill, with a SESSION_DIED_UNEXPECTEDLY marker when the previous run never stopped.
+    let blackboxCache = '';
+    async function loadBlackbox() {
+      try {
+        const res = await getEngine()?.fetcherBlackbox();
+        const pre = document.getElementById('blackboxText');
+        const meta = document.getElementById('blackboxMeta');
+        if (!res || !pre) return;
+        blackboxCache = (res.events || []).join('\n');
+        pre.textContent = blackboxCache || '(empty — the Fetcher has not seen an event yet)';
+        pre.classList.remove('hidden');
+        if (meta) {
+          meta.textContent = res.count + '/' + res.capacity + ' events · ' + res.dropped + ' aged out · '
+              + (res.live ? 'live service' : 'kept from the last session');
+        }
+      } catch (e) {}
+    }
+    async function copyBlackbox() {
+      try {
+        if (!blackboxCache) await loadBlackbox();
+        if (!blackboxCache) return;
+        const text = blackboxCache;
+        try {
+          await window.Capacitor?.Plugins?.Clipboard?.write({ string: text });
+        } catch (e) {
+          if (navigator.clipboard) await navigator.clipboard.writeText(text);
+        }
+        showToast('Copied', text.split('\n').length + ' events are on your clipboard.', 'success');
+      } catch (e) {}
+    }
+    async function exportBlackbox() {
+      try {
+        const res = await getEngine()?.exportBlackbox();
+        if (res && res.ok) showToast('Exported', 'fetch-spike/blackbox.txt · ' + res.count + ' events', 'success');
+        else showToast('Export failed', (res && res.error) || 'unknown', 'error');
+      } catch (e) {}
     }
     async function setCoreSize(dp) {
       try { await getEngine()?.setCoreSize({ dp }); } catch (e) {}

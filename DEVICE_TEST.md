@@ -857,6 +857,26 @@ published tag is not moved, a new version is cut.
 > build on this ROM, and it is one tap). The five test grabs from 0w were cleared from
 > `/sdcard/Movies/DOWNI`; the feed's own grab (`Video by umarpnj.mp4`) is left there for the owner.
 
+## 0y. Wave 5 — the black box: fifty events that survive the kill — vivo V2058
+
+> Why it exists: measured the same evening that **`logcat` gives a release build 0 lines** on this ROM
+> (§0x-4), so a release install that "did nothing" left no evidence at all — both of tonight's owner
+> reports had to be diagnosed from source. This is the release-safe half of the forensic story: a
+> bounded ring in every build, flushed to the app's own storage, readable from the app itself or
+> exported as a file. Verified on **`5e75883f…`** (44 820 345 B), installed in place.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0y-1 | What it is | **`fetcher/EventRing`** (new, pure): 50 events, oldest first, each line whitespace-collapsed and capped at 220 chars, with an "aged out" counter. `log()` feeds it in **every** build (no bench I/O in release; the debug forensic file log is unchanged), and the service persists it to `downi_fetcher/lastEvents` **every 4 events and at every milestone** — session start, any `resolverFailed`, every run end, and a clean stop. 9 new JVM tests (`EventRingTest`) |
+| 0y-2 | **It survives the kill — verified on the phone** | `am force-stop` (the vendor's own shape: **no `onDestroy`**) left a session that never stopped; on the next bind the box re-seeded the previous events and wrote **`19:43:19.172 SESSION_DIED_UNEXPECTEDLY prev_last=19:42:52.551 BENCH armed: …`** — the events *before* the death, quoted, with the marker in the box. The clean direction was verified too: a normal teardown writes `SERVICE_DESTROY` + `SESSION_STOP clean=1` and is **not** flagged. (Also recorded so nobody retries it: `adb shell kill -9 <pid>` and `am kill <pkg>` are both refused on Android 13 for another app's process — a bound accessibility service also makes the app "perceptible", which `am kill` will not touch.) |
+| 0y-3 | Readable without a PC — and by me, with one | Settings → DOWNI Fetcher → **Show / Copy / Export**. `Show` renders the box with `count/capacity · aged out · live-or-kept` (`ui_blackbox_card.xml`); `Copy` puts it on the clipboard for a support message; **`Export`** writes `/sdcard/Android/data/com.omnidownloader.app/files/fetch-spike/blackbox.txt`, which `adb shell cat` reads **on a release build** (measured: 2780 B, exactly 50 lines) — the one diagnostics channel this ROM leaves open, so support is one `adb pull` instead of a conversation |
+| 0y-4 | Its cost, and its bounds | 50 short strings in RAM; one small prefs entry every 4 events plus milestones (≈8 KB, `apply()`, no fsync) and only while the Fetcher is running. At most the last 3 events of a killed process are lost (`FLUSH_EVERY`); the ring ages the oldest out and the UI says how many. Nothing here is uploaded anywhere — no telemetry, by design |
+| 0y-5 | What it is **not** | Not a replacement for the debug build's forensic file log (still the tool for a deep dive), and not a crash reporter: it holds what the chain saw, which includes URLs — the owner's own data, on the owner's own phone, and that is the trade made on purpose. The ring hit its cap during verification (50/50 in the export), which is the expected steady state under a day of use |
+
+> Sign and date here when green: **2026-09-28 19:41–19:47** — 0y-1 … 0y-4 green on the release build
+> `5e75883f…`; 0y-5 records the trade. **§0x-4's "production blindness" is closed by this section**:
+> a release build now carries its own last fifty events, and mentions when the previous one died.
+
 ## 3. Regression sweep (after any engine touch)
 
 

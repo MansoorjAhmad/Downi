@@ -559,6 +559,69 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve(r);
     }
 
+    /**
+     * Wave 5: the black box, for the settings card. The service's live ring when it is running;
+     * otherwise the persisted copy (seeded here on first read), so the events from before a vendor
+     * kill are still readable afterwards.
+     */
+    @PluginMethod
+    public void fetcherBlackbox(PluginCall call) {
+        JSObject r = new JSObject();
+        com.omnidownloader.app.fetcher.EventRing ring = DowniFetcherService.blackbox();
+        if (ring.isEmpty()) {
+            try {
+                ring.seed(getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
+                        .getString("lastEvents", ""));
+            } catch (Throwable ignored) {}
+        }
+        String[] events = ring.snapshot();
+        org.json.JSONArray arr = new org.json.JSONArray();
+        for (String e : events) arr.put(e);
+        r.put("events", arr);
+        r.put("count", ring.size());
+        r.put("capacity", com.omnidownloader.app.fetcher.EventRing.CAPACITY);
+        r.put("dropped", ring.dropped());
+        r.put("live", DowniFetcherService.isBound());
+        try {
+            r.put("lastEventAt", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
+                    .getLong("lastEventAt", 0L));
+        } catch (Throwable ignored) {
+            r.put("lastEventAt", 0L);
+        }
+        call.resolve(r);
+    }
+
+    /**
+     * Writes the black box to `fetch-spike/blackbox.txt` in the app's own external files dir. That is
+     * the one place a release build's diagnostics can be read from a PC without root (this ROM gives
+     * logcat nothing for release installs), so support is one `adb pull` instead of a conversation.
+     */
+    @PluginMethod
+    public void exportBlackbox(PluginCall call) {
+        JSObject r = new JSObject();
+        try {
+            com.omnidownloader.app.fetcher.EventRing ring = DowniFetcherService.blackbox();
+            if (ring.isEmpty()) {
+                ring.seed(getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
+                        .getString("lastEvents", ""));
+            }
+            java.io.File dir = new java.io.File(getContext().getExternalFilesDir(null), "fetch-spike");
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            java.io.File f = new java.io.File(dir, "blackbox.txt");
+            java.io.FileWriter w = new java.io.FileWriter(f, false);
+            w.write(ring.dump());
+            w.close();
+            r.put("ok", true);
+            r.put("path", f.getAbsolutePath());
+            r.put("count", ring.size());
+        } catch (Exception e) {
+            r.put("ok", false);
+            r.put("error", String.valueOf(e));
+        }
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void setCoreSize(PluginCall call) {
         Integer dp = call.getInt("dp", 64);
