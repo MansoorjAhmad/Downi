@@ -834,6 +834,29 @@ published tag is not moved, a new version is cut.
 > test grabs are the same video five times (`Apaan ini*.mp4`) and are left in `/sdcard/Movies/DOWNI`
 > for the owner to keep or clear.
 
+## 0x. Wave 4 — the Home feed's own routes, and a switched-off Fetcher that says so — vivo V2058
+
+> Two reports from the owner's own testing on **2026-09-28** (the Instagram Home feed being
+> "inconsistent", and the Fetcher going silent after an update), plus what the phone measured while
+> they were fixed. Everything below ran on the release build **`4e2368c2…`** (44 815 349 B), installed
+> in place, whose `base.apk` hashed **on the device** to itself.
+
+| # | Check | Evidence |
+|---|---|---|
+| 0x-1 | The feed's share row, measured twice in one evening — and that *is* the intermittency | `row_feed_button_share`, first dump: desc *"Send post. **43.2K shares.** Button. Double tap to choose who to send this post to."*; a few posts later, the same control: *"Send post. Button. Double tap to choose who to send this post to."* — **no "share" anywhere**, and `clickable=false` in both. The old matcher was `contains("share") && !contains("reshare")`, so the second variant was never even a candidate. The owner's "sometimes it fails to detect" is the description changing under us, not a race |
+| 0x-2 | The fix, in three parts | **`fetcher/ShareRows`** (new, pure, 9 tests): classifies a row by text **and** view id into share / copy-link / overflow / downi, and keeps the 2026-09-25 ruling — a row naming DOWNI is never a transport the Fetcher clicks, even worded "Send to DOWNI". The chain then falls back twice: a gesture at the **share row's own bounds** (never a screen fraction — the box comes from the node) when nothing in its chain is clickable, and the post's own **overflow** (*"More actions for this post"*), whose menu carries the platform's "Copy link". One attempt each, then the honest `no_share_row`. Evidence in the log: `CHAIN_SHARE_CLICK … route=gesture_bounds_ok=…`, `CHAIN_OVERFLOW_CLICK …`, and `CHAIN_SCAN … overflow=N` |
+| 0x-3 | **The feed delivered — on the failing variant** | Feed walk at 19:26: posts 1–3 were photo carousels (`carousel=1`, passed over — a photo post has nothing to grab, and that refusal is honest); **post 4 was a video whose row read exactly the no-"share" variant**; one Core tap at **19:26:50** → `/sdcard/Movies/DOWNI/Video by umarpnj.mp4`, **7 333 756 B at 19:27** (≈25 s), and the app's own Grab screen shows the resolved metadata (*umarpnj · Hated by many, defeated by nobody.*). Before this pass the same tap on the same variant ended in `no_share_row` (`_C_ig_proof.txt`, trees in `_C_ig/`) |
+| 0x-4 | **What that proof does not cover, in plain words** | The **route is not visible**: on this ROM `logcat -s DowniFetcher` returns **0 lines** for a release build (measured right after the grab) — so whether the grab came from the bounds tap or from the overflow is not observable here, only that it came from one of them and that the 7.3 MB file is real. This is exactly the production blindness the 50-event ring buffer is for, now with a date on it. And it is **one video post, one tap**: a sample, not a rate |
+| 0x-5 | The silent disarm, and what the app now answers with | Installing the app cleared `enabled_accessibility_services` (**measured twice today**: the 18:16 install and the 19:20 one; §0v's install had *kept* it, so it is a race, not a rule). `fetcherStatus` now reports **`bound`** (is the service actually running), **`wasArmed`** (has the user ever turned it on), **`userEnabled`** and **`recoverable`** (may the app write the binding itself); new plugin methods **`rearmFetcher`** (answers in FetcherRecovery's own vocabulary: `ok-present` / `ok-rearmed` / `skipped-guard` / `err-…`) and **`openAccessibilitySettings`**; and the settings card now tells four honest states apart (`ARMED` / `ARMED · not running` / `OFF · re-armable` / `OFF`) |
+| 0x-6 | **Both banner paths, on the phone** | With the adb grant **revoked** and the binding deleted, the app could not heal itself: the Grab screen showed **"The Fetcher is switched off"** with *"Your phone turned it off. Open accessibility settings and switch DOWNI Fetcher on."* and the two buttons; tapping **Re-arm it now** opened `com.android.settings/…AccessibilitySettingsActivity` (focus verified, `ui_a11y_settings.xml`). With the grant **restored**, the same banner read *"…**One tap puts it back.**"*, and one tap on the same button restored `enabled_accessibility_services` to our service with **focus staying in DOWNI** (no settings screen), the service bound again, and the Grab screen showing the *"Fetcher re-armed"* toast and **no banner** (`ui_rearm_banner2.xml`, `ui_rearm_onetap.xml`, `ui_after_rearm.xml`) |
+| 0x-7 | And when it is healthy, nothing nags | Relaunching with the grant present: the app re-armed **itself** on open (Wave 3's recovery — `a11y` = our service within 8 s) and no banner appeared at all. The banner's condition is `wasArmed && !armed`, so a user who never turned the Fetcher on is never told about it either, and a working Fetcher is never complained about |
+| 0x-8 | What ships, and what holds it | `4e2368c2…`, 44 815 349 B — release APK installed in place, `base.apk` on the device hashed to the same sha256; **20 suites / 148 tests / 0 failures** (9 new `ShareRowsTest`, 16 `ShareSurfaceTest`, the rest unchanged). Committed `82c303c` (code) and this section (docs); **not pushed** — that stays the owner's call |
+
+> Sign and date here when green: **2026-09-28 19:20–19:32** — 0x-1 … 0x-3, 0x-5 … 0x-7 green on the
+> fixed release build; 0x-4 records the two honest limits (the route is unobservable on a release
+> build on this ROM, and it is one tap). The five test grabs from 0w were cleared from
+> `/sdcard/Movies/DOWNI`; the feed's own grab (`Video by umarpnj.mp4`) is left there for the owner.
+
 ## 3. Regression sweep (after any engine touch)
 
 
