@@ -992,7 +992,10 @@ published tag is not moved, a new version is cut.
 > dump line) and `_J\tt1_box.txt` … `_J\tt5_box.txt` (five fresh 100-event boxes). Separate repair from the
 > same pass: `tools\fetch_diag.ps1` was arming the **renamed** service (`FetchSpikeService` → nothing ever
 > bound) and proving a re-bind by watching for a `spike_*.log` filename that v3.3 no longer writes — it now
-> arms `DowniFetcherService` and proves the bind by counting `SERVICE_CONNECTED` lines in `blackbox.txt`.
+> arms `DowniFetcherService` and proves the bind with the framework's own bound-services list (`dumpsys
+> accessibility`), treating `blackbox.txt` as the rotating, lagging ring it is (§0z-8-13). The instruments
+> themselves are mirrored in **`tools/harness/`** (byte-identical, sha256 recorded in its README) because the
+> working directory they were written in is not version-controlled; the evidence logs are not committed.
 
 ## 0z-9. The release that is live: v3.3.3, published, and measured against itself — GitHub / vivo V2058
 
