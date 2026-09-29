@@ -997,6 +997,15 @@ published tag is not moved, a new version is cut.
 > themselves are mirrored in **`tools/harness/`** (byte-identical, sha256 recorded in its README) because the
 > working directory they were written in is not version-controlled; the evidence logs are not committed.
 
+> **Owner ruling, same day — the number is accepted.** *"~2.0 seconds is completely acceptable. It feels
+> fast and smooth in real use, and I don't want to risk race conditions or broken downloads just to chase
+> 1 second when TikTok itself takes over a second to render the button."* So **~2 s is the TikTok baseline
+> for v3.3.3**, recorded here so it cannot later read as an unmet target: no further work is owed on the
+> ~1 s figure, and the correctness-carrying parts of the chain — the 0.40 s settle that keeps the BACK
+> press from racing the platform's copy, and the BACK-before-read ordering — stay exactly as they are.
+> (Also ruled the same day: the stray BOM in commit `2ad6339`'s subject stays. Rewriting published history
+> to hide one invisible character was judged not worth a force-push.)
+
 ## 0z-9. The release that is live: v3.3.3, published, and measured against itself — GitHub / vivo V2058
 
 > The owner's ruling tonight: *"i deleted the 3.3.2 from github due to these bugs now push the fixed 3.3.2
