@@ -18,6 +18,12 @@ tools/*
 !tools/*.cmd
 !tools/*.md
 !tools/*.json
+# tools/harness holds the on-device measurement harnesses (scripts + README), the same kind of content
+# the rules above keep: a nested directory needs its own re-include, because `tools/*` excludes the
+# directory itself and git never descends into an excluded directory to apply `!tools/*.ps1`.
+!tools/harness/
+!tools/harness/*.ps1
+!tools/harness/*.md
 __pycache__/
 *.pyc
 *.pyo
