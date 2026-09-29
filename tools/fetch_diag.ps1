@@ -4,7 +4,7 @@
 # buffer FIRST) instead of guessing one command at a time.
 #
 #   (no switch)  full report
-#   -Arm         re-enable FetchSpikeService (every install wipes it) + whitelist the app.
+#   -Arm         re-enable DowniFetcherService (every install wipes it) + whitelist the app.
 #                ALWAYS forces a real re-bind and then asserts it, because the handoff gate is
 #                read only in onServiceConnected() (see below).
 #   -Handoff X   with -Arm: write `handoff=true|false` into spike_config.properties first, then
@@ -35,7 +35,10 @@ $ErrorActionPreference = 'SilentlyContinue'
 $root  = Split-Path -Parent $PSScriptRoot
 $adb   = Join-Path $root 'android-sdk\platform-tools\adb.exe'
 $pkg   = 'com.omnidownloader.app'
-$comp  = "$pkg/com.omnidownloader.app.FetchSpikeService"
+# The service was renamed FetchSpikeService -> DowniFetcherService in v3.3. The stale name was worse
+# than a typo: `settings put` accepts a component the package no longer exports, so -Arm looked like it
+# worked while nothing ever bound and the a11y list stayed empty (found 2026-09-29).
+$comp  = "$pkg/$pkg.DowniFetcherService"
 $phone = "/sdcard/Android/data/$pkg/files/fetch-spike"
 $out   = Join-Path $root 'test_out\spike-logs'
 
@@ -120,9 +123,13 @@ if ($cfg -match 'handoff\s*=\s*true') {
 }
 
 # ---------- 4. the spike's own last words ----------
-Head 'SPIKE LOG (newest file, last 14 lines)'
+# The per-bind spike_<ts>.log files are gone in v3.3 (the service was renamed); blackbox.txt is now the
+# single evidence file, appended to on every bind. The old pattern is still tried first so this tool
+# keeps working against an older build on the bench.
+Head 'FETCHER LOG (blackbox.txt, or the newest spike_*.log on an older build)'
 $ls = Sh "shell ls -t $phone"
 $newest = (($ls -split "`n") | Where-Object { $_ -match 'spike_.*\.log$' } | Select-Object -First 1)
+if (-not $newest -and ((($ls -split "`n") | Where-Object { $_ -match 'blackbox\.txt$' }).Count -gt 0)) { $newest = 'blackbox.txt' }
 if ($newest) {
     $name = $newest.Trim()
     Write-Host "file: $name"
@@ -148,6 +155,11 @@ if ($Arm) {
         Write-Host ('  gate file     = ' + (Sh "shell cat $phone/spike_config.properties") + '  (unchanged; pass -Handoff true|false to set it)')
     }
 
+    # Count the ring lines BEFORE touching anything, purely as a hint for the report below. Since v3.3
+    # every bind appends to one blackbox.txt, but it is a rotating 100-event ring whose freshness lags,
+    # so this count is context - never the proof (the proof is `dumpsys accessibility`).
+    $bindsBefore = @((Sh "shell cat $phone/blackbox.txt") -split "`n" | Select-String 'SERVICE_CONNECTED').Count
+
     # 2) force the re-bind: remove our component, let it unbind, then add it back.
     $cur = (Sh 'shell settings get secure enabled_accessibility_services').Trim()
     if ($cur -eq 'null') { $cur = '' }
@@ -166,14 +178,19 @@ if ($Arm) {
     # 3) PROVE it re-bound, and that the new bind read the gate we asked for. A stale log file name
     #    here is the whole reason the 17:1x verification run was wasted: the tap ran a full chain
     #    against handoff=false while the file said true.
-    $ls2    = Sh "shell ls -t $phone"
-    $newest2 = (($ls2 -split "`n") | Where-Object { $_ -match 'spike_.*\.log$' } | Select-Object -First 1)
-    $name2  = if ($newest2) { $newest2.Trim() } else { '' }
-    if ($name2 -and $name2 -ne $name) {
-        Write-Host ''
-        Write-Host "  NEW BIND: $name2"
-        $bind = @((Sh "shell grep -h SERVICE_CONNECTED $phone/$name2") -split "`n") | Select-Object -Last 1
-        Write-Host ('  ' + $bind)
+    # AUTHORITATIVE bind check: the framework's own bound-services list. blackbox.txt is NOT one - it
+    # is a rotating 100-event ring whose freshness lags (2026-09-29: dumpsys listed the service bound
+    # with the Core drawn at 09:54 while the newest SERVICE_CONNECTED in the file was 09:45 and the
+    # file's mtime had not moved), so counting its lines can report "did not re-bind" about a service
+    # that is bound and working, and a rotation makes the count go DOWN.
+    $bnd = (((Sh 'shell dumpsys accessibility') -split "`n") | Select-String 'Bound services' | Select-Object -First 1)
+    $bnd = ($bnd -join '').Trim()
+    Write-Host ('  framework bound-services = ' + $bnd)
+    $bindsNow = @((Sh "shell cat $phone/blackbox.txt") -split "`n" | Select-String 'SERVICE_CONNECTED').Count
+    $bind = (((Sh "shell cat $phone/blackbox.txt") -split "`n") | Select-String 'SERVICE_CONNECTED' | Select-Object -Last 1)
+    $bind = ($bind -join '').Trim()
+    Write-Host ('  newest SERVICE_CONNECTED in the ring (a hint: it lags, and it rotates): ' + $bind)
+    if ($bnd -match 'DowniFetcher|DOWNI Fetcher') {
         if ($Handoff -eq 'true' -or $Handoff -eq 'false') {
             if ($bind -match ("handoff=" + $Handoff)) {
                 Write-Host "  OK: the live process read handoff=$Handoff — the gate is IN EFFECT."
@@ -183,8 +200,8 @@ if ($Arm) {
         }
     } else {
         Write-Host ''
-        Write-Host "  !! NO NEW BIND (still $name2): the service did not re-bind, so the gate was NOT re-read."
-        Write-Host '     Fix by hand: Settings > Accessibility > DOWNI Fetcher Spike OFF, then ON, then check'
+        Write-Host "  !! NOT BOUND: the framework does not list our service, so the gate was NOT re-read."
+        Write-Host '     Fix by hand: Settings > Accessibility > DOWNI Fetcher OFF, then ON, then check'
         Write-Host '     for a new SERVICE_CONNECTED line before tapping the bubble.'
     }
     Write-Host ''
