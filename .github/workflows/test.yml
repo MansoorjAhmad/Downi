@@ -36,7 +36,9 @@ jobs:
           cache: 'npm'
       - run: npm ci || npm install
       - run: npx cap sync android
-      - name: "JVM unit tests (Fetcher Core - state table + mark spec)"
+      - name: "Tab state gate (one view, one nav per switch)"
+        run: node tools/_tabcheck.js
+      - name: "JVM unit tests"
         run: |
           cd android
           chmod +x ./gradlew

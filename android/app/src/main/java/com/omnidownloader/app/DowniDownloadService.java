@@ -262,11 +262,6 @@ public class DowniDownloadService extends Service {
         instance = this;
         shareExecutor = Executors.newSingleThreadExecutor();
         ensureChannels();
-        // Wave 3 ("never stranded"): a download starting means DOWNI is alive — the moment
-        // to re-arm the Fetcher's binding (if the vendor wiped it) and schedule the
-        // self-healing keep-alive. Both are guarded no-ops when the guards say no.
-        FetcherRecovery.ensureArmed(this);
-        FetcherRecovery.scheduleKeepAlive(this);
         // D3: a paused grab survives process death — resurrect its paused set so resume works
         // after the vivo killer (or a reboot). The notification row is re-posted on the next
         // pause/resume/progress event; a quiet resume path exists via the Core's debug channel
@@ -554,9 +549,6 @@ public class DowniDownloadService extends Service {
                     if (!firstTick[0] && totalBytes > 0) {
                         firstTick[0] = true;
                         firstTickMs[0] = SystemClock.elapsedRealtime() - engineT0;
-                        DowniFetcherService.blackboxEventNow(getApplicationContext(),
-                                "ENGINE_FIRST_NUMBER ms=" + firstTickMs[0] + " total=" + totalBytes
-                                + " speed=" + ((long) speedBytesPerSec) + "Bps");
                     }
                     // v3.1.1 (defect N2): the row carries real numbers — % · size/total · speed · ETA.
                     applyProgress(jobId, (int) percent, downloadedBytes, totalBytes, speedBytesPerSec, etaSeconds);
@@ -574,9 +566,6 @@ public class DowniDownloadService extends Service {
                 }
             };
             String formatId = rememberedFormatFor(cleanUrl);
-            DowniFetcherService.blackboxEventNow(this, "ENGINE_JOB_START platform="
-                    + platformKeyFor(cleanUrl) + " fmt=" + formatId + " job=" + jobId);
-
             PyObject response = Python.getInstance().getModule("downloader")
                 .callAttr("download", cleanUrl, workDir.getAbsolutePath(), formatId, listener);
 
@@ -638,9 +627,6 @@ public class DowniDownloadService extends Service {
             // grab even when it was closed the whole time.
             addGrabBytes(this, finalBytes);
             recordGrabHistory(this, jobId, title, destination, dropUrls.get(jobId), finalBytes);
-            DowniFetcherService.blackboxEventNow(this, "ENGINE_DONE ms="
-                    + (SystemClock.elapsedRealtime() - engineT0) + " first_number_ms=" + firstTickMs[0]
-                    + " bytes=" + finalBytes);
             Log.i("DOWNI", "drop saved " + jobId + " -> " + destination); // (D) logcat breadcrumb
             live.remove(jobId);
             releaseJobRow(jobId);
@@ -691,9 +677,6 @@ public class DowniDownloadService extends Service {
                             .put("ts", System.currentTimeMillis()).toString())
                         .apply();
                 } catch (Exception ignored) {}
-                DowniFetcherService.blackboxEventNow(this, "ENGINE_FAIL ms="
-                        + (SystemClock.elapsedRealtime() - engineT0) + " first_number_ms=" + firstTickMs[0]
-                        + " err=" + detail);
                 Log.i("DOWNI", "drop failed " + jobId + ": " + detail); // (D) logcat breadcrumb
                 notifySharedFailure(url, friendly);
             }
@@ -861,7 +844,11 @@ public class DowniDownloadService extends Service {
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
             values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, (mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES) + "/DOWNI/");
+                // Straight into the gallery root - Movies/ or Music/, no DOWNI subfolder.
+                // The subfolder only existed so the Vault could scope its list to it
+                // (v3.0.4); with the Vault gone, a file the user can see in their own
+                // gallery beats one they have to go looking for.
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, (mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES) + "/");
                 values.put(MediaStore.MediaColumns.IS_PENDING, 1);
             }
             Uri collection = mime.startsWith("audio/") ? MediaStore.Audio.Media.EXTERNAL_CONTENT_URI : MediaStore.Video.Media.EXTERNAL_CONTENT_URI;

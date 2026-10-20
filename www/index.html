@@ -83,9 +83,9 @@
       /* Part 3 C2 (2026-09-28): the shared control height. The platform's own minimum for a touch
          target is 48 dp, and this is Android - so 48, not the 44 this line first carried (44 left
          four controls still under the line, which the audit caught on the next run). min-height
-         ONLY: no display change, because some of them are `flex-1` rows in the Vault and an
+         ONLY: no display change, because some of them are `flex-1` rows in the Queue and an
          inline-flex override would collapse that layout. */
-      /* Part 3 F2 (2026-09-28): the shared `btn` floor. min-WIDTH joined min-height once the Vault's
+      /* Part 3 F2 (2026-09-28): the shared `btn` floor. min-WIDTH joined min-height once the Queue's
          per-item icon buttons grew to 48 (F2c) and squeezed the card's `flex-1` Play button to
          40.9 px — one defect traded for another, which the next audit run caught. A floor cannot
          shrink anything: it only says no `.btn` is ever narrower than a thumb. */
@@ -124,7 +124,7 @@
        The platform's own minimum for a thumb is 48 dp and this is Android, so the platform line is 48.
        C1/C2 grew the primary action and the shared `.btn`; these three classes finish the job on the
        controls the audit still measured below it, one token each, no redesign:
-         .chip-btn  a chip that is a CONTROL (the Vault's filters) -- NOT the platform chips, which
+         .chip-btn  a chip that is a CONTROL (a control chip) -- NOT the platform chips, which
                     stay labels by the standing ruling (PART3_UI_PLAN.md section 4)
          .btn-icon  an icon-only button: 35.5 px wide because the icon is 14 px and the padding is
                     10 px a side. min-width ONLY, so the row keeps its rhythm.
@@ -133,43 +133,6 @@
     .chip-btn { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; }
     .btn-icon { min-width: 48px; justify-content: center; }
     .row-48 { min-height: 48px; }
-
-    /* ---- HERO VORTEX BUTTON ----
-       v3.3.1: the ring and the glow used to run `infinite`, and that pair was the app's entire
-       foreground cost. With the grab screen in the front `dumpsys gfxinfo` counted 606 / 607
-       frames per 10 s (~61 fps) and the process burned 9 s of CPU per 8 s of wall clock (~1.25
-       cores) with nothing else on screen; pausing just these two declarations in the live WebView
-       dropped it to 0 frames and 0 s of CPU. So they rest *still* now, and play once on the tap
-       that wakes them — the same "energy builds, then settles" grammar as the Core's C2 wake.
-       (tools/core_web_anim.py, DEVICE_TEST.md section 0i) */
-    .vortex {
-      width: 132px; height: 132px; border-radius: 999px;
-      display: flex; align-items: center; justify-content: center;
-      position: relative; cursor: pointer; user-select: none;
-      background: radial-gradient(circle at 32% 30%, rgba(var(--accent-rgb),.16), rgba(9,14,26,.95) 65%);
-      border: 1px solid rgba(var(--accent-rgb),.35);
-      box-shadow: 0 0 44px rgba(var(--accent-rgb),.22), inset 0 0 26px rgba(var(--accent-rgb),.12);
-      transition: transform .18s cubic-bezier(.4,0,.2,1);
-    }
-    .vortex:active { transform: scale(.93); }
-    .vortex::before {
-      content: ''; position: absolute; inset: -7px; border-radius: 999px;
-      background: conic-gradient(from 0deg, transparent 12%, var(--accent) 37%, var(--accent-2) 50%, transparent 62%, transparent 100%);
-      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
-      mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
-      opacity: .9;
-    }
-    .vortex::after {
-      content: ''; position: absolute; inset: -16px; border-radius: 999px;
-      background: radial-gradient(circle, rgba(var(--accent-rgb),.16) 0%, transparent 68%);
-      opacity: .55; transform: scale(.96);   /* the breathe keyframes' own resting pose */
-      pointer-events: none;
-    }
-    /* The wake: one pass each, then the ring is a still ring again. */
-    .vortex.waking::before { animation: spin 1.1s cubic-bezier(.2,.7,.25,1) 1; }
-    .vortex.waking::after { animation: breathe 1.4s ease-in-out 1; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes breathe { 0%,100% { opacity:.55; transform: scale(.96);} 50% { opacity:1; transform: scale(1.05);} }
 
     .bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; position: relative; }
     /* v3.1.1 (U6): ≥44dp tap target for icon/text controls that must keep their compact look.
@@ -189,7 +152,7 @@
        v3.3.1 (2026-09-28): this animated `background-position`, which repaints the gradient every
        frame. Priced with the app in the front and exactly this declaration on a visible screen
        (tools/core_web_anim.py js + dumpsys gfxinfo + ps): 565 frames / 9 s and +12 s of CPU per 9 s
-       (~1.3 cores) -- the vortex pair's own price, for one 8 px bar. It is a `transform` now: the
+       (~1.3 cores) -- the same price the old hero ring cost, for one 8 px bar. It is a `transform` now: the
        same shine, carried by the compositor with no per-frame paint. Measured after: 0 frames.
        (DEVICE_TEST.md 0q) */
     .bar.live > div::after {
@@ -236,7 +199,7 @@
       content: ''; position: absolute; top: 0; bottom: 0; left: -100%; width: 100%;
       background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.07) 50%, transparent 70%);
       /* The shimmer is a bounded run, not a loop: 4 passes (~5.2 s) cover every real loading window
-         and then the skeleton rests. Same reason as the vortex fix -- v3.3.1's measurement showed the
+         and then the skeleton rests. Same reason as the old hero ring fix -- v3.3.1's measurement showed the
          price of ANY running animation here is the 60 fps itself (a compositor-only transform still
          read 563 frames / +11 s CPU per 9 s), so the only cheap animation is one that ends. */
       animation: shimmer 1.3s linear 4 forwards;
@@ -294,10 +257,6 @@
     .pulse-ok { animation: pulseOk .6s var(--ease-out); }
     @keyframes pulseOk { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.5); } 100% { box-shadow: 0 0 0 14px rgba(52,211,153,0); } }
 
-    /* Vortex: springier press, deeper glow while pressed */
-    .vortex { transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-base) ease; }
-    .vortex:active { transform: scale(.93); box-shadow: 0 0 60px rgba(var(--accent-rgb),.35), inset 0 0 26px rgba(var(--accent-rgb),.18); }
-
     /* Confetti burst on save, invalid-input shake, thumbnail blur-up, note banner */
     .confetti-host { position: fixed; z-index: 90; pointer-events: none; }
     .confetti-host i { position: absolute; width: 7px; height: 7px; border-radius: 2px; animation: confettiFly .8s var(--ease-out) forwards; }
@@ -308,12 +267,8 @@
     #inspectorThumbnail.loaded { filter: none; }
     .note-banner { background: rgba(var(--accent-rgb),.08); border: 1px solid rgba(var(--accent-rgb),.22); border-radius: 14px; padding: 10px 12px; }
 
-    /* AMOLED true-black + player control hiding */
+    /* AMOLED true-black */
     :root.amoled { --bg: #000000; --surface: #07090F; --surface-2: #0C0F16; }
-    #playerModal.controls-hidden #playerBar,
-    #playerModal.controls-hidden #playerTitle,
-    #playerModal.controls-hidden #playerRipple { opacity: 0; pointer-events: none; }
-    #playerBar { transition: opacity var(--dur-base) ease; }
 
     /* Respect users who prefer reduced motion */
     @media (prefers-reduced-motion: reduce) {
@@ -372,27 +327,10 @@
       <!-- ================= TAB 1: GRAB ================= -->
       <div id="viewGrab" class="space-y-4">
 
-        <!-- Fetcher re-arm banner (Wave 4, 2026-09-28). The phone clears the accessibility binding
-             behind our back — vivo did it on an app update — and until this existed the app looked
-             perfectly healthy while grabbing nothing. Shown ONLY to a user who had it on before. -->
-        <div id="fetcherOffBanner" class="hidden card p-4 fade-in" style="border-color:rgba(251,113,133,0.35); background:rgba(251,113,133,0.06)">
-          <div class="flex items-start gap-3">
-            <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-[15px] font-extrabold" style="background:rgba(251,113,133,0.14); color:#FB7185">!</div>
-            <div class="min-w-0">
-              <p class="text-[12px] font-extrabold text-white">The Fetcher is switched off</p>
-              <p id="fetcherOffWhy" class="text-[10px] mt-0.5 leading-relaxed" style="color:var(--muted)">Your phone turned it off — usually after an update. Nothing grabs until it is back on.</p>
-            </div>
-          </div>
-          <div class="flex gap-2 mt-3">
-            <button onclick="rearmFetcherFlow()" class="btn-hero flex-1 py-2.5 text-[11px] font-extrabold">Re-arm it now</button>
-            <button onclick="openFetcherSettings()" class="btn px-3 py-2.5 text-[11px] font-bold text-zinc-300">How?</button>
-          </div>
-        </div>
-
         <!-- Clipboard banner -->
         <div id="clipboardBanner" class="hidden card card-accent p-4 flex items-center justify-between gap-3 fade-in">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-9 h-9 rounded-xl bg-accent-soft border border-accent-soft flex items-center justify-center text-accent flex-shrink-0 overflow-hidden relative"><span id="clipboardIcon"><svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span><img id="clipboardThumb" src="" alt="" class="hidden absolute inset-0 w-full h-full object-cover"></div>
+            <div class="w-9 w-9 h-9 rounded-xl bg-accent-soft border border-accent-soft flex items-center justify-center text-accent flex-shrink-0 overflow-hidden relative"><span id="clipboardIcon"><svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg></span><img id="clipboardThumb" src="" alt="" class="hidden absolute inset-0 w-full h-full object-cover"></div>
             <div class="min-w-0">
               <p class="text-[10px] uppercase font-extrabold tracking-widest text-accent">Link detected</p>
               <p id="clipboardUrlText" class="text-xs font-mono text-zinc-300 truncate max-w-[170px] sm:max-w-xs">https://…</p>
@@ -404,20 +342,14 @@
           </div>
         </div>
 
-        <!-- HERO -->
-        <div class="card p-5 space-y-5 fade-in">
-          <div class="flex flex-col items-center pt-2">
-            <div class="vortex" onclick="handleVortexClick()">
-              <img src="assets/logo.png" alt="DOWNI Vortex" class="w-[72px] h-[72px] rounded-full object-cover">
-            </div>
-            <p class="mt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-white">Tap the Vortex</p>
-            <p class="text-[10px] mt-0.5" style="color:var(--muted)">Grabs whatever link is on your clipboard — instantly</p>
-          </div>
+        <!-- THE ONE ACTION. The Core's tap-the-orb flow is gone with the Core, so
+             the field IS the home screen: paste a link, or share one to DOWNI from
+             any app. Nothing else to understand. -->
+        <div class="card p-5 space-y-4 fade-in">
 
-          <div class="flex items-center gap-3">
-            <div class="h-px flex-1" style="background:var(--line)"></div>
-            <span class="text-[10px] font-extrabold uppercase tracking-widest" style="color:var(--muted)">or paste a link</span>
-            <div class="h-px flex-1" style="background:var(--line)"></div>
+          <div>
+            <p class="text-[13px] font-extrabold text-white">Grab a video</p>
+            <p class="text-[10px] mt-0.5" style="color:var(--muted)">YouTube · TikTok · Instagram — paste a link</p>
           </div>
 
           <div class="relative flex items-center">
@@ -521,78 +453,44 @@
         <div id="queueActiveContainer" class="space-y-3"></div>
         <div id="queueListContainer" class="space-y-2.5 stagger"></div>
       </div>
-
-      <!-- ================= TAB 3: VAULT ================= -->
-      <div id="viewVault" class="hidden space-y-4">
-        <div class="flex items-center justify-between px-1">
-          <div>
-            <h2 class="text-[17px] font-extrabold text-white tracking-tight">Vault</h2>
-            <p id="vaultStorageText" class="text-[11px]" style="color:var(--muted)">Your real media library</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button onclick="rescanVaultStorage()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Rescan</button>
-            <button onclick="refreshVault()" class="btn w-12 h-12 flex items-center justify-center text-zinc-300" aria-label="Rescan the vault">
-              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.6-6.4M21 3v6h-6"/></svg>
-            </button>
-            <button onclick="handleOpenSystemGallery()" class="btn px-3 py-2 text-[11px] font-bold text-zinc-300">Gallery</button>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <button id="vaultChipAll" onclick="setVaultFilter('all')" class="chip chip-btn on px-4 py-1.5 text-[10px] font-extrabold">ALL</button>
-          <button id="vaultChipVideo" onclick="setVaultFilter('video')" class="chip chip-btn px-4 py-1.5 text-[10px] font-extrabold">VIDEO</button>
-          <button id="vaultChipAudio" onclick="setVaultFilter('audio')" class="chip chip-btn px-4 py-1.5 text-[10px] font-extrabold">AUDIO</button>
-          <button id="btnVaultLayout" onclick="toggleVaultLayout()" class="btn ml-auto px-3 py-1.5 text-[10px] font-bold text-zinc-300">List</button>
-        </div>
-
-        <input id="vaultSearch" type="text" placeholder="Search your media…" oninput="onVaultSearch(this.value)"
-          class="w-full row-48 bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-[12px] text-white placeholder-zinc-500 font-mono transition">
-
-        <div class="flex items-center gap-2">
-          <select id="vaultSort" onchange="onVaultSort(this.value)" class="flex-1 row-48 bg-black/40 border border-white/10 rounded-2xl px-3 py-2.5 text-[11px] font-bold text-zinc-300">
-            <option value="new">Newest first</option>
-            <option value="size">Largest first</option>
-            <option value="name">Name (A–Z)</option>
-          </select>
-          <span id="vaultCountText" class="text-[10px] font-mono" style="color:var(--muted)"></span>
-        </div>
-
-        <div id="vaultSelectionBar" class="hidden card p-3 flex items-center justify-between gap-2">
-          <span id="vaultSelCount" class="text-[11px] font-bold text-white">0 selected</span>
-          <div class="flex items-center gap-2">
-            <button onclick="bulkShareVault()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Share</button>
-            <button onclick="bulkDeleteVault()" class="btn px-3 py-2 text-[10px] font-bold" style="color:var(--bad)">Delete</button>
-            <button onclick="clearVaultSelection()" class="btn px-3 py-2 text-[10px] font-bold text-zinc-300">Cancel</button>
-          </div>
-        </div>
-
-        <div id="vaultMediaGrid" class="grid grid-cols-2 gap-3 stagger"></div>
-      </div>
-
+      
       <!-- ================= TAB 4: SETTINGS ================= -->
       <div id="viewSettings" class="hidden space-y-4">
 
         <h2 class="text-[17px] font-extrabold text-white tracking-tight px-1">Settings</h2>
 
-        <!-- Update -->
-        <div class="card p-4 space-y-3">
+        <!-- App: version, updates, and who made it. One card - the old split into
+             "DOWNI updates" and "About" made the user hunt for the version twice. -->
+        <div class="card p-4 space-y-2">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-2xl bg-accent-soft border border-accent-soft flex items-center justify-center text-accent">
                 <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
               </div>
               <div>
-                <p class="text-[12px] font-extrabold text-white">DOWNI updates</p>
-              <p id="appVersionDisplay" class="text-[11px] font-mono text-accent mt-0.5"></p>
+                <p class="text-[12px] font-extrabold text-white">DOWNI</p>
+                <p id="appVersionDisplay" class="text-[11px] font-mono text-accent mt-0.5"></p>
               </div>
             </div>
-            <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn-hero px-4 py-2.5 text-[11px] font-extrabold">Check</button>
+            <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn-hero px-4 py-2.5 text-[11px] font-extrabold">Updates</button>
           </div>
-          <p class="text-[11px] leading-relaxed" style="color:var(--muted)">
-            Downloads updates inside the app with a live progress bar, then installs in one tap.
-          </p>
+          <div class="flex items-center justify-between py-2.5 border-t border-white/5 cursor-pointer" onclick="copyAppVersion()" title="Tap to copy">
+            <span class="text-[11px]" style="color:var(--muted)">Version</span>
+            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400"></span></span>
+          </div>
+          <div class="flex items-center justify-between py-2.5 border-t border-white/5">
+            <span class="text-[11px]" style="color:var(--muted)">Engine</span>
+            <span class="text-[10px] font-mono text-zinc-300" id="aboutEngine">yt-dlp</span>
+          </div>
+          <div class="flex items-center justify-between py-2.5 border-t border-white/5">
+            <span class="text-[11px]" style="color:var(--muted)">Developer</span>
+            <span class="text-[12px] font-bold text-zinc-200">MansoorjAhmad</span>
+          </div>
+          <button onclick="openGitHubRepo()" class="btn w-full py-3 mt-1 text-[11px] font-extrabold text-accent flex items-center justify-center gap-2">
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z"/></svg>
+            Star DOWNI on GitHub
+          </button>
         </div>
-
 
         <!-- Engine -->
         <div class="card p-4 space-y-3">
@@ -622,63 +520,6 @@
           </div>
         </div>
 
-        <!-- DOWNI Fetcher (the Core) -->
-        <div class="card p-4 space-y-3">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-2xl bg-accent-soft border border-accent-soft flex items-center justify-center text-accent">
-                <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/></svg>
-              </div>
-              <div>
-                <p class="text-[12px] font-extrabold text-white">DOWNI Fetcher</p>
-                <p class="text-[10px] mt-0.5" style="color:var(--muted)">The Core over Instagram & TikTok</p>
-              </div>
-            </div>
-            <span id="fetcherBadge" class="chip px-3 py-1 text-[10px] font-mono font-bold">…</span>
-          </div>
-
-          <div id="fetcherStats" class="text-[10px] font-mono" style="color:var(--muted)">…</div>
-          <div id="fetcherRoutes" class="hidden text-[10px] font-mono space-y-0.5" style="color:var(--muted)"></div>
-          <!-- Wave 5: the black box. Release builds write nothing to logcat on this ROM, so the
-               Fetcher keeps its own last 50 events — shown here, copyable, and exportable to a file. -->
-          <div class="space-y-2 pt-1">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-[10px] uppercase font-extrabold tracking-widest" style="color:var(--muted)">Black box</span>
-              <span class="flex gap-1.5">
-                <button onclick="loadBlackbox()" class="btn px-2.5 py-1.5 text-[10px] font-bold text-zinc-300">Show</button>
-                <button onclick="copyBlackbox()" class="btn px-2.5 py-1.5 text-[10px] font-bold text-zinc-300">Copy</button>
-                <button onclick="exportBlackbox()" class="btn px-2.5 py-1.5 text-[10px] font-bold text-zinc-300">Export</button>
-              </span>
-            </div>
-            <p id="blackboxMeta" class="text-[10px] font-mono" style="color:var(--muted)">the last events the Fetcher saw — readable here, no PC needed</p>
-            <pre id="blackboxText" class="hidden text-[9px] leading-relaxed font-mono whitespace-pre-wrap break-all p-2 rounded-lg" style="background:rgba(255,255,255,0.03); color:#a1a1aa; max-height:280px; overflow:auto"></pre>
-          </div>
-          <button id="fetcherResumeAll" class="hidden w-full py-2 text-[11px] font-extrabold text-white rounded-xl" style="background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.35)" onclick="resumeAllPausedGrabs()">▶ Resume all paused grabs</button>
-
-          <button id="fetcherToggleBtn" onclick="toggleFetcher()" class="btn-hero w-full py-2.5 text-[11px] font-extrabold">…</button>
-
-          <div class="border-t border-white/5 pt-3">
-            <p class="text-[10px] font-bold text-zinc-200 mb-2">Core size</p>
-            <div class="flex gap-2" id="fetcherSizes">
-              <button onclick="setCoreSize(48)" class="btn flex-1 py-2 text-[11px] font-bold text-zinc-300">48</button>
-              <button onclick="setCoreSize(56)" class="btn flex-1 py-2 text-[11px] font-bold text-zinc-300">56</button>
-              <button onclick="setCoreSize(64)" class="btn flex-1 py-2 text-[11px] font-bold text-zinc-300">64</button>
-            </div>
-            <button onclick="resetCorePosition()" class="btn w-full mt-2 py-2 text-[11px] font-bold text-zinc-300">Reset Core position</button>
-          </div>
-
-          <div class="border-t border-white/5 pt-3 space-y-2">
-            <p class="text-[10px] font-bold text-zinc-200">Keep it alive on vivo</p>
-            <ol class="text-[10px] leading-relaxed list-decimal list-inside" style="color:var(--muted)">
-              <li>Settings → Apps → <b>Autostart</b> → allow DOWNI</li>
-              <li>Settings → Battery → <b>Background power</b> → allow DOWNI + unrestricted</li>
-              <li>Recents → long-press DOWNI → <b>Lock</b></li>
-            </ol>
-            <button onclick="openBatterySettings()" class="btn w-full py-2 text-[11px] font-bold text-zinc-300">Open battery settings</button>
-            <p class="text-[10px]" style="color:var(--muted)">vivo hides the real switch — steps 1 and 3 are manual.</p>
-          </div>
-        </div>
-
         <!-- Appearance -->
         <div class="card p-4 space-y-1">
           <p class="text-[12px] font-extrabold text-white px-1 pb-2">Appearance</p>
@@ -703,9 +544,9 @@
           </label>
         </div>
 
-        <!-- Behavior -->
+        <!-- Behavior & storage -->
         <div class="card p-4 space-y-1">
-          <p class="text-[12px] font-extrabold text-white px-1 pb-2">Behavior</p>
+          <p class="text-[12px] font-extrabold text-white px-1 pb-2">Behavior &amp; storage</p>
           <label class="flex items-center justify-between py-3 row-48 border-t border-white/5 cursor-pointer">
             <div>
               <p class="text-[12px] font-bold text-zinc-200">Clipboard auto-detect</p>
@@ -720,11 +561,8 @@
               <div class="chip on flex-1 py-2 text-[10px] font-bold text-center">⚡ Instant grab</div>
             </div>
           </div>
-        </div>
 
-        <!-- Storage -->
-        <div class="card p-4 space-y-1">
-          <p class="text-[12px] font-extrabold text-white px-1 pb-2">Storage</p>
+          <p class="text-[10px] uppercase font-extrabold tracking-widest pt-3 pb-1" style="color:var(--muted)">Storage</p>
           <div class="flex items-center justify-between py-3 border-t border-white/5">
             <div>
               <p class="text-[12px] font-bold text-zinc-200">Save location</p>
@@ -741,26 +579,6 @@
           </div>
         </div>
 
-        <!-- About -->
-        <div class="card p-4 space-y-1">
-          <p class="text-[12px] font-extrabold text-white px-1 pb-2">About</p>
-          <div class="flex items-center justify-between py-2.5 row-48 border-t border-white/5 cursor-pointer" onclick="copyAppVersion()" title="Tap to copy">
-            <span class="text-[11px]" style="color:var(--muted)">App</span>
-            <span class="text-[12px] font-bold text-zinc-200">DOWNI <span id="aboutVersion" class="font-mono text-[10px] text-zinc-400"></span></span>
-          </div>
-          <div class="flex items-center justify-between py-2.5 row-48 border-t border-white/5">
-            <span class="text-[11px]" style="color:var(--muted)">Engine</span>
-            <span class="text-[10px] font-mono text-zinc-300" id="aboutEngine">yt-dlp</span>
-          </div>
-          <div class="flex items-center justify-between py-2.5 row-48 border-t border-white/5">
-            <span class="text-[11px]" style="color:var(--muted)">Developer</span>
-            <span class="text-[12px] font-bold text-zinc-200">MansoorjAhmad</span>
-          </div>
-          <button onclick="openGitHubRepo()" class="btn w-full py-3 mt-2 text-[11px] font-extrabold text-accent flex items-center justify-center gap-2">
-            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z"/></svg>
-            Star DOWNI on GitHub
-          </button>
-        </div>
 
       </div>
     </main>
@@ -780,13 +598,7 @@
         <span>Queue</span>
         <span id="queueBadge" class="hidden absolute top-1.5 right-5 w-2 h-2 rounded-full" style="background:var(--accent)"></span>
       </button>
-      <button id="navVault" onclick="switchTab('vault')" class="nav-item flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-semibold">
-        <svg viewBox="0 0 24 24" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
-          <rect x="2" y="2" width="20" height="20" rx="3"/><path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5"/>
-        </svg>
-        <span>Vault</span>
-      </button>
-      <button id="navSettings" onclick="switchTab('settings')" class="nav-item flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-semibold">
+            <button id="navSettings" onclick="switchTab('settings')" class="nav-item flex-1 py-2.5 flex flex-col items-center gap-0.5 text-[10px] font-semibold">
         <svg viewBox="0 0 24 24" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
         </svg>
@@ -930,39 +742,7 @@
       </div>
     </div>
   </div>
-
-  <!-- VAULT PLAYER (full-screen, in-app) -->
-  <div id="playerModal" class="fixed inset-0 z-[60] hidden bg-black">
-    <video id="playerVideo" class="absolute inset-0 w-full h-full object-contain" playsinline></video>
-    <p id="playerTitle" class="absolute top-4 left-4 right-16 text-[12px] font-bold text-white truncate z-10">Media</p>
-    <div id="playerRipple" class="absolute inset-0 z-10 pointer-events-none flex items-center justify-center opacity-0 transition-opacity duration-200">
-      <span id="playerRippleText" class="px-4 py-2 rounded-2xl bg-black/70 text-white text-[13px] font-extrabold font-mono">+10s</span>
-    </div>
-    <button onclick="closePlayer()" class="absolute top-3 right-3 w-12 h-12 rounded-2xl bg-white/10 border border-white/15 text-white flex items-center justify-center z-10">
-      <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-    </button>
-    <div id="playerBar" class="absolute bottom-0 inset-x-0 p-4 pb-7 z-10 space-y-2" style="background:linear-gradient(to top, rgba(0,0,0,.88), transparent)">
-      <div id="playerSeek" class="bar cursor-pointer" onclick="seekPlayer(event)"><div style="width:0%"></div></div>
-      <div class="flex items-center justify-between text-[10px] font-mono text-white/80">
-        <span id="playerTime">0:00</span>
-        <span id="playerDur">0:00</span>
-      </div>
-      <div class="flex items-center justify-center gap-6 pt-1">
-        <button onclick="skipPlayer(-10)" class="btn w-11 h-11 text-white text-[10px] font-bold">−10s</button>
-        <button id="playerPlayBtn" onclick="togglePlay()" class="w-14 h-14 rounded-full btn-hero flex items-center justify-center">
-          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M7 4.5v15l13-7.5-13-7.5z"/></svg>
-        </button>
-        <button onclick="skipPlayer(10)" class="btn w-11 h-11 text-white text-[10px] font-bold">+10s</button>
-        <button id="btnPlayerSpeed" onclick="cyclePlayerSpeed()" class="btn px-3 h-11 text-white text-[11px] font-bold">1×</button>
-      </div>
-      <div class="flex items-center justify-center gap-2.5 pt-1">
-        <button onclick="playerPrev()" class="btn px-3 py-2 text-[10px] font-bold text-white">← Prev</button>
-        <button onclick="openExternalPlayer()" class="btn px-3 py-2 text-[10px] font-bold text-accent">Open external</button>
-        <button onclick="playerNext()" class="btn px-3 py-2 text-[10px] font-bold text-white">Next →</button>
-      </div>
-    </div>
-  </div>
-
+  
   <script>
     // ================= State =================
     const GITHUB_REPO = 'MansoorjAhmad/Downi';
@@ -975,8 +755,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.3.3';
-    let installedVersionCode = 51;
+    let installedVersion = '3.5.0';
+    let installedVersionCode = 52;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -995,14 +775,7 @@
     // They usually finish with no WebView alive, so the app would otherwise never count them.
     let dropBytes = 0;
 
-    let vaultItems = [];
-    let vaultFilter = 'all';
-    let vaultSearch = '';
-    let vaultSort = 'new';
-    let vaultLayout = 'grid';
-    const vaultSelection = new Set();
-    const vaultThumbCache = {};
-
+                            
     function getEngine() { return window.Capacitor?.Plugins?.DowniEngine || null; }
 
     // ---- Identity-safe storage: everything writes downi_*, reads fall back to
@@ -1034,13 +807,6 @@
       try {
         const res = await engine.consumeOpenQueueFlag();
         if (res && res.open) switchTab('queue');
-        // Wave 2 (peek): a tap on the completed Core parked the file to open — the Vault
-        // comes forward and the player starts on that item (a deliberate user action).
-        if (res && res.vault) {
-          switchTab('vault');
-          const id = Number(res.vault.mediaId || 0);
-          if (id > 0) playVaultMedia(id, res.vault.isVideo !== false);
-        }
       } catch (e) {}
     }
     async function checkNotificationHint() {
@@ -1070,16 +836,18 @@
     function switchTab(tab) {
       triggerHaptic('light');
       currentTab = tab;
-      ['viewGrab', 'viewQueue', 'viewVault', 'viewSettings'].forEach(id => {
+      const view = { grab: 'viewGrab', queue: 'viewQueue', settings: 'viewSettings' }[tab];
+      const nav = { grab: 'navGrab', queue: 'navQueue', settings: 'navSettings' }[tab];
+      // Every view and every nav item carries its own state, so the ones we are
+      // leaving have to be cleared here - nothing else does it. (The Vault's
+      // removal took these two loops with it; a browser run caught that in
+      // v3.5.0, before the release was tagged.)
+      ['viewGrab', 'viewQueue', 'viewSettings'].forEach(id => {
         document.getElementById(id)?.classList.add('hidden');
       });
-      ['navGrab', 'navQueue', 'navVault', 'navSettings'].forEach(id => {
+      ['navGrab', 'navQueue', 'navSettings'].forEach(id => {
         document.getElementById(id)?.classList.remove('on');
       });
-      if (tab === 'settings') loadFetcherCard();
-        if (tab === 'grab') refreshFetcherState();   // Wave 4: the banner follows you to Grab
-      const view = { grab: 'viewGrab', queue: 'viewQueue', vault: 'viewVault', settings: 'viewSettings' }[tab];
-      const nav = { grab: 'navGrab', queue: 'navQueue', vault: 'navVault', settings: 'navSettings' }[tab];
       const el = document.getElementById(view);
       if (el) {
         el.classList.remove('hidden');
@@ -1090,9 +858,7 @@
       document.getElementById(nav)?.classList.add('on');
 
       if (tab === 'queue') renderQueueTab();
-      if (tab === 'vault') refreshVault();
       if (tab === 'grab') renderJobCards();
-      syncVaultLivePolling();
     }
 
     // ================= Toast =================
@@ -1149,9 +915,13 @@
 
     function confettiBurst() {
       if (currentTab !== 'grab') return;
-      const vortex = document.querySelector('.vortex');
-      if (!vortex) return;
-      const rect = vortex.getBoundingClientRect();
+      // It used to burst from the Vortex. The Vortex is gone, so it bursts from
+      // the DOWNI mark in the header - the one element on screen for every kind
+      // of grab, including one that finished in the background.
+      const anchor = document.querySelector('header img')
+        || document.getElementById('btnInspectLink');
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
       const host = document.createElement('div');
       host.className = 'confetti-host';
       host.style.left = (rect.left + rect.width / 2) + 'px';
@@ -1264,56 +1034,6 @@
         text = await navigator.clipboard.readText();
       }
       return extractUrl(text);
-    }
-
-    // ================= VORTEX (the hero grab) =================
-    // v3.3.1: the ring and the glow are still at rest and play one pass here — see the CSS note
-    // above the .vortex rules. The remove + reflow + add is what restarts a *finished* one-shot,
-    // and the single timer means a fast double-tap cannot leave two wakes stacked or a class
-    // behind (a leftover .waking is invisible but would keep the ring on a finished animation).
-    const VORTEX_WAKE_MS = 1500;
-    let vortexWakeTimer = 0;
-    function wakeVortex() {
-      const vortex = document.querySelector('.vortex');
-      if (!vortex) return;
-      clearTimeout(vortexWakeTimer);
-      vortex.classList.remove('waking');
-      void vortex.offsetWidth;
-      vortex.classList.add('waking');
-      vortexWakeTimer = setTimeout(() => vortex.classList.remove('waking'), VORTEX_WAKE_MS);
-    }
-
-    async function handleVortexClick() {
-      const vortex = document.querySelector('.vortex');
-      if (vortex) {
-        vortex.style.transform = 'scale(0.9)';
-        setTimeout(() => { vortex.style.transform = ''; }, 180);
-      }
-      wakeVortex();
-      // Clipboard first — that is the Vortex's entire job ("grabs whatever link
-      // is on your clipboard — instantly"). The URL field is only the fallback:
-      // a DowniDrop share or an earlier paste can leave a stale link sitting
-      // there (found on a real device: a freshly copied link was ignored in
-      // favor of the old field text).
-      let clean = '';
-      try {
-        clean = await grabClipboardUrl();
-      } catch (e) {}
-      if (!clean) {
-        clean = extractUrl(document.getElementById('inputManualUrl').value.trim());
-      }
-      if (clean) {
-        document.getElementById('inputManualUrl').value = clean;
-        handleUrlInputChanged();
-      }
-      if (!clean) {
-        shakeInput();
-          showToast('The Vortex needs a link', 'Copy any video link, then tap the Vortex.', 'info');
-        return;
-      }
-      currentInspectedUrl = clean;
-      triggerHaptic('medium');
-      initiateDownload(clean, 'best');
     }
 
     async function handleClipboardFastDl() {
@@ -1706,7 +1426,6 @@
       saveHistory();
       updateLastGrabChip();
       pumpPlaylist();
-      refreshVaultSilently(); nudgeVaultAfterSave(); syncVaultLivePolling(); // VA: the file just landed in the Vault
       setTimeout(() => { if (mergedJobs().size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden'); }, 1200);
     }
 
@@ -1778,7 +1497,6 @@
     function renderJobCards() {
       const wrap = document.getElementById('activeDownloadsWrap');
       const jobs = mergedJobs();
-      syncVaultLivePolling(); // VA: grabs starting/ending toggles the Vault live poll
       if (wrap) wrap.classList.toggle('hidden', jobs.size === 0);
 
       // Rebuild card frames only when the job set (or a job's done state) changes;
@@ -1899,7 +1617,7 @@
         downloadsHistory.push({
           id: r.id,
           title: r.title || 'Shared video',
-          destination: r.dest || 'Vault',
+          destination: r.dest || 'Gallery',
           date: new Date(Number(r.ts) || Date.now()).toLocaleDateString(),
           url: r.url || '',
           ts: Number(r.ts) || 0
@@ -1940,7 +1658,7 @@
         job.failed = state === 'failed';
         job.paused = state === 'paused';
         job.status = job.paused ? 'Paused — tap ▶ to continue from here'
-            : (job.failed ? 'Failed' : (job.done ? 'Saved to your Vault' : 'Grabbing…'));
+            : (job.failed ? 'Failed' : (job.done ? 'Saved to your gallery' : 'Grabbing…'));
         // N8: a finished card must never keep the last phase sentence ("Merging video + audio…")
         // as its sub-line — show real byte totals when known, else the state copy. Phase text
         // is only meaningful while the grab is still running.
@@ -1955,11 +1673,10 @@
           // N9: no byte bookkeeping here. The service keeps its own ledger for headless grabs
           // (including the ones that finish while the app is shut) and syncGrabLedger() folds it
           // in — adding here too would double-book the grab.
-          downloadsHistory.unshift({ id: 'drop_' + j.id, title: j.title || 'Shared video', destination: j.dest || 'Vault', date: new Date().toLocaleDateString(), url: j.url || '', ts: Date.now() });
+          downloadsHistory.unshift({ id: 'drop_' + j.id, title: j.title || 'Shared video', destination: j.dest || 'Gallery', date: new Date().toLocaleDateString(), url: j.url || '', ts: Date.now() });
           saveHistory();
           showToast('Saved ✓', (j.title || 'Shared video') + (j.dest ? ' · ' + j.dest : ''), 'success');
           renderQueueTab();
-          refreshVaultSilently(); nudgeVaultAfterSave(); // VA: background grab finished → Vault update
           // v3.1.1 (defect N13): read the service's ledger NOW, not at the next resume. The bytes
           // of this grab are already in it, but the dashboard only re-read the ledger on boot /
           // resume, so "COMPLETED 6 · 83 MB" sat on screen a grab behind (found live 09-24 while
@@ -2032,7 +1749,7 @@
     function retryCurrentDownload() {
       closeErrorModal();
       if (lastFailedUrl) initiateDownload(lastFailedUrl, lastFailedFormat);
-      else handleVortexClick();
+      else document.getElementById('inputManualUrl')?.focus();
     }
 
     // ================= Diagnostics =================
@@ -2115,788 +1832,11 @@
       showToast('History cleared', 'All records removed.', 'info');
     }
 
-    // ================= Vault =================
-    function setVaultFilter(filter) { vaultFilter = filter; renderVaultGrid(); }
-
-    async function refreshVault() {
-      const grid = document.getElementById('vaultMediaGrid');
-      const engine = getEngine();
-      // Vault lists device media → needs the runtime media permission (Android 13+
-      // READ_MEDIA_*, older READ_EXTERNAL_STORAGE). Ask only when the user is
-      // actually looking at the Vault, never at launch or in the background.
-      if (engine?.requestMediaPermission && currentTab === 'vault') {
-        try {
-          const perm = await engine.requestMediaPermission();
-          if (perm && perm.granted === false) showToast('Vault permission', 'Allow media access so DOWNI can list your downloads.', 'info');
-        } catch (e) {}
-      }
-      if (engine?.listMedia) {
-        if (grid && vaultItems.length === 0) { vaultCardRegistry.clear(); grid.innerHTML = '<div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div><div class="skel h-44"></div>'; }
-        Promise.all([
-          engine.listMedia().then(res => {
-            const videos = (res.videos || []).map(v => ({ ...v, kind: 'video' }));
-            const audios = (res.audios || []).map(a => ({ ...a, kind: 'audio' }));
-            return [...videos, ...audios];
-          }).catch(() => []),
-          engine.listCustomFiles ? engine.listCustomFiles().then(res => (res.files || [])).catch(() => []) : Promise.resolve([])
-        ]).then(([media, custom]) => {
-          // Custom-folder files that got media-scanned already appear as
-          // MediaStore items above — hide those duplicates.
-          const seen = new Set(media.map(m => (m.name || '').toLowerCase() + ':' + m.size));
-          const customOnly = custom.filter(f => !seen.has((f.name || '').toLowerCase() + ':' + f.size));
-          const merged = [...media, ...customOnly.map(f => ({ ...f, kind: 'custom', dateModified: Math.floor((f.modified || 0) / 1000) }))];
-          // No-op refresh detection (v3.1.0): when nothing actually changed (same
-          // items, same sizes, same dates) skip the render entirely — post-download,
-          // rescan and tab-reopen refreshes then never touch the grid at all.
-          const signature = merged.map(i => vaultKeyOf(i) + ':' + (i.size || 0) + ':' + (i.dateModified || 0)).join('|');
-          if (signature === lastVaultSignature) { updateVaultStats(); return; }
-          lastVaultSignature = signature;
-          vaultItems = merged;
-          updateVaultStats();
-          renderVaultGrid();
-        });
-      } else {
-        vaultItems = [];
-        renderVaultGrid();
-      }
-    }
-
-    // ================= Vault live-refresh (v3.1.1, defect VA) =================
-    let vaultLiveTimer = null;
-    function refreshVaultSilently() {
-      // Quiet re-read of the file list: no permission prompt, no skeletons, no toast.
-      // refreshVault()'s signature no-op + renderVaultGrid()'s keyed reconciliation are
-      // reused as-is, so mounted cards (and their decoded thumbnails) stay put and only
-      // a genuinely new arrival animates — the grid never blinks or loses scroll.
-      if (currentTab !== 'vault' || document.hidden) return;
-      const engine = getEngine();
-      if (!engine?.listMedia) return;
-      Promise.all([
-        engine.listMedia().then(res => {
-          const videos = (res.videos || []).map(v => ({ ...v, kind: 'video' }));
-          const audios = (res.audios || []).map(a => ({ ...a, kind: 'audio' }));
-          return [...videos, ...audios];
-        }).catch(() => null),
-        engine.listCustomFiles ? engine.listCustomFiles().then(res => (res.files || [])).catch(() => null) : Promise.resolve([])
-      ]).then(([media, custom]) => {
-        if (!media || currentTab !== 'vault') return; // read failed → keep the grid as-is
-        const seen = new Set(media.map(m => (m.name || '').toLowerCase() + ':' + m.size));
-        const customOnly = (custom || []).filter(f => !seen.has((f.name || '').toLowerCase() + ':' + f.size));
-        const merged = [...media, ...customOnly.map(f => ({ ...f, kind: 'custom', dateModified: Math.floor((f.modified || 0) / 1000) }))];
-        const signature = merged.map(i => vaultKeyOf(i) + ':' + (i.size || 0) + ':' + (i.dateModified || 0)).join('|');
-        if (signature === lastVaultSignature) return; // nothing new → grid untouched
-        lastVaultSignature = signature;
-        vaultItems = merged;
-        updateVaultStats();
-        renderVaultGrid();
-      });
-    }
-    // 2 s poll — ONLY while the user is looking at the Vault AND a grab is live (VA).
-    function syncVaultLivePolling() {
-      const live = activeJobs.size > 0 || bgJobs.size > 0;
-      const shouldRun = currentTab === 'vault' && live && !document.hidden;
-      if (shouldRun && !vaultLiveTimer) vaultLiveTimer = setInterval(refreshVaultSilently, 2000);
-      else if (!shouldRun && vaultLiveTimer) { clearInterval(vaultLiveTimer); vaultLiveTimer = null; }
-    }
-    // MediaStore indexes a finished file a beat after DOWNI writes it — re-check twice
-    // after a save so the arrival still appears if the live poll has already stopped.
-    function nudgeVaultAfterSave() {
-      if (currentTab !== 'vault') return;
-      setTimeout(refreshVaultSilently, 2500);
-      setTimeout(refreshVaultSilently, 6000);
-    }
-
-    function filteredVaultItems() {
-      let items = vaultItems;
-      if (vaultFilter === 'video') items = items.filter(i => i.isVideo);
-      if (vaultFilter === 'audio') items = items.filter(i => !i.isVideo);
-      const q = (vaultSearch || '').trim().toLowerCase();
-      if (q) items = items.filter(i => (i.name || '').toLowerCase().includes(q));
-      const sorted = [...items];
-      if (vaultSort === 'size') sorted.sort((a, b) => (b.size || 0) - (a.size || 0));
-      else if (vaultSort === 'name') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      else sorted.sort((a, b) => (b.dateModified || 0) - (a.dateModified || 0));
-      return sorted;
-    }
-
-    // 200ms debounce — a render per keystroke used to hammer the grid mid-typing.
-    let vaultSearchTimer = null;
-    function onVaultSearch(value) {
-      clearTimeout(vaultSearchTimer);
-      vaultSearchTimer = setTimeout(() => {
-        vaultSearch = value || '';
-        renderVaultGrid();
-      }, 200);
-    }
-    function onVaultSort(value) {
-      vaultSort = value || 'new';
-      renderVaultGrid();
-    }
-    function toggleVaultLayout() {
-      vaultLayout = vaultLayout === 'grid' ? 'list' : 'grid';
-      const btn = document.getElementById('btnVaultLayout');
-      if (btn) btn.innerText = vaultLayout === 'grid' ? 'List' : 'Grid';
-      renderVaultGrid();
-    }
-
-    function updateVaultStats() {
-      const total = vaultItems.reduce((sum, i) => sum + (i.size || 0), 0);
-      const videoBytes = vaultItems.filter(i => i.isVideo).reduce((sum, i) => sum + (i.size || 0), 0);
-      const countEl = document.getElementById('vaultCountText');
-      if (countEl) countEl.innerText = `${vaultItems.length} item${vaultItems.length === 1 ? '' : 's'} · ${formatBytesJs(total)}`;
-      const textEl = document.getElementById('vaultStorageText');
-      if (textEl) {
-        if (total > 0) {
-          const pct = Math.round((videoBytes / total) * 100);
-          textEl.innerText = `🎬 ${formatBytesJs(videoBytes)} (${pct}%) · 🎵 ${formatBytesJs(total - videoBytes)} (${100 - pct}%)`;
-        } else {
-          textEl.innerText = 'Only your DOWNI downloads';
-        }
-      }
-    }
-
-    function vaultKeyOf(item) {
-      return item.kind === 'custom' ? 'c:' + item.uri : ((item.isVideo ? 'v' : 'a') + item.id);
-    }
-    function toggleVaultSelection(key) {
-      const wasSelecting = vaultSelection.size > 0;
-      if (vaultSelection.has(key)) vaultSelection.delete(key); else vaultSelection.add(key);
-      updateVaultSelectionBar();
-      const isSelecting = vaultSelection.size > 0;
-      if (wasSelecting !== isSelecting) {
-        // Entering/leaving selection mode changes card STRUCTURE (dots, action
-        // buttons) — rebuild, reusing decoded thumbnails (still no blink).
-        renderVaultGrid();
-      } else {
-        // One card toggled inside selection mode — flip it in place, no re-render.
-        updateVaultCardSelection(key);
-      }
-    }
-
-    function updateVaultCardSelection(key) {
-      const el = vaultCardRegistry.get(key);
-      if (!el) { renderVaultGrid(); return; }
-      const selected = vaultSelection.has(key);
-      el.classList.toggle('card-accent', selected);
-      const dot = el.querySelector('[data-sel-dot]');
-      if (dot) {
-        dot.style.background = selected ? 'var(--accent)' : 'rgba(0,0,0,.55)';
-        dot.style.border = selected ? 'none' : '1.5px solid rgba(255,255,255,.5)';
-        dot.style.color = selected ? '#04121C' : 'transparent';
-      }
-      const img = el.querySelector('img');
-      if (img && vaultLayout !== 'list') img.classList.toggle('opacity-60', selected);
-    }
-    function clearVaultSelection() {
-      vaultSelection.clear();
-      updateVaultSelectionBar();
-      renderVaultGrid();
-    }
-    function updateVaultSelectionBar() {
-      const bar = document.getElementById('vaultSelectionBar');
-      const count = document.getElementById('vaultSelCount');
-      if (!bar) return;
-      if (vaultSelection.size > 0) {
-        bar.classList.remove('hidden');
-        if (count) count.innerText = vaultSelection.size + ' selected';
-      } else {
-        bar.classList.add('hidden');
-      }
-    }
-    function selectedVaultItems() {
-      return vaultItems.filter(i => vaultSelection.has(vaultKeyOf(i)));
-    }
-    function bulkShareVault() {
-      const engine = getEngine();
-      const picked = selectedVaultItems();
-      if (!picked.length) { clearVaultSelection(); return; }
-      const custom = picked.filter(i => i.kind === 'custom');
-      if (custom.length === picked.length) {
-        custom.forEach(i => engine?.shareCustomFile?.({ uri: i.uri, mime: i.mime || 'video/mp4' }));
-      } else {
-        const videoIds = picked.filter(i => i.kind !== 'custom' && i.isVideo).map(i => i.id);
-        const audioIds = picked.filter(i => i.kind !== 'custom' && !i.isVideo).map(i => i.id);
-        if (engine?.shareMediaBatch && (videoIds.length + audioIds.length) > 0) {
-          engine.shareMediaBatch({ videoIds: videoIds, audioIds: audioIds })
-            .catch(() => showToast('Cannot share', 'Sharing failed.', 'error'));
-        } else if (picked[0].kind !== 'custom') {
-          shareVaultMedia(picked[0].id, picked[0].isVideo);
-        }
-      }
-      clearVaultSelection();
-    }
-    function bulkDeleteVault() {
-      const engine = getEngine();
-      const picked = selectedVaultItems();
-      if (!picked.length) { clearVaultSelection(); return; }
-      const custom = picked.filter(i => i.kind === 'custom');
-      const videoIds = picked.filter(i => i.kind !== 'custom' && i.isVideo).map(i => i.id);
-      const audioIds = picked.filter(i => i.kind !== 'custom' && !i.isVideo).map(i => i.id);
-      custom.forEach(i => engine?.deleteCustomFile?.({ uri: i.uri }).catch(() => {}));
-      if (engine?.deleteMediaBatch && (videoIds.length + audioIds.length) > 0) {
-        engine.deleteMediaBatch({ videoIds: videoIds, audioIds: audioIds })
-          .then(() => showToast('Confirm in the dialog', 'Approve the delete request Android shows.', 'info'))
-          .catch(() => showToast('Cannot delete', 'Storage refused.', 'error'));
-      } else if (videoIds.length || audioIds.length) {
-        const first = picked.find(i => i.kind !== 'custom');
-        if (first) deleteVaultMedia(first.id, first.isVideo);
-      }
-      clearVaultSelection();
-      setTimeout(refreshVault, 1600);
-    }
-
-    function setupVaultLongPress() {
-      const grid = document.getElementById('vaultMediaGrid');
-      if (!grid || grid.dataset.lpReady) return;
-      grid.dataset.lpReady = '1';
-      let timer = null, startX = 0, startY = 0;
-      grid.addEventListener('touchstart', (e) => {
-        const card = e.target.closest('[data-vault-key]');
-        if (!card) return;
-        startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-        timer = setTimeout(() => {
-          timer = null;
-          triggerHaptic('medium');
-          toggleVaultSelection(card.getAttribute('data-vault-key'));
-        }, 550);
-      }, { passive: true });
-      const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
-      grid.addEventListener('touchmove', (e) => {
-        if (timer && (Math.abs(e.touches[0].clientX - startX) > 10 || Math.abs(e.touches[0].clientY - startY) > 10)) cancel();
-      }, { passive: true });
-      grid.addEventListener('touchend', cancel);
-      grid.addEventListener('touchcancel', cancel);
-    }
-
-    // ================= Vault keyed-DOM rendering (v3.1.0) =================
-    // Root-cause fix for the Vault "blink". The old renderer rebuilt EVERY card
-    // with grid.innerHTML = items.map(...) on every interaction (search keystroke,
-    // selection toggle, sort, filter, delete, download complete). Each rebuild
-    // destroyed the <img> nodes, so the browser re-decoded every thumbnail → the
-    // visible flash. (v3.0.4 only stripped the entrance animation — the rebuild
-    // itself was untouched.) v3.1.0 keeps cards alive in a registry keyed by
-    // vaultKeyOf() and reconciles the grid: add / remove / move only, never
-    // destroy-and-recreate. Structural rebuilds (layout or selection-mode changes)
-    // MOVE the already-decoded <img> node into the new card — moving a node never
-    // triggers a re-decode, so those stay blink-free too.
-    let vaultGridHasAnimated = false;
-    const vaultCardRegistry = new Map(); // vaultKey → card element
-    let lastVaultSignature = null;       // content signature → no-op refreshes
-    let lastVaultMode = '';              // layout|selecting → structural rebuilds
-
-    // Build one card element from the existing HTML generators (design unchanged).
-    function buildVaultCard(item, selecting, oldEl, animate) {
-      const key = vaultKeyOf(item);
-      const selected = vaultSelection.has(key);
-      const html = vaultLayout === 'list' ? vaultRowHtml(item, key, selected, selecting)
-        : item.kind === 'custom' ? customCardHtml(item, key, selected, selecting)
-        : vaultCardHtml(item, key, selected, selecting);
-      const tpl = document.createElement('template');
-      tpl.innerHTML = html.trim();
-      const el = tpl.content.firstElementChild;
-      if (!el) return document.createElement('div');
-      if (oldEl) {
-        const oldImg = oldEl.querySelector('img');
-        if (oldImg) {
-          oldImg.classList.remove('fade-in');
-          const newImg = el.querySelector('img');
-          if (newImg) {
-            newImg.replaceWith(oldImg);
-          } else {
-            const holder = el.querySelector('.aspect-square') || el.querySelector('.w-14');
-            if (holder) {
-              const ph = holder.querySelector('.text-center');
-              if (ph) ph.remove();
-              holder.prepend(oldImg);
-            }
-          }
-          oldImg.classList.toggle('opacity-60', selecting && selected && vaultLayout !== 'list');
-        }
-      }
-      if (!animate) el.classList.remove('fade-in');
-      return el;
-    }
-
-    function renderVaultGrid() {
-      const grid = document.getElementById('vaultMediaGrid');
-      if (!grid) return;
-      ['vaultChipAll', 'vaultChipVideo', 'vaultChipAudio'].forEach(id => document.getElementById(id)?.classList.remove('on'));
-      document.getElementById({ all: 'vaultChipAll', video: 'vaultChipVideo', audio: 'vaultChipAudio' }[vaultFilter])?.classList.add('on');
-
-      const items = filteredVaultItems();
-      if (items.length === 0) {
-        vaultCardRegistry.clear();
-        const engine = getEngine();
-        if (!engine?.listMedia && downloadsHistory.length > 0) {
-          grid.innerHTML = downloadsHistory.slice(0, 6).map(item => `
-            <div class="card p-4 space-y-2">
-              <p class="text-[10px] font-mono text-accent">${escapeHtml(item.date)}</p>
-              <h4 class="text-[12px] font-bold text-white truncate">${escapeHtml(item.title)}</h4>
-              <p class="text-[10px] font-mono truncate" style="color:var(--muted)">${escapeHtml(item.destination)}</p>
-            </div>
-          `).join('');
-          return;
-        }
-        if (engine?.listMedia && downloadsHistory.length > 0) {
-          grid.innerHTML = `<div class="col-span-2 card p-6 text-center fade-in space-y-3">
-            <div class="text-3xl">📂</div>
-            <p class="text-[12px] font-bold text-white">Downloads saved — storage not showing them yet?</p>
-            <p class="text-[11px]" style="color:var(--muted)">Tap Rescan to re-index the DOWNI folders in Movies and Music. Files in your custom folder appear here automatically.</p>
-            <button onclick="rescanVaultStorage()" class="btn-hero px-5 py-3 text-[11px] font-extrabold">Rescan storage</button>
-          </div>`;
-          return;
-        }
-        grid.innerHTML = `<div class="col-span-2 card p-10 text-center fade-in">
-          <div class="text-3xl mb-2">🎬</div>
-          <p class="text-[12px] font-bold text-white">Nothing here yet</p>
-          <p class="text-[11px] mt-1" style="color:var(--muted)">Grabbed videos land in the Vault automatically.</p>
-        </div>`;
-        return;
-      }
-
-      const firstRender = !vaultGridHasAnimated;
-      grid.className = (vaultLayout === 'list' ? 'space-y-2.5' : 'grid grid-cols-2 gap-3') + (firstRender ? ' stagger' : '');
-      if (firstRender) vaultGridHasAnimated = true;
-      const selecting = vaultSelection.size > 0;
-
-      // Structural rebuild only when the layout or selection MODE changed.
-      const mode = vaultLayout + '|' + (selecting ? 'sel' : 'plain');
-      const structureChanged = mode !== lastVaultMode;
-      lastVaultMode = mode;
-
-      // Drop leftover non-card children (empty states, skeletons).
-      Array.from(grid.children).forEach(c => { if (!c.hasAttribute('data-vault-key')) c.remove(); });
-
-      // Remove cards whose item is gone (delete / filter / search).
-      const newKeys = new Set(items.map(vaultKeyOf));
-      for (const [key, el] of vaultCardRegistry) {
-        if (!newKeys.has(key)) { el.remove(); vaultCardRegistry.delete(key); }
-      }
-
-      // Create missing cards, rebuild on structure change (reusing decoded
-      // thumbnails), then move every card to its sorted position. Existing cards
-      // are MOVED, never destroyed — no re-decode, no blink, scroll preserved.
-      items.forEach((item, index) => {
-        const key = vaultKeyOf(item);
-        const oldEl = vaultCardRegistry.get(key);
-        let el = oldEl;
-        if (!el || structureChanged) {
-          // A genuinely NEW card (download just finished) gets the fade-in all to
-          // itself; everything else renders silently.
-          const isNewArrival = !el && !firstRender && !structureChanged;
-          el = buildVaultCard(item, selecting, oldEl, firstRender || isNewArrival);
-          vaultCardRegistry.set(key, el);
-          // Structure rebuild: swap the old card out of the DOM (its decoded
-          // thumbnail was already moved into the new card inside buildVaultCard).
-          if (oldEl && oldEl.parentNode === grid) oldEl.replaceWith(el);
-        }
-        if (grid.children[index] !== el) grid.insertBefore(el, grid.children[index] || null);
-      });
-
-      items.forEach(item => {
-        if (item.kind === 'custom') return;
-        const key = vaultKeyOf(item);
-        if (vaultThumbCache[key] !== undefined) return;
-        vaultThumbCache[key] = '';
-        const engine = getEngine();
-        if (engine?.getThumbnail) {
-          engine.getThumbnail({ id: item.id, isVideo: item.isVideo }).then(res => {
-            if (res && res.data) {
-              vaultThumbCache[key] = res.data;
-              // Update just this card in place — a full renderVaultGrid() here
-              // replayed every card's entrance animation once per thumbnail, which
-              // made the whole Vault blink while thumbnails streamed in (found
-              // on-device: "why is it blinking?").
-              applyVaultThumb(key, res.data);
-            }
-          }).catch(() => {});
-        }
-      });
-    function applyVaultThumb(key, data) {
-      // In-place thumbnail update for one card (no grid re-render, so no blink and
-      // no lost scroll position). Finds the card by its data-vault-key.
-      const grid = document.getElementById('vaultMediaGrid');
-      if (!grid) return;
-      const card = Array.from(grid.querySelectorAll('[data-vault-key]'))
-        .find(el => el.dataset.vaultKey === key);
-      if (!card) return;
-      const holder = card.querySelector('.aspect-square');
-      if (!holder) return;
-      let img = holder.querySelector('img.vault-thumb');
-      if (!img) {
-        img = document.createElement('img');
-        img.className = 'vault-thumb w-full h-full object-cover fade-in';
-        holder.prepend(img);
-        const ph = holder.querySelector('.text-center');
-        if (ph) ph.remove();
-      }
-      img.src = 'data:image/jpeg;base64,' + data;
-    }
-
-    }
-
-    function vaultTap(encodedKey) {
-      toggleVaultSelection(decodeURIComponent(encodedKey));
-    }
-
-    function selectionDot(selected) {
-      return `<span data-sel-dot class="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black" style="${selected ? 'background:var(--accent);color:#04121C' : 'background:rgba(0,0,0,.55);border:1.5px solid rgba(255,255,255,.5);color:transparent'}">✓</span>`;
-    }
-
-    function vaultCardHtml(item, key, selected, selecting) {
-      const thumb = vaultThumbCache[key];
-      const dateStr = item.dateModified ? new Date(item.dateModified * 1000).toLocaleDateString() : '';
-      const encodedKey = encodeURIComponent(key);
-      if (selecting) {
-        return `
-        <div class="card overflow-hidden fade-in ${selected ? 'card-accent' : ''}" data-vault-key="${key}" onclick="vaultTap('${encodedKey}')">
-          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
-            ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover ${selected ? 'opacity-60' : ''}">` : `
-              <div class="text-center"><div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
-              <p class="text-[8px] font-mono" style="color:var(--muted)">${item.isVideo ? 'VIDEO' : 'AUDIO'}</p></div>`}
-            ${selectionDot(selected)}
-          </div>
-          <div class="p-3"><h4 class="text-[11px] font-bold text-white truncate">${escapeHtml(item.name)}</h4></div>
-        </div>`;
-      }
-      return `
-        <div class="card overflow-hidden fade-in" data-vault-key="${key}">
-          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
-            ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover">` : `
-              <div class="text-center"><div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
-              <p class="text-[8px] font-mono" style="color:var(--muted)">${item.isVideo ? 'VIDEO' : 'AUDIO'}</p></div>`}
-            <div class="absolute inset-x-0 bottom-0 h-10" style="background:linear-gradient(to top, rgba(0,0,0,.65), transparent)"></div>
-            <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 active:opacity-100 transition">
-              <span class="w-12 h-12 rounded-full btn-hero flex items-center justify-center">
-                <svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg>
-              </span>
-            </button>
-          </div>
-          <div class="p-3 space-y-1">
-            <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
-            <p class="text-[10px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${dateStr ? ' · ' + dateStr : ''}${item.folder ? ' · ' + escapeHtml(item.folder) : ''}</p>
-            <div class="flex flex-wrap gap-1.5 pt-1.5">
-              <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn w-full py-1.5 text-[10px] font-bold text-white">Play</button>
-              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn btn-icon px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
-              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn btn-icon px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-            </div>
-          </div>
-        </div>`;
-    }
-
-    function vaultRowHtml(item, key, selected, selecting) {
-      const thumb = vaultThumbCache[key];
-      const encodedKey = encodeURIComponent(key);
-      const isCustom = item.kind === 'custom';
-      const tapAttr = selecting ? `onclick="vaultTap('${encodedKey}')"` : '';
-      return `
-        <div class="card p-2.5 flex items-center gap-3 fade-in ${selected ? 'card-accent' : ''}" data-vault-key="${key}" ${tapAttr}>
-          <div class="w-14 h-14 rounded-xl bg-black/50 overflow-hidden flex items-center justify-center flex-shrink-0 relative">
-            ${thumb ? `<img src="data:image/jpeg;base64,${thumb}" class="w-full h-full object-cover">` : `<span class="text-lg">${item.isVideo ? '🎬' : '🎵'}</span>`}
-            ${selecting ? selectionDot(selected) : ''}
-          </div>
-          <div class="min-w-0 flex-1">
-            <h4 class="text-[12px] font-bold text-white truncate">${escapeHtml(item.name)}</h4>
-            <p class="text-[10px] font-mono mt-0.5" style="color:var(--muted)">${formatBytesJs(item.size)}${isCustom ? ' · custom folder' : (item.folder ? ' · ' + escapeHtml(item.folder) : '')}</p>
-          </div>
-          ${selecting ? '' : (isCustom ? `
-            <div class="flex items-center gap-1.5 flex-shrink-0">
-              <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn px-2.5 py-1.5 text-[10px] font-bold text-white">Open</button>
-              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn btn-icon px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-            </div>` : `
-            <div class="flex items-center gap-1.5 flex-shrink-0">
-              <button onclick="playVaultMedia(${item.id}, ${item.isVideo})" class="btn px-2.5 py-1.5 text-[10px] font-bold text-white">Play</button>
-              <button onclick="shareVaultMedia(${item.id}, ${item.isVideo})" class="btn btn-icon px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
-              <button onclick="deleteVaultMedia(${item.id}, ${item.isVideo})" class="btn btn-icon px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-            </div>`)}
-        </div>`;
-    }
-    function customCardHtml(item, key, selected, selecting) {
-      const encodedKey = encodeURIComponent(key);
-      if (selecting) {
-        return `
-        <div class="card overflow-hidden fade-in ${selected ? 'card-accent' : ''}" data-vault-key="${key}" onclick="vaultTap('${encodedKey}')">
-          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
-            <div class="text-center">
-              <div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
-              <p class="text-[8px] font-mono" style="color:var(--muted)">CUSTOM FOLDER</p>
-            </div>
-            ${selectionDot(selected)}
-          </div>
-          <div class="p-3"><h4 class="text-[11px] font-bold text-white truncate">${escapeHtml(item.name)}</h4></div>
-        </div>`;
-      }
-      return `
-        <div class="card overflow-hidden fade-in" data-vault-key="${key}">
-          <div class="aspect-square bg-black/50 relative flex items-center justify-center overflow-hidden">
-            <div class="text-center">
-              <div class="text-2xl mb-1">${item.isVideo ? '🎬' : '🎵'}</div>
-              <p class="text-[8px] font-mono" style="color:var(--muted)">CUSTOM FOLDER</p>
-            </div>
-            <div class="absolute inset-x-0 bottom-0 h-10" style="background:linear-gradient(to top, rgba(0,0,0,.65), transparent)"></div>
-          </div>
-          <div class="p-3 space-y-1">
-            <h4 class="text-[11px] font-bold text-white truncate" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
-            <p class="text-[10px] font-mono truncate" style="color:var(--muted)">${formatBytesJs(item.size)}${item.modified ? ' · ' + new Date(item.modified).toLocaleDateString() : ''}</p>
-            <div class="flex flex-wrap gap-1.5 pt-1.5">
-              <button onclick="customVaultAction('${encodedKey}', 'open')" class="btn w-full py-1.5 text-[10px] font-bold text-white">Open</button>
-              <button onclick="customVaultAction('${encodedKey}', 'share')" class="btn btn-icon px-2.5 py-1.5 text-[10px] text-accent font-bold inline-flex items-center"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
-              <button onclick="customVaultAction('${encodedKey}', 'delete')" class="btn btn-icon px-2.5 py-1.5 text-[10px] font-bold inline-flex items-center" style="color:var(--bad)"><svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-            </div>
-          </div>
-        </div>`;
-    }
-
-    function customVaultAction(encodedKey, action) {
-      const key = decodeURIComponent(encodedKey);
-      const item = vaultItems.find(i => vaultKeyOf(i) === key);
-      if (!item || !item.uri) return;
-      const uri = item.uri;
-      const engine = getEngine();
-      if (!engine) return;
-      const mime = item.mime || (item.isVideo ? 'video/mp4' : 'audio/mp4');
-      if (action === 'open') {
-        engine.openCustomFile?.({ uri: uri, mime: mime })
-          .catch(e => showToast('Cannot open', (e && e.message) || 'No player found.', 'error'));
-      } else if (action === 'share') {
-        engine.shareCustomFile?.({ uri: uri, mime: mime })
-          .catch(() => showToast('Cannot share', 'Sharing failed.', 'error'));
-      } else if (action === 'delete') {
-        engine.deleteCustomFile?.({ uri: uri })
-          .then(() => { showToast('Deleted', item.name, 'success'); refreshVault(); })
-          .catch(() => showToast('Cannot delete', 'Storage refused.', 'error'));
-      }
-    }
-
-    function rescanVaultStorage() {
-      const engine = getEngine();
-      if (!engine?.rescanStorage) { refreshVault(); return; }
-      showToast('Scanning', 'Re-indexing Movies, Music and Downloads…', 'info');
-      engine.rescanStorage().then(() => setTimeout(refreshVault, 2500)).catch(() => refreshVault());
-    }
-
-    // ================= Vault in-app player =================
-    let playerQueue = [];      // snapshot of the vault list being played
-    let playerIndex = 0;
-    let playerMeta = null;     // { id, isVideo } of what's loaded
-
     function fmtClock(sec) {
       if (!isFinite(sec) || sec < 0) sec = 0;
       const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
       return m + ':' + (s < 10 ? '0' : '') + s;
     }
-
-    async function playVaultMedia(id, isVideo) {
-      const engine = getEngine();
-      playerQueue = filteredVaultItems().length > 0 ? filteredVaultItems() : vaultItems;
-      playerIndex = playerQueue.findIndex(i => i.id === id && i.isVideo === isVideo);
-      if (playerIndex < 0) {
-        playerQueue = vaultItems;
-        playerIndex = playerQueue.findIndex(i => i.id === id && i.isVideo === isVideo);
-      }
-      if (!engine?.getMediaStreamUrl) {
-        // Older native build without the player bridge → external fallback.
-        const res = engine?.openMedia?.({ id: id, isVideo: isVideo });
-        if (res && res.catch) res.catch(err => showToast('Cannot play', err?.message || 'No player found', 'error'));
-        return;
-      }
-      try {
-        const res = await engine.getMediaStreamUrl({ id: id, isVideo: isVideo });
-        openPlayerWith(res.url, id, isVideo);
-      } catch (e) {
-        showToast('Cannot play', e?.message || 'Player failed to start', 'error');
-      }
-    }
-
-    function openPlayerWith(url, id, isVideo) {
-      playerMeta = { id: id, isVideo: isVideo };
-      const item = playerQueue[playerIndex] || {};
-      document.getElementById('playerTitle').innerText = item.name || 'Media';
-      const v = document.getElementById('playerVideo');
-      setupPlayerGestures(v);
-      setupPlayerSwipe();
-      v.src = url;
-      document.getElementById('playerModal').classList.remove('hidden');
-      document.getElementById('playerModal').classList.remove('controls-hidden');
-      v.playbackRate = 1;
-      const sp = document.getElementById('btnPlayerSpeed');
-      if (sp) sp.innerText = '1×';
-      v.play().catch(() => {});
-    }
-
-    // ---- Player 2.0: double-tap seek, speed, remember position, swipe-down ----
-    const PLAYER_SPEEDS = [1, 1.25, 1.5, 2, 0.5];
-
-    function cyclePlayerSpeed() {
-      const v = document.getElementById('playerVideo');
-      const btn = document.getElementById('btnPlayerSpeed');
-      const current = parseFloat(v.playbackRate) || 1;
-      const idx = PLAYER_SPEEDS.indexOf(current);
-      const next = PLAYER_SPEEDS[(idx + 1) % PLAYER_SPEEDS.length];
-      v.playbackRate = next;
-      if (btn) btn.innerText = next + '×';
-      triggerHaptic('light');
-    }
-
-    function showPlayerRipple(text) {
-      const box = document.getElementById('playerRipple');
-      const t = document.getElementById('playerRippleText');
-      if (!box || !t) return;
-      t.innerText = text;
-      box.style.opacity = '1';
-      clearTimeout(box._rippleTimer);
-      box._rippleTimer = setTimeout(() => { box.style.opacity = '0'; }, 450);
-    }
-
-    function playerPositionKey() {
-      return playerMeta ? ('pos_' + (playerMeta.isVideo ? 'v' : 'a') + playerMeta.id) : null;
-    }
-    function savePlayerPosition() {
-      const v = document.getElementById('playerVideo');
-      const key = playerPositionKey();
-      if (!key || !v || !v.duration || v.currentTime < 5) return;
-      try {
-        if (v.duration - v.currentTime < 10) storeDel(key);
-        else storeSet(key, String(Math.floor(v.currentTime)));
-      } catch (e) {}
-    }
-    function restorePlayerPosition(v) {
-      const key = playerPositionKey();
-      if (!key || !v.duration) return;
-      try {
-        const saved = parseInt(storeGet(key) || '0', 10);
-        if (saved > 5 && saved < v.duration - 10) {
-          v.currentTime = saved;
-          showToast('Resumed', 'Continuing from ' + fmtClock(saved), 'info');
-        }
-      } catch (e) {}
-    }
-
-    function setupPlayerGestures(v) {
-      if (v.dataset.gestures) return;
-      v.dataset.gestures = '1';
-      v.addEventListener('loadedmetadata', () => { restorePlayerPosition(v); updatePlayerUi(); });
-      v.addEventListener('pause', savePlayerPosition);
-      v.addEventListener('ended', () => {
-        const key = playerPositionKey();
-        if (key) { try { storeDel(key); } catch (e) {} }
-      });
-      let lastTap = 0, singleTimer = null;
-      v.addEventListener('click', (e) => {
-        const now = Date.now();
-        const rect = v.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        if (now - lastTap < 300) {
-          clearTimeout(singleTimer);
-          const dir = x < rect.width / 2 ? -10 : 10;
-          skipPlayer(dir);
-          showPlayerRipple(dir > 0 ? '+10s' : '−10s');
-          triggerHaptic('light');
-        } else {
-          singleTimer = setTimeout(togglePlayerControls, 260);
-        }
-        lastTap = now;
-      });
-    }
-
-    function togglePlayerControls() {
-      document.getElementById('playerModal')?.classList.toggle('controls-hidden');
-    }
-
-    function setupPlayerSwipe() {
-      const modal = document.getElementById('playerModal');
-      if (!modal || modal.dataset.swipeReady) return;
-      modal.dataset.swipeReady = '1';
-      let y0 = 0, dy = 0, active = false;
-      modal.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; dy = 0; active = true; }, { passive: true });
-      modal.addEventListener('touchmove', (e) => {
-        if (!active) return;
-        dy = e.touches[0].clientY - y0;
-        if (dy > 0) modal.style.transform = `translateY(${dy}px)`;
-      }, { passive: true });
-      modal.addEventListener('touchend', () => {
-        active = false;
-        modal.style.transform = '';
-        if (dy > 120) closePlayer();
-      });
-    }
-
-    function updatePlayerUi() {
-      const v = document.getElementById('playerVideo');
-      const fill = document.getElementById('playerSeek')?.firstElementChild;
-      if (fill) fill.style.width = (v.duration ? (v.currentTime / v.duration) * 100 : 0) + '%';
-      const t = document.getElementById('playerTime'), d = document.getElementById('playerDur');
-      if (t) t.innerText = fmtClock(v.currentTime);
-      if (d) d.innerText = fmtClock(v.duration);
-    }
-    function updatePlayBtn() {
-      const v = document.getElementById('playerVideo');
-      const btn = document.getElementById('playerPlayBtn');
-      if (btn) btn.innerHTML = v.paused
-        ? '<svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M7 4.5v15l13-7.5-13-7.5z"/></svg>'
-        : '<svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M7 4.5h4v15H7zM13 4.5h4v15h-4z"/></svg>';
-    }
-    function togglePlay() {
-      const v = document.getElementById('playerVideo');
-      if (v.paused) v.play().catch(() => {}); else v.pause();
-    }
-    function skipPlayer(delta) {
-      const v = document.getElementById('playerVideo');
-      v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + delta));
-    }
-    function seekPlayer(ev) {
-      const v = document.getElementById('playerVideo');
-      const track = ev.currentTarget.getBoundingClientRect();
-      const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - track.left;
-      if (v.duration) v.currentTime = Math.max(0, Math.min(1, x / track.width)) * v.duration;
-    }
-    function playerNext() { stepPlayer(1); }
-    function playerPrev() { stepPlayer(-1); }
-    async function stepPlayer(dir) {
-      if (!playerQueue.length) return;
-      playerIndex = (playerIndex + dir + playerQueue.length) % playerQueue.length;
-      const item = playerQueue[playerIndex];
-      const engine = getEngine();
-      if (!engine?.getMediaStreamUrl) return;
-      try {
-        const res = await engine.getMediaStreamUrl({ id: item.id, isVideo: item.isVideo });
-        openPlayerWith(res.url, item.id, item.isVideo);
-      } catch (e) {
-        showToast('Cannot play', e?.message || 'Player failed to start', 'error');
-      }
-    }
-    function closePlayer() {
-      const v = document.getElementById('playerVideo');
-      savePlayerPosition();
-      v.pause();
-      v.removeAttribute('src');
-      v.load();
-      playerMeta = null;
-      document.getElementById('playerModal').classList.add('hidden');
-    }
-    function openExternalPlayer() {
-      if (!playerMeta) return;
-      const res = getEngine()?.openMedia?.({ id: playerMeta.id, isVideo: playerMeta.isVideo });
-      if (res && res.catch) res.catch(err => showToast('Cannot open', err?.message || 'No app found', 'error'));
-    }
-
-    function shareVaultMedia(id, isVideo) {
-      const engine = getEngine();
-      const res = engine?.shareMedia?.({ id: id, isVideo: isVideo });
-      if (res && res.catch) res.catch(err => showToast('Cannot share', err?.message || 'Sharing failed', 'error'));
-    }
-    function deleteVaultMedia(id, isVideo) {
-      const engine = getEngine();
-      if (!engine?.deleteMedia) return;
-      engine.deleteMedia({ id: id, isVideo: isVideo })
-        .then(() => {
-          showToast('Delete requested', 'Confirm it in the system dialog.', 'info');
-          setTimeout(refreshVault, 1200);
-        })
-        .catch(() => showToast('Cannot delete', 'Storage refused.', 'error'));
-    }
-    function handleOpenSystemGallery() { getEngine()?.openGallery?.(); }
-
     // ================= Updater =================
     async function getInstalledVersionInfo() {
       const engine = getEngine();
@@ -3084,7 +2024,7 @@
     // via DowniEngine.syncDropSettings.
     // v3.1.1 (owner ruling): the Instant / Ask-quality toggle is GONE — Share → DOWNI
     // always grabs instantly in the background (the v2.6.4 promise). The Inspector stays
-    // for the in-app paste / Vortex flows, never for a share.
+    // for the in-app paste flow, never for a share.
 
     function collectQualityMemory() {
       const out = {};
@@ -3259,13 +2199,8 @@
       refreshSaveLocationLabel();
       consumeOpenQueueRequest();   // v3.1.1: notification tap → Queue (N7)
       checkNotificationHint();     // v3.1.1: warn once if notifications are off (N6)
-      // Wave 4 (2026-09-28): the phone may have switched the Fetcher off since the last run — say so
-      // on the Grab screen instead of letting a tap that does nothing be the discovery.
-      setTimeout(refreshFetcherState, 1500);
       applyAccent();
       applyAmoled();
-      setupVaultLongPress();
-      updateVaultSelectionBar();
       handleSharedIntent();
 
       // Restore the clipboard toggle's real state — the checkbox used to render
@@ -3278,15 +2213,6 @@
       // gone — shares always grab instantly — so sweep its dead preference once.
       storeDel('drop_mode');
       syncDropSettings();
-
-      const pv = document.getElementById('playerVideo');
-      if (pv) {
-        pv.addEventListener('timeupdate', updatePlayerUi);
-        pv.addEventListener('durationchange', updatePlayerUi);
-        pv.addEventListener('play', updatePlayBtn);
-        pv.addEventListener('pause', updatePlayBtn);
-        pv.addEventListener('ended', () => playerNext());
-      }
 
       getInstalledVersionInfo().then(local => {
         const shortVer = 'v' + String(local.versionName).replace(/^v/i, '').split('.').slice(0, 2).join('.');
@@ -3308,8 +2234,6 @@
         syncBgPolling(); // v3.1.1: background grabs are polled only while the app is visible
         if (!document.hidden) syncGrabLedger(); // N9: headless grabs recorded while we were away
         consumeOpenQueueRequest();
-        if (!document.hidden && currentTab === 'vault') refreshVaultSilently(); // VA: resume lands on a fresh grid
-        syncVaultLivePolling();
       });
       syncBgPolling();
 
@@ -3329,171 +2253,6 @@
       // handleSharedIntent() — a second registration here double-opened the
       // Inspector for every share (B9).
     });
-  
-    // ---------- DOWNI Fetcher settings card ----------
-    let fetcherState = { armed: false, canToggle: false };
-    async function loadFetcherCard() {
-      try {
-        const res = await getEngine()?.fetcherStatus();
-        if (!res) return;
-        fetcherState = res;
-        const badge = document.getElementById('fetcherBadge');
-        const btn = document.getElementById('fetcherToggleBtn');
-        const stats = document.getElementById('fetcherStats');
-        // Wave 4 (2026-09-28): four honest states, not two — `bound` is whether the service is
-        // actually running, `wasArmed` whether the user ever turned it on (so a user who never did
-        // is never nagged), and `recoverable` whether the app may write the binding itself.
-        if (res.armed && res.bound) { badge.textContent = 'ARMED'; badge.style.color = '#22D3EE'; }
-        else if (res.armed) { badge.textContent = 'ARMED · not running'; badge.style.color = '#FBBF24'; }
-        else if (res.wasArmed) { badge.textContent = 'OFF · re-armable'; badge.style.color = '#FB7185'; }
-        else { badge.textContent = 'OFF'; badge.style.color = '#FB7185'; }
-        if (res.armed) btn.textContent = 'Turn Fetcher off';
-        else if (res.wasArmed) btn.textContent = 'Re-arm the Fetcher';
-        else btn.textContent = 'Turn Fetcher on';
-        applyFetcherOffBanner(res);
-        const mb = (res.bytesToday / 1048576).toFixed(1);
-        stats.textContent = 'today: ' + res.grabsToday + ' grabs · ' + mb + ' MB'
-            + (res.pausedCount > 0 ? ' · ' + res.pausedCount + ' paused' : '')
-            + (res.canToggle ? '' : ' · toggle needs the adb grant');
-        // Wave 3: paused grabs are actionable here — one tap resumes every one of them.
-        const resumeAll = document.getElementById('fetcherResumeAll');
-        if (resumeAll) resumeAll.classList.toggle('hidden', !(res.pausedCount > 0));
-        // Wave 3: route health — the resolver's measured truth (session rates).
-        const routesEl = document.getElementById('fetcherRoutes');
-        if (routesEl) {
-          const routes = (res.routes && res.routes.length) ? res.routes : [];
-          if (routes.length) {
-            routesEl.classList.remove('hidden');
-            routesEl.innerHTML = routes.map(rt => {
-              const pct = Math.round((rt.rate >= 0 ? rt.rate : 0) * 100);
-              const color = rt.rate >= 0.6 ? '#34D399' : (rt.rate >= 0.3 ? '#FBBF24' : '#FB7185');
-              return '<div>' + rt.platform + ' · ' + rt.route + ': <span style="color:' + color + '">'
-                  + pct + '% (' + rt.samples + ')</span></div>';
-            }).join('');
-          } else { routesEl.classList.add('hidden'); routesEl.innerHTML = ''; }
-        }
-        document.querySelectorAll('#fetcherSizes button').forEach(b => {
-          const on = parseInt(b.textContent) === res.sizeDp;
-          b.style.borderColor = on ? 'var(--accent)' : 'rgba(255,255,255,0.06)';
-          b.style.color = on ? 'var(--accent)' : '';
-        });
-      } catch (e) {}
-    }
-    async function toggleFetcher() {
-      // Turning it back ON after the phone switched it off goes through the recovery path, which
-      // knows the difference between "no grant" and "the binding was wiped" (Wave 4).
-      if (!fetcherState.armed && fetcherState.recoverable) { await rearmFetcherFlow(); return; }
-      try {
-        const res = await getEngine()?.setFetcherEnabled({ enabled: !fetcherState.armed });
-        if (res && res.needsPermission) {
-          await openFetcherSettings();
-          alert('One-time setup - run once from a PC: adb shell pm grant com.omnidownloader.app android.permission.WRITE_SECURE_SETTINGS');
-        }
-      } catch (e) {}
-      loadFetcherCard();
-    }
-
-    // ---------- Wave 4: the Fetcher can be switched off behind our back ----------
-    // vivo's ABE clears the accessibility binding (measured: an app update did exactly that on
-    // 2026-09-28), and until this existed the app looked perfectly healthy while grabbing nothing.
-    // The banner appears only when the Fetcher WAS on and is now off — never as a nag to a user who
-    // has not turned it on, and never while it is working.
-    function applyFetcherOffBanner(res) {
-      const banner = document.getElementById('fetcherOffBanner');
-      if (!banner) return;
-      const off = !!(res && res.wasArmed && !res.armed);
-      banner.classList.toggle('hidden', !off);
-      if (!off) return;
-      const why = document.getElementById('fetcherOffWhy');
-      if (why) {
-        why.textContent = res.recoverable
-            ? 'Your phone turned it off — usually after an update. One tap puts it back.'
-            : 'Your phone turned it off. Open accessibility settings and switch DOWNI Fetcher on.';
-      }
-    }
-    async function refreshFetcherState() {
-      try {
-        const res = await getEngine()?.fetcherStatus();
-        if (!res) return;
-        fetcherState = res;
-        applyFetcherOffBanner(res);
-      } catch (e) {}
-    }
-    async function rearmFetcherFlow() {
-      try {
-        const res = await getEngine()?.rearmFetcher();
-        if (res && res.armed) {
-          showToast('Fetcher re-armed', 'The Core will appear over Instagram and TikTok again.', 'success');
-        } else {
-          await openFetcherSettings();
-          showToast('Switch it on', 'Turn on "DOWNI Fetcher" in the list that just opened, then come back.', 'info');
-        }
-      } catch (e) {}
-      await refreshFetcherState();
-      loadFetcherCard();
-    }
-    async function openFetcherSettings() {
-      try { await getEngine()?.openAccessibilitySettings(); } catch (e) {}
-    }
-
-    // ---------- Wave 5: the black box ----------
-    // Measured 2026-09-28: logcat returns nothing for a release build on this ROM, so a release
-    // install that "did nothing" left no evidence at all. The Fetcher now keeps its own last 50
-    // events, flushed to its own storage every few events and — the point of the exercise — carried
-    // over after a kill, with a SESSION_DIED_UNEXPECTEDLY marker when the previous run never stopped.
-    let blackboxCache = '';
-    async function loadBlackbox() {
-      try {
-        const res = await getEngine()?.fetcherBlackbox();
-        const pre = document.getElementById('blackboxText');
-        const meta = document.getElementById('blackboxMeta');
-        if (!res || !pre) return;
-        blackboxCache = (res.events || []).join('\n');
-        pre.textContent = blackboxCache || '(empty — the Fetcher has not seen an event yet)';
-        pre.classList.remove('hidden');
-        if (meta) {
-          meta.textContent = res.count + '/' + res.capacity + ' events · ' + res.dropped + ' aged out · '
-              + (res.live ? 'live service' : 'kept from the last session');
-        }
-      } catch (e) {}
-    }
-    async function copyBlackbox() {
-      try {
-        if (!blackboxCache) await loadBlackbox();
-        if (!blackboxCache) return;
-        const text = blackboxCache;
-        try {
-          await window.Capacitor?.Plugins?.Clipboard?.write({ string: text });
-        } catch (e) {
-          if (navigator.clipboard) await navigator.clipboard.writeText(text);
-        }
-        showToast('Copied', text.split('\n').length + ' events are on your clipboard.', 'success');
-      } catch (e) {}
-    }
-    async function exportBlackbox() {
-      try {
-        const res = await getEngine()?.exportBlackbox();
-        if (res && res.ok) showToast('Exported', 'fetch-spike/blackbox.txt · ' + res.count + ' events', 'success');
-        else showToast('Export failed', (res && res.error) || 'unknown', 'error');
-      } catch (e) {}
-    }
-    async function setCoreSize(dp) {
-      try { await getEngine()?.setCoreSize({ dp }); } catch (e) {}
-      loadFetcherCard();
-    }
-    async function resetCorePosition() {
-      try { await getEngine()?.resetCorePosition(); } catch (e) {}
-    }
-    async function resumeAllPausedGrabs() {
-      try {
-        const res = await getEngine()?.resumeAllPaused?.();
-        if (res) showToast('Resuming', (res.resumed || 0) + ' paused grab(s) continuing.', 'success');
-      } catch (e) {}
-      loadFetcherCard();
-    }
-    async function openBatterySettings() {
-      try { await getEngine()?.openBatterySettings(); } catch (e) {}
-    }
 </script>
 </body>
 </html>

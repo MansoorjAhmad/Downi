@@ -4,6 +4,32 @@
 Fill it in every time the extraction layer changes, and after any UI/wiring release like a
 hardship check. Mark ✅ / ❌ per cell.
 
+## 4. V3.5.0 — the scope reduction (2026-10-20)
+
+> **Not yet run.** Every cell below is ⏳ until the build has been on the vivo V2058. The §6 truth
+> re-checks are owed because removing a tab touches the counters, the badge, the ledger and the
+> notifications. Fill this in before the release is tagged — §9 does not allow calling anything
+> "fixed" that is not dated ✅ here.
+
+| # | Check | Expected | Evidence |
+|---|---|---|---|
+| 4-1 | The app opens, no crash | ⏳ | |
+| 4-2 | **No accessibility permission** in the app's info | ⏳ | Settings → Apps → DOWNI → Permissions: accessibility and media read must be absent |
+| 4-3 | A pasted link grabs | ⏳ | paste a YouTube link → Grab this link → pick a quality → the file lands in `Movies/` |
+| 4-4 | The file is in the gallery root, not a DOWNI subfolder | ⏳ | `adb shell ls /sdcard/Movies/` — the file must be at the top level |
+| 4-5 | Share → DOWNI still grabs in the background | ⏳ | share a TikTok to DOWNI → the toast, then the notification, then the file in `Movies/` |
+| 4-6 | The clipboard banner still offers ⚡ Grab | ⏳ | copy a link → the banner appears → ⚡ Grab starts it |
+| 4-7 | The success confetti still fires | ⏳ | it must burst from the DOWNI mark in the header, not from the old orb |
+| 4-8 | **§6 N8–N13 truth re-checks** | ⏳ | ACTIVE counts only running grabs; one grab = one notification row; the ledger is read on every state change; a terminal card clears after 20 s; no stale totals |
+| 4-9 | The Queue tab is honest | ⏳ | history persists across a restart; "Clear history" clears the ledger in the same breath |
+| 4-10 | Settings is four cards and they all work | ⏳ | accent, AMOLED, clipboard toggle, save location, clear cache, check-updates, engine health, diagnostics |
+| 4-11 | The updater still works | ⏳ | the version it reports matches the build, and the updater reads the GitHub feed |
+| 4-12 | No Vault, no Fetcher, no Shield anywhere in the UI | ⏳ | three tabs: Grab, Queue, Settings |
+| 4-13 | **Cleartext is blocked everywhere and downloads still work** | ⏳ | the `127.0.0.1` exception is gone from `network_security_config.xml`, so this row is the proof that nothing in the download path ever used plain HTTP: a YouTube, a TikTok and an Instagram grab must all still complete end to end. A failure here is a real defect, not a config detail |
+| 4-14 | **The Core's removal left nothing broken** | ⏳ | no crash on cold start and no missing-asset noise in `adb logcat`: the Lottie runtime and `assets/core/` are gone, so a screen still trying to draw an orb would fail loudly here |
+| 4-15 | The APK the device runs is the lean one | ⏳ | `adb shell dumpsys package com.omnidownloader.app \| grep versionName` → `3.5.0`; the installed size must be near **42.1 MB**, not 46.7 MB |
+| 4-16 | **One tab on screen at a time, one nav item lit** | ⏳ | tap Queue, then Settings, then back to Grab: each time only that screen is on screen and only that nav item is lit, and the page never grows into a stack of all three. A browser run found this broken and it is fixed; this row confirms it on the WebView the app actually runs, and `tools/_tabcheck.js` guards it from here on |
+
 ## 0. V3.3 Core 2.0 — M1 on-device render gate (the owner's sheet-C1 art)
 
 > Device pass **2026-09-27** — vivo V2058, build **48 / v3.2.0** (spike-signed). The Core is now the

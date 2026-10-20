@@ -18,6 +18,10 @@ tools/*
 !tools/*.cmd
 !tools/*.md
 !tools/*.json
+# A gate that CI runs has to be in the repo. `_tabcheck.js` checks that a tab switch clears the
+# view and the nav item it left behind - the failure a silent deletion produces, which gradle,
+# the JVM tests and `assembleDebug` cannot see (it cost v3.5.0 one defect, caught by hand).
+!tools/*.js
 # tools/harness holds the on-device measurement harnesses (scripts + README), the same kind of content
 # the rules above keep: a nested directory needs its own re-include, because `tools/*` excludes the
 # directory itself and git never descends into an excluded directory to apply `!tools/*.ps1`.

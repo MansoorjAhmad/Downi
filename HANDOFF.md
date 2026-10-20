@@ -1,6 +1,45 @@
 # DOWNI — Handoff Brief for a New Chat
 
-_Last updated: 2026-09-22 (after v3.0.2 / web v2.1.1). Read this first in a fresh session._
+_Updated 2026-10-20 (v3.5.0, the scope reduction). Read this first in a fresh session._
+
+---
+
+## 0. Read this first — v3.5.0 changed what the app IS
+
+**DOWNI is a downloader for YouTube, TikTok and Instagram. That is the whole product.** The Vault,
+the Fetcher and the Core were removed on 2026-10-20 after users said the app had grown too much
+around the thing it is actually for.
+
+**If you are about to add a feature, the test is: does it make DOWNI *download better*?** If it
+does not, it does not belong in the app. That is the precedent v3.5.0 set.
+
+**Why 3.5.0 and not 4.0.0.** The extraction layer did not change, so the version name follows the
+3.x line: less in the app, the same engine. Do not renumber it upward to make the removal look
+bigger than it was.
+
+**Still owed before v3.5.0 can ship:**
+
+1. **A device run on the vivo V2058.** The build compiles, the JS gate passes and the debug APK is
+   produced, but nothing has run on a real phone. `READ_THIS_BEFORE_UPGRADE.md` §6 truth
+   re-checks are owed: the counters, the Queue badge, the grab ledger and the notifications all
+   touch what was removed.
+2. **`DEVICE_TEST.md` rows** for the removals, in the same commit as the change.
+3. **Tag and publish.** `git tag v3.5.0 && git push origin v3.5.0` → CI builds the signed APK.
+   The tag's commit message becomes the release notes, so it must read like the release, not
+   like "wip".
+
+**The removed work is not lost.** `feature/shield` (S2–S5) and `feature/shield-s6` (the
+uncommitted S6 verification layer) hold the Shield feature. `git checkout feature/shield-s6`
+brings it back. The release-key debug-signing patch that lets a debug build install over the
+published one lives *outside* the repo, next to it:
+`..\downi-dev-signing.patch`.
+
+**What did NOT change:** the engine. `yt-dlp 2026.8.19`, the format cascade, the merge, the
+3-parallel queue, the notifications, the updater, DowniDrop, the clipboard banner and the
+Inspector are exactly as they were in 3.3.3. No extraction-layer change was made, so the full
+platform × entry-point matrix in §5 was not required — only the §6 truth re-checks.
+
+---
 
 ---
 
@@ -21,7 +60,8 @@ _Last updated: 2026-09-22 (after v3.0.2 / web v2.1.1). Read this first in a fres
 | Local path | `C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app` |
 | Remote | github.com/MansoorjAhmad/Downi |
 | Live channel | GitHub Releases → in-app updater |
-| Current version | **v3.1.0** (versionCode 45), "Polish Release": DowniDrop 2.0 instant background grabs + Vault blink fixed at the root |
+| Current version | **v3.5.0** (versionCode 52), "the lean release": the Vault, the Fetcher and the Core are gone; DOWNI is a downloader and nothing else. **In the tree, not yet device-verified, not tagged.** |
+| Previous | v3.3.3 (versionCode 51) — the last published release. |
 | Tests | `.github/workflows/test.yml` (engine smoke + debug build, every push) |
 | Release trigger | `git push origin vX.Y.Z` → `.github/workflows/release.yml` builds + publishes |
 
@@ -43,6 +83,7 @@ Old companion desktop app (`desktop-app/`, `dist/`, `work/`) is **abandoned** �
 4. **Any extraction-layer change requires the full device matrix first**: Instagram + YouTube + TikTok × Vortex / Inspector / DowniDrop on a real phone (`DEVICE_TEST.md`).
 5. **Never change `applicationId` (`com.omnidownloader.app`) or the signing key** — breaks in-place updates for installed users.
 6. yt-dlp pin: bump monthly or on-break, each bump gated by the matrix. Currently `2026.8.19`.
+7. **§7-bis (added 2026-10-20): a version may also be earned by an owner-ruled scope reduction** — a deliberate removal of a shipped feature. The removal must be named honestly, §6 truth re-checks are still owed on a device, §5 is only owed if the extraction layer changed, and **nothing removed comes back by stealth**.
 
 ---
 
@@ -52,9 +93,9 @@ Old companion desktop app (`desktop-app/`, `dist/`, `work/`) is **abandoned** �
 - Native bridge: **`DowniEnginePlugin`** (all `@PluginMethod`s; JS calls `Capacitor.Plugins.DowniEngine`).
 - Notifications/foreground: **`DowniDownloadService`** (channels `downi_progress` LOW, `downi_alerts` DEFAULT; per-job ids).
 - **True 1080p**: `downloader.py::_download_split` (H.264 video-only + M4A) → **`Mp4Merger`** (MediaMuxer, PTS-interleaved, 8 MB buffer; VP9 needs API 29+, AV1 API 34+).
-- **Vault**: MediaStore query (needs runtime media permission, asked on first Vault open) + SAF custom-folder files via `listCustomFiles`.
+- **Save path**: MediaStore insert straight into `Movies/` (or `Music/` for audio) — no DOWNI subfolder, because the subfolder only existed for the Vault to scope to. A custom SAF folder is still optional.
 - **Save paths**: MediaStore `Movies/` `Music/` (or chosen SAF folder) — the custom folder is honored by the in-app path and DowniDrop.
-- **Share intents (DowniDrop 2.0, v3.1.0)**: `ACTION_SEND` + `ACTION_PROCESS_TEXT` → **DropActivity** (invisible, translucent, noHistory). Instant mode (default): toast + `DowniDownloadService.startShared()` — the service **self-starts Python** (`Python.isStarted()` → `Python.start()`, v2.6.4 pattern; never assume MainActivity warm-up) and saves via the ported gallery path (Movies/DOWNI + Music/DOWNI or custom SAF folder). "Ask quality" mode: forwards to MainActivity → Inspector (`getSharedUrl` consumes the intent; warm start via `onShareReceived`). Toggle + per-platform quality memory live in localStorage, mirrored to `downi_settings` prefs via `syncDropSettings`.
+- **Share intents (DowniDrop)**: `ACTION_SEND` + `ACTION_PROCESS_TEXT` → **DropActivity** (invisible, translucent, noHistory). Instant mode (default): toast + `DowniDownloadService.startShared()` — the service **self-starts Python** (`Python.isStarted()` → `Python.start()`, v2.6.4 pattern; never assume MainActivity warm-up) and saves via the ported gallery path (`Movies/` + `Music/` or a custom SAF folder). "Ask quality" mode: forwards to MainActivity → Inspector (`getSharedUrl` consumes the intent; warm start via `onShareReceived`). Per-platform quality memory lives in localStorage, mirrored to `downi_settings` prefs via `syncDropSettings`.
 - **Updater**: GitHub `releases/latest` → `.apk` asset → download w/ progress → package installer (pre-checks "unknown apps").
 - **Build guard**: `android/app/build.gradle` `preBuild` fails the build if `assets/public/index.html` ≠ `www/index.html`.
 
@@ -125,26 +166,77 @@ $env:JAVA_HOME='<mobile-app>\tools\jdk\jdk-21.0.12.1+1'
 - [x] v3.0.3 (versionCode 43) released: all 8 fixes device-verified by the owner on the vivo V2058; tag `v3.0.3` pushed, CI green, signed `DOWNI-v3.0.3.apk` (37.9 MB) live on GitHub Releases → in-app updater feed active.
 - Remaining DEVICE_TEST.md cells (playlist Grab-all, custom save folder, cancel/app-kill regression) were covered by the owner's blanket "all the things are working" — formally re-check only if a bug report comes in.
 
-**P1 — v3.2 DOWNI Fetcher** — plan `V3.2_PLAN.md`; **Phase 0 detectability spike is the HARD GATE** (debug build only; no bubble/wiring/polish code until the spike reports its verdict).
-(Old candidates closed by locked owner rulings: Pause/resume + TikTok photo posts = *permanently out of scope*; web items = *frozen 2026-09-24*; Play Store track = *rejected permanently*. Nothing sits in deferred.)
+**P0 — v3.5.0 "the lean release" (in the tree, 2026-10-20 — NOT yet device-verified, NOT tagged)**
+
+The scope reduction. The Vault, the Fetcher and the Core are gone; Shield is cancelled; the home
+screen is one action; Settings is four cards; the app asks for no accessibility and no media
+permission. The engine is untouched. Full detail and the measurements: `CHANGELOG.md` v3.5.0.
+
+- [x] Vault, Fetcher, Core and the in-app player removed — 30 native classes, 21 test classes,
+      20 resources/assets, 67 JS `function` definitions. 88 files changed, 71 of them deletions,
+      **16,199 lines deleted** and about 600 added — the added count includes this checklist, so
+      quote the deletions and the file counts. (An earlier draft said "24 native, 63 test
+      classes, 2,150 lines" — guesses made mid-cut, never re-counted. The numbers above are from
+      `git diff --shortstat` + a grep of `function name(` on v3.3.3 vs now.)
+- [x] Permissions reduced: accessibility, media read and `WRITE_SECURE_SETTINGS` all gone.
+- [x] Save path moved from `Movies/DOWNI/` to `Movies/` (the subfolder only existed for the Vault).
+- [x] Home screen rebuilt around one action; Settings 7 cards → 4.
+- [x] Version bumped in all three places → 3.5.0 / versionCode 52.
+- [x] **The Core's leftovers removed** (Lottie runtime, `assets/core/`, the orb art, the Vault's
+      loopback cleartext exception) — debug APK 46.7 MB → **42.1 MB**.
+- [x] **A defect the cut introduced, caught before tagging**: `switchTab()` lost the two loops
+      that hide the view you leave and un-light its nav item, so tabs stacked. Found by rendering
+      the UI in a browser; fixed; **`tools/_tabcheck.js`** now fails the build on it and CI runs
+      it. The tab-switch logic is the first thing a "delete what names the removed feature" patch
+      breaks without breaking the build — check it again after any future cut.
+- [ ] **Device run on the vivo V2058** — the §6 truth re-checks. Removing a tab touches the
+      counters, the badge, the ledger and the notifications.
+- [ ] `DEVICE_TEST.md` §4 rows filled in (4-1 … 4-16).
+- [ ] Tag `v3.5.0`, push, CI publishes. The tag's commit message IS the release notes.
+
+**P1 — the download path itself**
+
+The only thing that earns a place in the app now is making the download better.
+
+- [ ] Make the one-tap path as good as it can be: share → DOWNI, and the clipboard banner.
+- [ ] The grab-from-inside-the-platform flow is **gone** with the Fetcher. If it ever comes back
+      it must clear a higher bar than before: the accessibility permission is the reason it was
+      removed, and the app is now better for its absence.
+- [ ] APK size: release ≈ 38 MB. The Chaquopy/yt-dlp payload is the bulk of it.
+
+**P2 — candidate polish (not yet agreed with the user)**
+- [ ] Unit tests for `Mp4Merger` interleave + `_safe_name` / `extractUrl` (CI covers only the
+      smoke script today). **Ship only with the change they cover** — never as their own release
+      (READ_THIS_BEFORE_UPGRADE §8).
+- [ ] The JVM suite is nearly empty now that the Fetcher's 21 test classes are gone — 1 test
+      remains. Anything that earns its place deserves a test that runs on the JVM.
+
+**Permanently out (locked rulings — do not re-open)**
 - [ ] ~~Pause + resume (needs `.part` support — deep change to the proven core; matrix required).~~ **Out of scope (locked).**
 - [ ] ~~TikTok photo-post saving (needs a multi-file save contract).~~ **Out of scope (locked).**
 - [ ] ~~Web: direct-to-CDN downloads where CORS allows (skip the proxy).~~ **Web frozen 2026-09-24.**
 - [ ] ~~Play Store track: AAB build, targetSdk 35+, ProGuard rules, listing assets.~~ **Rejected permanently.**
+- [ ] ~~The Vault, the Fetcher, the Core.~~ **Removed in v3.5.0 (2026-10-20). Nothing removed
+      comes back by stealth — see READ_THIS_BEFORE_UPGRADE §7-bis.**
+- [ ] ~~Shield.~~ **Cancelled before it shipped (2026-10-20). The work is preserved on the
+      `feature/shield` and `feature/shield-s6` branches.**
 
-**P2 — candidate polish (not yet agreed with the user)**
-- [x] ~~Scope the Vault to DOWNI's own folder + tracked items~~ — **DONE in v3.0.4** (user-confirmed: Vault must show only DOWNI downloads).
-- [ ] ~~Web: offline queue messaging, analytics (none today), per-release OG card refresh.~~ **Web frozen 2026-09-24.**
-- [ ] APK size budget: release ≈ 38 MB — inspect what the Chaquopy/yt-dlp payload could shave. (Only if the owner asks; no safe-shelf release without measured results.)
-- [ ] Unit tests for `Mp4Merger` interleave + `_safe_name` / `extractUrl` (CI covers only the smoke script today). **Ship only with the change they cover** — never as their own release (READ_THIS_BEFORE_UPGRADE §8).
-
-**Owner decisions (locked 2026-09-22)**
-1. Play Store track — **rejected permanently**. Sideload-only via GitHub Releases.
-2. Analytics — **rejected permanently**. Zero tracking is a core value ("we provide value, we don't take their data").
-3. Vault scoping — **done in v3.0.4**: only DOWNI downloads, never the whole gallery.
-4. Brand/identity — **frozen**. No rebrands, no redesign pivots; polish the current experience only.
-5. Priority order — APK Vault perfection first (v3.0.4). Web app shipped 2026-09-24 and is **frozen — out of the active plan** (owner ruling 2026-09-24).
-6. DowniDrop (locked 2026-09-23) — **instant background grab is the default again** (v2.6.4 pattern restored); "Ask quality" is opt-in via Settings. Vault Phase 2 polish (shimmer, content-visibility, press-scale) **parked for v3.2** — never ship new paint-timing code in the same release as the paint-timing bug fix.
+**Owner decisions**
+1. Play Store track — **rejected permanently**. Sideload-only via GitHub Releases. (2026-09-22)
+2. Analytics — **rejected permanently**. Zero tracking is a core value ("we provide value, we don't take their data"). (2026-09-22)
+3. ~~Vault scoping~~ — **moot**: the Vault was removed in v3.5.0. (2026-09-22 → 2026-10-20)
+4. Brand/identity — **frozen**. No rebrands. (2026-09-22)
+5. Priority order — **DOWNI is a downloader.** Everything else was removed. A feature that does
+   not make the *download* better does not belong in the app. (2026-10-20)
+6. DowniDrop — **instant background grab is the default**, "Ask quality" is opt-in via Settings.
+   This is now one of only two ways to grab, so it must stay solid. (2026-09-23)
+7. **The scope reduction (2026-10-20)** — the Vault, the Fetcher and the Core are removed; Shield
+   is cancelled. The app asks for no accessibility and no media permission. **Nothing removed
+   comes back by stealth** (READ_THIS_BEFORE_UPGRADE §7-bis).
+8. **The home screen is one action** (2026-10-20) — paste a link, or share one to DOWNI. The
+   tap-the-orb hero is gone; the clipboard banner and DowniDrop are the one-tap paths.
+9. **Settings is four cards** (2026-10-20) — App, Engine, Appearance, Behavior & storage. If a
+   setting does not change how DOWNI downloads, it does not belong here.
 
 ---
 

@@ -3,6 +3,113 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.5.0 — the lean release (versionCode 52) — 2026-10-20
+
+**DOWNI is now only a downloader.** Users said the app had grown too much around the thing it
+is actually for, so the app got smaller: the Vault, the Fetcher and the Core are gone. The
+engine is untouched — `yt-dlp`, the format cascade, the merge, the queue, the notifications and
+DowniDrop are exactly as they were in 3.3.3.
+
+Numbered **3.5.0**, not 4.0.0: the extraction layer did not change, so this is the 3.x line with
+less in it — not a new engine generation. The version name should say what happened.
+
+**What was removed**
+
+- **The Vault** — the tab, the in-app player, the MediaStore scanning and the media read
+  permissions. Downloads used to go to `Movies/DOWNI/` *only* so the Vault could scope its list
+  to them (v3.0.4); with no Vault there is no reason for a subfolder, so **files now land in
+  `Movies/` and `Music/`**, where the user can already see them. The Queue still holds the
+  history — that was always the real record.
+- **The Fetcher** — the accessibility service, the Core orb and its overlay, the black box, the
+  quick-settings tile, the "keep it alive on vivo" instructions and the `WRITE_SECURE_SETTINGS`
+  grant. It watched the platform's share sheet and drove it; it was also the app's heaviest
+  moving part and the reason a downloader had to ask for accessibility access.
+- **Shield** — cancelled before it shipped. The work is preserved on `feature/shield` and
+  `feature/shield-s6`, not thrown away.
+
+**What the app asks for now**
+
+Accessibility: gone. Media read (`READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`,
+`READ_EXTERNAL_STORAGE`): gone. `WRITE_SECURE_SETTINGS`: gone. Notifications, install-packages,
+internet and write-storage (API ≤ 29) are unchanged. A downloader that watches your screen and
+reads your whole gallery is a hard sell; one that asks for a notification and nothing else is
+easy.
+
+**The home screen is one action.** The tap-the-orb hero is gone — the paste field *is* the home
+screen. The clipboard banner still offers ⚡ Grab in one tap, the DowniDrop hint still says
+"share any app → DOWNI grabs in the background", and the success confetti still fires (from the
+DOWNI mark, since the orb is not there any more).
+
+**Settings went from seven cards to four.** App (version, updates, the GitHub star) · Engine
+(yt-dlp version, health, network diagnostics) · Appearance (accent, AMOLED) · Behavior & storage
+(clipboard detect, DowniDrop, save location, clear cache). The Fetcher's card took up more room
+than everything else put together.
+
+**Measured**
+
+- 71 files deleted — 30 native classes, 21 test classes, 20 resources and assets — and 16 files
+  changed plus one added (the gate below): **16,199 deletions**, and roughly 600 lines added. The
+  exact insertion count is a moving target on purpose: **this entry is part of the diff it
+  describes**, so every sentence about it changes it (it read 553, then 600, then 605 while this
+  was being written). The file counts and the deletions are the stable numbers.
+- `DowniEnginePlugin`: 89,928 → 55,456 bytes; the plugin's annotated surface 52 → 25 methods.
+- `www/index.html`: 188,134 → 119,271 bytes (the committed file); 67 fewer `function`
+  definitions. *The first draft of these notes quoted 191,633 → 123,009 for this pair — measured
+  on CRLF working copies while the committed file is LF, so the two numbers were not the same
+  basis. The committed sizes above re-check with `git cat-file -s`.*
+- Debug APK: 46.7 MB → 42.1 MB.
+- **The Core's leftovers left too.** The ten `assets/core/*.json` state files and their four orb
+  renders, the four matching `res/drawable-nodpi` masters, `com.airbnb.android:lottie:6.6.10` and
+  the test-only Gson dependency were all still shipping with nothing referencing them: 1,764 KB of
+  art and JSON, plus the animation runtime. `assets/core/` is gone, the Lottie dependency is gone,
+  and the orb art is gone from `drawable-nodpi` (the brand-mark masters stay).
+- The `MIXED_CONTENT_ALWAYS_ALLOW` exception the Vault's loopback player needed is gone with it,
+  and so is the `127.0.0.1` / `localhost` cleartext exception in `network_security_config.xml`:
+  **cleartext HTTP is now blocked everywhere, no exceptions.** The WebView is back to its default
+  content policy.
+
+**One defect, caught before tagging — and the gate that now covers it**
+
+The web cut removed the Vault by deleting code that named it. Two of those deletions were **whole
+statements** that merely happened to contain `viewVault` / `navVault`:
+
+```js
+['viewGrab','viewQueue','viewVault','viewSettings'].forEach(id => {
+  document.getElementById(id)?.classList.add('hidden');      // hide the view you are leaving
+});
+['navGrab','navQueue','navVault','navSettings'].forEach(id => {
+  document.getElementById(id)?.classList.remove('on');       // un-light the nav item you left
+});
+```
+
+`switchTab()` still unhid the tab you tapped, so the screen in front of you looked right. What
+broke was every screen you were *not* looking at: tap Queue and the Grab view stayed on screen,
+stacked above it; tap Settings and all three were stacked with all three nav items lit. **The
+build, the JVM tests and `assembleDebug` were green through all of it** — nothing in the pipeline
+looks at what a tap leaves behind.
+
+It was found on 2026-10-20 by rendering the bundled UI in a browser and walking the tabs, before
+the release was tagged. Both loops are restored minus the Vault entries, and the failure can no
+longer be silent: **`tools/_tabcheck.js`** extracts the real `switchTab()` source from both copies
+of `index.html`, runs it against a DOM stub, and fails if any switch leaks a view or a nav. CI runs
+it in the build job, after `cap sync`, so a stale copy in `assets/public` fails too. It was proved
+on both sides: it fails the pre-fix file and passes the fixed one.
+
+**Honest limits**
+
+- **Not yet verified on a device.** The build compiles, the JS gate passes and the debug APK is
+  produced, but nothing here has run on the vivo V2058 yet. The §6 truth re-checks (counters,
+  the badge, the ledger, the notifications) are still owed — removing a tab touches all of them.
+  This release is **not tagged and not published** until that is done.
+- The Vault was the only in-app way to open a downloaded file. Files are in the gallery now, which
+  is where a user looks for a video they just saved.
+- The grab-from-inside-the-platform flow is gone. The path is: copy the link, or share it to
+  DOWNI, then paste.
+
+**Nothing in the extraction layer changed**, so the full platform × entry-point matrix in
+`READ_THIS_BEFORE_UPGRADE.md` §5 was not required for this change.
+
+
 ## V3.3.3 — the Fetcher's Instagram link-grab, fixed (versionCode 51) — released 2026-09-28
 
 **The v3.3.2 release was withdrawn because of this bug, and the fix ships under a new number rather than by

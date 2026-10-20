@@ -55,54 +55,6 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
-        <!-- V3.2 Fetcher spike (owner-approved 2026-09-24): logs what Instagram/TikTok
-             expose on this device (files/fetch-spike/, local only) and hosts the Fetcher
-             bubble — the floating DOWNI control the owner specified on 2026-09-25. The
-             bubble is a TYPE_ACCESSIBILITY_OVERLAY window, so it needs no "display over
-             other apps" grant and dies with the service. Debug tool — never released.
-
-             The intent action MUST be android.accessibilityservice.AccessibilityService —
-             the FQCN that AccessibilityService.SERVICE_INTERFACE resolves to, which is
-             what AccessibilityManagerService queries when it builds the installed-service
-             list. An earlier revision declared android.service.accessibility.* (wrong word
-             order); the service was then never discovered, never listed in Settings and
-             never bound — on any device, whatever else looked correct. -->
-        <service
-            android:name=".DowniFetcherService"
-            android:label="DOWNI Fetcher"
-            android:foregroundServiceType="dataSync"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/fetcher_service" />
-        </service>
-
-        <!-- Quick Settings tile: one tap into DOWNI's Grab screen -->
-        <service
-            android:name=".GrabTileService"
-            android:exported="true"
-            android:icon="@drawable/ic_tile_grab"
-            android:label="DOWNI — Grab"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
-            </intent-filter>
-        </service>
-
-        <!-- Wave 3 (D-V2-4 experiment): the Fetcher's self-healing heartbeat — every ~30 min
-             it re-applies the accessibility binding if the vendor wiped it. Framework
-             JobScheduler (no new dependency), guarded by wasArmed + userEnabled + the
-             WRITE_SECURE_SETTINGS grant and battery-not-low. The service is started only by
-             the system's own scheduler, hence the standard BIND_JOB_SERVICE permission. -->
-        <service
-            android:name=".FetcherKeepAliveJob"
-            android:permission="android.permission.BIND_JOB_SERVICE"
-            android:exported="true" />
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -116,17 +68,12 @@
 
     <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- WRITE_SECURE_SETTINGS: development permission, granted only via adb (one line). Lets
-         DOWNI re-apply its OWN accessibility binding after the vivo power manager wipes it
-         (recovery = open DOWNI). Without the grant the app never touches secure settings. -->
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Writing to the shared Movies/Music folders on API 24-29 only. From API 30 the
+         MediaStore insert needs no storage permission at all. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 </manifest>

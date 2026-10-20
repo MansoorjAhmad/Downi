@@ -130,6 +130,34 @@ Scope is closed. These are the things that must **not** appear in a future versi
 ---
 
 
+---
+
+## 7️⃣-bis. Owner-Ruled Scope Reductions (v3.5.0) — When a Version May Be Earned by a Removal
+
+The rule in §7 still stands: **"no defect, no release."** It has one amendment, made on
+2026-10-20 when DOWNI 3.5.0 removed the Vault, the Fetcher and the Core.
+
+**A new version number may also be earned by an owner-ruled scope reduction** — a deliberate
+removal of a shipped feature, made because users said the app had grown too much around the thing
+it is actually for.
+
+**What that means, exactly:**
+
+1. The removal must be **named honestly** in the release notes: what went, why, and what the
+   user loses. A release note that calls a removal a "simplification" and hides the loss is
+   exactly the kind of thing §9 forbids.
+2. **§6 still applies in full.** Removing a tab touches counters, badges, the ledger and
+   notifications, so the truth re-checks must be re-run on a real device before the release.
+   "It built and it launched" is not evidence.
+3. **§5 does not apply** when the extraction layer is untouched — which is the normal case for a
+   scope reduction. If the engine changed, the full matrix is owed as usual.
+4. **Nothing removed comes back by stealth.** A feature that was ruled out stays out until the
+   owner rules it in again. This is the §7 principle applied to removals: no "just one" button,
+   no "small" re-add.
+
+**The precedent it sets:** DOWNI is a downloader. If a feature does not make it *download better*,
+it does not belong in the app. That is the test every future proposal is measured against.
+
 ## 8️⃣ Known Limitations – State Them Honestly, Never Apply A Blind "Fix"
 
 These are **not defects**. Each is a property of the platform or a deliberate decision — document it, and answer a report with this text instead of guessing at a patch.

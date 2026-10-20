@@ -91,74 +91,6 @@ public class DowniEnginePlugin extends Plugin {
     }
 
     @PluginMethod
-    public void deleteMediaBatch(PluginCall call) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            call.reject("Bulk delete needs Android 11 or newer.");
-            return;
-        }
-        try {
-            com.getcapacitor.JSArray videoIds = call.getArray("videoIds");
-            com.getcapacitor.JSArray audioIds = call.getArray("audioIds");
-            java.util.List<Uri> uris = new java.util.ArrayList<>();
-            if (videoIds != null) for (int i = 0; i < videoIds.length(); i++) {
-                uris.add(Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, String.valueOf(videoIds.getLong(i))));
-            }
-            if (audioIds != null) for (int i = 0; i < audioIds.length(); i++) {
-                uris.add(Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(audioIds.getLong(i))));
-            }
-            if (uris.isEmpty()) {
-                call.reject("Nothing selected.");
-                return;
-            }
-            android.app.PendingIntent pi = MediaStore.createDeleteRequest(getContext().getContentResolver(), uris);
-            getActivity().startIntentSenderForResult(pi.getIntentSender(), 10292, null, 0, 0, 0);
-            JSObject result = new JSObject();
-            result.put("requested", true);
-            result.put("count", uris.size());
-            call.resolve(result);
-        } catch (Exception e) {
-            call.reject("Storage refused the delete request.", e);
-        }
-    }
-
-    @PluginMethod
-    public void shareMediaBatch(PluginCall call) {
-        try {
-            com.getcapacitor.JSArray videoIds = call.getArray("videoIds");
-            com.getcapacitor.JSArray audioIds = call.getArray("audioIds");
-            java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
-            boolean anyVideo = false;
-            if (videoIds != null) for (int i = 0; i < videoIds.length(); i++) {
-                uris.add(Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, String.valueOf(videoIds.getLong(i))));
-                anyVideo = true;
-            }
-            if (audioIds != null) for (int i = 0; i < audioIds.length(); i++) {
-                uris.add(Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(audioIds.getLong(i))));
-            }
-            if (uris.isEmpty()) {
-                call.reject("Nothing selected.");
-                return;
-            }
-            Intent intent;
-            if (uris.size() == 1) {
-                intent = new Intent(Intent.ACTION_SEND);
-                intent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
-            } else {
-                intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
-                intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
-            }
-            intent.setType(anyVideo ? "video/*" : "audio/*");
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            Intent chooser = Intent.createChooser(intent, "Share media");
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(chooser);
-            call.resolve();
-        } catch (Exception e) {
-            call.reject("Could not share these files.", e);
-        }
-    }
-
-    @PluginMethod
     public void clearCache(PluginCall call) {
         miscExecutor.execute(() -> {
             long freed = 0;
@@ -251,142 +183,6 @@ public class DowniEnginePlugin extends Plugin {
         } catch (Exception ignored) {}
     }
 
-    // ---------- Custom save folder (SAF) ----------
-    // Files written to a user-picked folder are not MediaStore rows, so the
-    // Vault (which reads MediaStore) never showed them. List them straight
-    // from the SAF tree so every download is visible and manageable.
-
-    @PluginMethod
-    public void listCustomFiles(PluginCall call) {
-        miscExecutor.execute(() -> {
-            com.getcapacitor.JSArray items = new com.getcapacitor.JSArray();
-            String treeUri = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getString("treeUri", "");
-            if (treeUri != null && !treeUri.isEmpty()) {
-                try {
-                    Uri tree = Uri.parse(treeUri);
-                    Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
-                    String[] projection = {
-                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                        DocumentsContract.Document.COLUMN_MIME_TYPE,
-                        DocumentsContract.Document.COLUMN_SIZE,
-                        DocumentsContract.Document.COLUMN_LAST_MODIFIED
-                    };
-                    try (Cursor c = getContext().getContentResolver().query(children, projection, null, null, null)) {
-                        if (c != null) {
-                            while (c.moveToNext()) {
-                                try {
-                                    String docId = c.getString(0);
-                                    String name = c.getString(1) != null ? c.getString(1) : "";
-                                    String mime = c.getString(2);
-                                    long size = c.getLong(3);
-                                    long modified = c.getLong(4);
-                                    String lower = name.toLowerCase(Locale.US);
-                                    boolean isVideo = (mime != null && mime.startsWith("video/")) || lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".webm") || lower.endsWith(".mov");
-                                    boolean isAudio = (mime != null && mime.startsWith("audio/")) || lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".wav") || lower.endsWith(".ogg");
-                                    if (!isVideo && !isAudio) continue;
-                                    Uri docUri = DocumentsContract.buildDocumentUriUsingTree(tree, docId);
-                                    JSObject obj = new JSObject();
-                                    obj.put("uri", docUri.toString());
-                                    obj.put("name", name);
-                                    obj.put("size", size);
-                                    obj.put("modified", modified);
-                                    obj.put("mime", mime != null ? mime : (isVideo ? "video/mp4" : "audio/mp4"));
-                                    obj.put("isVideo", isVideo);
-                                    items.put(obj);
-                                } catch (Exception ignored) {}
-                            }
-                        }
-                    }
-                } catch (Exception ignored) {}
-            }
-            JSObject result = new JSObject();
-            result.put("files", items);
-            call.resolve(result);
-        });
-    }
-
-    @PluginMethod
-    public void openCustomFile(PluginCall call) {
-        String uri = call.getString("uri");
-        String mime = call.getString("mime", "video/mp4");
-        if (uri == null || uri.isEmpty()) {
-            call.reject("File reference missing.");
-            return;
-        }
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(Uri.parse(uri), mime);
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
-            call.resolve();
-        } catch (Exception e) {
-            call.reject("No app found to play this file.", e);
-        }
-    }
-
-    @PluginMethod
-    public void shareCustomFile(PluginCall call) {
-        String uri = call.getString("uri");
-        String mime = call.getString("mime", "video/mp4");
-        if (uri == null || uri.isEmpty()) {
-            call.reject("File reference missing.");
-            return;
-        }
-        try {
-            Intent intent = new Intent(Intent.ACTION_SEND);
-            intent.setType(mime);
-            intent.putExtra(Intent.EXTRA_STREAM, Uri.parse(uri));
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            Intent chooser = Intent.createChooser(intent, "Share media");
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(chooser);
-            call.resolve();
-        } catch (Exception e) {
-            call.reject("Could not share this file.", e);
-        }
-    }
-
-    @PluginMethod
-    public void deleteCustomFile(PluginCall call) {
-        String uri = call.getString("uri");
-        if (uri == null || uri.isEmpty()) {
-            call.reject("File reference missing.");
-            return;
-        }
-        miscExecutor.execute(() -> {
-            try {
-                boolean ok = DocumentsContract.deleteDocument(getContext().getContentResolver(), Uri.parse(uri));
-                if (ok) {
-                    JSObject result = new JSObject();
-                    result.put("deleted", true);
-                    call.resolve(result);
-                } else {
-                    call.reject("Storage refused the delete.");
-                }
-            } catch (Exception e) {
-                call.reject("Storage refused the delete.", e);
-            }
-        });
-    }
-
-    @PluginMethod
-    public void rescanStorage(PluginCall call) {
-        miscExecutor.execute(() -> {
-            try {
-                String[] dirs = {
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getAbsolutePath(),
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).getAbsolutePath(),
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath()
-                };
-                android.media.MediaScannerConnection.scanFile(getContext(), dirs, null, null);
-            } catch (Exception ignored) {}
-            JSObject result = new JSObject();
-            result.put("started", true);
-            call.resolve(result);
-        });
-    }
-
     @PluginMethod
     public void playlistInspect(PluginCall call) {
         String url = call.getString("url", "").trim();
@@ -426,245 +222,6 @@ public class DowniEnginePlugin extends Plugin {
         });
     }
 
-    // ---------- DOWNI Fetcher (the Core over IG/TikTok) — settings card bridge ----------
-
-    private static final String FETCHER_COMPONENT =
-            "com.omnidownloader.app/com.omnidownloader.app.DowniFetcherService";
-
-    private boolean fetcherArmed() {
-        try {
-            String cur = android.provider.Settings.Secure.getString(
-                    getContext().getContentResolver(),
-                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-            return cur != null && cur.contains(FETCHER_COMPONENT);
-        } catch (Exception e) { return false; }
-    }
-
-    private boolean canToggleFetcher() {
-        return getContext().checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
-                == android.content.pm.PackageManager.PERMISSION_GRANTED;
-    }
-
-    @PluginMethod
-    public void fetcherStatus(PluginCall call) {
-        JSObject r = new JSObject();
-        r.put("armed", fetcherArmed());
-        r.put("canToggle", canToggleFetcher());
-        // Wave 4: the difference between "you never turned it on" and "the phone turned it off" —
-        // and whether the app can put it back by itself (the one-time adb grant).
-        r.put("bound", DowniFetcherService.isBound());
-        r.put("wasArmed", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
-                .getBoolean("wasArmed", false));
-        r.put("userEnabled", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
-                .getBoolean("userEnabled", false));
-        r.put("recoverable", FetcherRecovery.wantedAndAllowed(getContext()));
-        try {
-            org.json.JSONObject paused = new org.json.JSONObject(getContext()
-                    .getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
-                    .getString("pausedGrabs", "{}"));
-            r.put("pausedCount", paused.length());
-        } catch (Exception e) { r.put("pausedCount", 0); }
-        int grabs = 0; long bytes = 0;
-        try {
-            String today = new java.text.SimpleDateFormat("yyyyMMdd", Locale.US)
-                    .format(new java.util.Date());
-            org.json.JSONArray hist = new org.json.JSONArray(getContext()
-                    .getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
-                    .getString("dropHistory", "[]"));
-            for (int i = 0; i < hist.length(); i++) {
-                org.json.JSONObject o = hist.optJSONObject(i);
-                if (o == null) continue;
-                String day = new java.text.SimpleDateFormat("yyyyMMdd", Locale.US)
-                        .format(new java.util.Date(o.optLong("ts", 0)));
-                if (day.equals(today)) { grabs++; bytes += Math.max(0, o.optLong("bytes", 0)); }
-            }
-        } catch (Exception ignored) {}
-        r.put("grabsToday", grabs);
-        r.put("bytesToday", bytes);
-        r.put("sizeDp", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
-                .getInt("core_size_dp", 64));
-        // Wave 1: the resolver's measured route health (session-scoped rates), rendered by
-        // the settings card in Wave 3 — the data is honest from the moment it exists.
-        r.put("routes", DowniFetcherService.routeHealth());
-        call.resolve(r);
-    }
-
-    @PluginMethod
-    public void setFetcherEnabled(PluginCall call) {
-        boolean enabled = call.getBoolean("enabled", true);
-        JSObject r = new JSObject();
-        if (!canToggleFetcher()) { r.put("ok", false); r.put("needsPermission", true); call.resolve(r); return; }
-        try {
-            android.content.ContentResolver cr = getContext().getContentResolver();
-            String cur = android.provider.Settings.Secure.getString(cr,
-                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-            String others = cur == null ? "" : (cur.contains(FETCHER_COMPONENT)
-                    ? cur.replace(FETCHER_COMPONENT, "").replace("::", ":") : cur);
-            if (others.startsWith(":")) others = others.substring(1);
-            if (others.endsWith(":")) others = others.substring(0, others.length() - 1);
-            StringBuilder kept = new StringBuilder();
-            for (String t : others.split(":")) {
-                if (t.trim().isEmpty() || t.contains("com.omnidownloader.app/")) continue;
-                if (kept.length() > 0) kept.append(':');
-                kept.append(t.trim());
-            }
-            String next = enabled
-                    ? (kept.length() > 0 ? kept + ":" + FETCHER_COMPONENT : FETCHER_COMPONENT)
-                    : kept.toString();
-            android.provider.Settings.Secure.putString(cr,
-                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, next);
-            android.provider.Settings.Secure.putInt(cr,
-                    android.provider.Settings.Secure.ACCESSIBILITY_ENABLED, next.isEmpty() ? 0 : 1);
-            // The owner's toggle wins over every auto-recovery path.
-            getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
-                    .edit().putBoolean("userEnabled", enabled).apply();
-            r.put("ok", true);
-        } catch (Exception e) { r.put("ok", false); r.put("error", String.valueOf(e)); }
-        call.resolve(r);
-    }
-
-    /**
-     * Wave 4 (owner report 2026-09-28: the ROM disarmed the Fetcher when the app updated, silently):
-     * try to put the binding back through the app's own recovery path, and report exactly what
-     * happened. `outcome` is FetcherRecovery's own vocabulary — ok-present / ok-rearmed /
-     * skipped-guard / err-… — so the UI can be honest about which case the user is in instead of
-     * showing a toggle that silently does nothing.
-     */
-    @PluginMethod
-    public void rearmFetcher(PluginCall call) {
-        JSObject r = new JSObject();
-        String outcome = FetcherRecovery.ensureArmed(getContext());
-        FetcherRecovery.scheduleKeepAlive(getContext());
-        r.put("outcome", outcome);
-        r.put("armed", fetcherArmed());
-        r.put("bound", DowniFetcherService.isBound());
-        r.put("recoverable", FetcherRecovery.wantedAndAllowed(getContext()));
-        call.resolve(r);
-    }
-
-    /** The door the user has to walk through when the app may not write the binding itself. */
-    @PluginMethod
-    public void openAccessibilitySettings(PluginCall call) {
-        JSObject r = new JSObject();
-        try {
-            android.content.Intent i = new android.content.Intent(
-                    android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
-            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(i);
-            r.put("ok", true);
-        } catch (Exception e) {
-            r.put("ok", false);
-            r.put("error", String.valueOf(e));
-        }
-        call.resolve(r);
-    }
-
-    /**
-     * Wave 5: the black box, for the settings card. The service's live ring when it is running;
-     * otherwise the persisted copy (seeded here on first read), so the events from before a vendor
-     * kill are still readable afterwards.
-     */
-    @PluginMethod
-    public void fetcherBlackbox(PluginCall call) {
-        JSObject r = new JSObject();
-        com.omnidownloader.app.fetcher.EventRing ring = DowniFetcherService.blackbox();
-        if (ring.isEmpty()) {
-            try {
-                ring.seed(getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
-                        .getString("lastEvents", ""));
-            } catch (Throwable ignored) {}
-        }
-        String[] events = ring.snapshot();
-        org.json.JSONArray arr = new org.json.JSONArray();
-        for (String e : events) arr.put(e);
-        r.put("events", arr);
-        r.put("count", ring.size());
-        r.put("capacity", com.omnidownloader.app.fetcher.EventRing.CAPACITY);
-        r.put("dropped", ring.dropped());
-        r.put("live", DowniFetcherService.isBound());
-        try {
-            r.put("lastEventAt", getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
-                    .getLong("lastEventAt", 0L));
-        } catch (Throwable ignored) {
-            r.put("lastEventAt", 0L);
-        }
-        call.resolve(r);
-    }
-
-    /**
-     * Writes the black box to `fetch-spike/blackbox.txt` in the app's own external files dir. That is
-     * the one place a release build's diagnostics can be read from a PC without root (this ROM gives
-     * logcat nothing for release installs), so support is one `adb pull` instead of a conversation.
-     */
-    @PluginMethod
-    public void exportBlackbox(PluginCall call) {
-        JSObject r = new JSObject();
-        try {
-            com.omnidownloader.app.fetcher.EventRing ring = DowniFetcherService.blackbox();
-            if (ring.isEmpty()) {
-                ring.seed(getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
-                        .getString("lastEvents", ""));
-            }
-            java.io.File dir = new java.io.File(getContext().getExternalFilesDir(null), "fetch-spike");
-            //noinspection ResultOfMethodCallIgnored
-            dir.mkdirs();
-            java.io.File f = new java.io.File(dir, "blackbox.txt");
-            java.io.FileWriter w = new java.io.FileWriter(f, false);
-            w.write(ring.dump());
-            w.close();
-            r.put("ok", true);
-            r.put("path", f.getAbsolutePath());
-            r.put("count", ring.size());
-        } catch (Exception e) {
-            r.put("ok", false);
-            r.put("error", String.valueOf(e));
-        }
-        call.resolve(r);
-    }
-
-    @PluginMethod
-    public void setCoreSize(PluginCall call) {
-        Integer dp = call.getInt("dp", 64);
-        int want = dp == null ? 64 : dp;
-        int best = 64, bd = Integer.MAX_VALUE;
-        for (int v : new int[]{48, 56, 64}) {
-            int d = Math.abs(v - want);
-            if (d < bd) { bd = d; best = v; }
-        }
-        getContext().getSharedPreferences("downi_fetcher", Context.MODE_PRIVATE)
-                .edit().putInt("core_size_dp", best).apply();
-        DowniFetcherService.applyCoreSizeLive(best);
-        JSObject r = new JSObject(); r.put("ok", true); r.put("sizeDp", best);
-        call.resolve(r);
-    }
-
-    @PluginMethod
-    public void resetCorePosition(PluginCall call) {
-        DowniFetcherService.resetCorePositionLive();
-        JSObject r = new JSObject(); r.put("ok", true);
-        call.resolve(r);
-    }
-
-    @PluginMethod
-    public void openBatterySettings(PluginCall call) {
-        JSObject r = new JSObject();
-        try {
-            android.content.Intent i = new android.content.Intent();
-            i.setClassName("com.android.settings", "com.android.settings.Settings$HighPowerApplicationsActivity");
-            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(i);
-            r.put("ok", true);
-        } catch (Exception e) {
-            try {
-                getContext().startActivity(new android.content.Intent(
-                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
-                r.put("ok", true); r.put("fallback", true);
-            } catch (Exception e2) { r.put("ok", false); }
-        }
-        call.resolve(r);
-    }
-
     @PluginMethod
     public void getClipboardText(PluginCall call) {
         ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
@@ -694,8 +251,8 @@ public class DowniEnginePlugin extends Plugin {
         } catch (Exception e) {
             // Defect C (v3.1.1): THIS SPOT MUST MATCH build.gradle versionCode/versionName —
             // it is one of the three version spots bumped at release (see MISSION §J).
-            result.put("versionName", "3.3.3");
-            result.put("versionCode", 51L);
+            result.put("versionName", "3.5.0");
+            result.put("versionCode", 52L);
             call.resolve(result);
         }
     }
@@ -853,65 +410,6 @@ public class DowniEnginePlugin extends Plugin {
         });
     }
 
-    // ---------- Media Vault (real MediaStore library) ----------
-
-    @PluginMethod
-    public void listMedia(PluginCall call) {
-        miscExecutor.execute(() -> {
-            JSObject result = new JSObject();
-            result.put("videos", queryMedia(true));
-            result.put("audios", queryMedia(false));
-            call.resolve(result);
-        });
-    }
-
-    private JSONArray queryMedia(boolean video) {
-        JSONArray items = new JSONArray();
-        Uri collection = video ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-        // RELATIVE_PATH exists only on API 29+, and ONLY when it is part of the
-        // projection: getColumnIndexOrThrow() on a column that was not projected
-        // throws, and the old per-row catch silently skipped every item — so the
-        // Vault listed nothing on Android 10+ (found on-device: empty Vault).
-        String[] projection;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            projection = new String[]{
-                MediaStore.MediaColumns._ID,
-                MediaStore.MediaColumns.DISPLAY_NAME,
-                MediaStore.MediaColumns.SIZE,
-                MediaStore.MediaColumns.DATE_MODIFIED,
-                MediaStore.MediaColumns.MIME_TYPE,
-                MediaStore.MediaColumns.RELATIVE_PATH,
-            };
-        } else {
-            projection = new String[]{
-                MediaStore.MediaColumns._ID,
-                MediaStore.MediaColumns.DISPLAY_NAME,
-                MediaStore.MediaColumns.SIZE,
-                MediaStore.MediaColumns.DATE_MODIFIED,
-                MediaStore.MediaColumns.MIME_TYPE,
-            };
-        }
-        // The Vault shows ONLY what DOWNI downloaded — never the whole gallery.
-        java.util.HashSet<Long> seen = new java.util.HashSet<>();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            String rootDir = video ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_MUSIC;
-            // 1) Everything inside DOWNI's own folder (Movies/DOWNI/, Music/DOWNI/).
-            collectMedia(items, collection, projection,
-                MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?",
-                new String[]{rootDir + "/DOWNI/%"}, video, seen, false);
-            // 2) Legacy rows saved at the collection root (Movies/, Music/) before
-            //    DOWNI had its own folder — matched against names this app saved,
-            //    so existing users' downloads don't vanish after the update.
-            collectMedia(items, collection, projection,
-                MediaStore.MediaColumns.RELATIVE_PATH + " = ?",
-                new String[]{rootDir + "/"}, video, seen, true);
-        } else {
-            // Pre-Android 10 has no RELATIVE_PATH: tracked names only.
-            collectMedia(items, collection, projection, null, null, video, seen, true);
-        }
-        return items;
-    }
-
     private void collectMedia(JSONArray items, Uri collection, String[] projection,
                               String selection, String[] args, boolean video,
                               java.util.Set<Long> seen, boolean trackedOnly) {
@@ -963,51 +461,6 @@ public class DowniEnginePlugin extends Plugin {
     }
 
     @PluginMethod
-    public void getThumbnail(PluginCall call) {
-        Double idVal = call.getDouble("id");
-        long id = idVal == null ? 0L : idVal.longValue();
-        boolean isVideo = call.getBoolean("isVideo", true);
-        miscExecutor.execute(() -> {
-            JSObject result = new JSObject();
-            result.put("data", thumbnailBase64(id, isVideo));
-            call.resolve(result);
-        });
-    }
-
-    private String thumbnailBase64(long id, boolean isVideo) {
-        try {
-            Uri uri = Uri.withAppendedPath(
-                isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                String.valueOf(id));
-            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-            try {
-                retriever.setDataSource(getContext(), uri);
-                Bitmap frame = null;
-                if (isVideo) {
-                    frame = retriever.getFrameAtTime(500_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
-                    if (frame == null) frame = retriever.getFrameAtTime(0);
-                } else {
-                    byte[] art = retriever.getEmbeddedPicture();
-                    if (art != null) frame = BitmapFactory.decodeByteArray(art, 0, art.length);
-                }
-                if (frame == null) return "";
-                if (frame.getWidth() > 512) {
-                    float scale = 512f / frame.getWidth();
-                    frame = Bitmap.createScaledBitmap(frame, 512, Math.max(1, (int) (frame.getHeight() * scale)), true);
-                }
-                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
-                frame.compress(Bitmap.CompressFormat.JPEG, 70, bytes);
-                frame.recycle();
-                return Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP);
-            } finally {
-                try { retriever.release(); } catch (Exception ignored) {}
-            }
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    @PluginMethod
     public void setNativeTheme(PluginCall call) {
         // v3.1.1: dark/AMOLED only (light theme removed) — the system bars are always dark.
         Boolean amoledVal = call.getBoolean("amoled", true);
@@ -1021,137 +474,6 @@ public class DowniEnginePlugin extends Plugin {
                 window.getDecorView().setSystemUiVisibility(0);
             } catch (Exception ignored) {}
             call.resolve();
-        });
-    }
-
-    @PluginMethod
-    public void getMediaStreamUrl(PluginCall call) {
-        Double idVal = call.getDouble("id");
-        long id = idVal == null ? 0L : idVal.longValue();
-        boolean isVideo = call.getBoolean("isVideo", true);
-        try {
-            int port = MediaStreamServer.get(getContext()).start();
-            JSObject result = new JSObject();
-            result.put("url", "http://127.0.0.1:" + port + "/media/" + id + "?type=" + (isVideo ? "video" : "audio") + "&t=" + MediaStreamServer.get(getContext()).getToken());
-            call.resolve(result);
-        } catch (Exception e) {
-            call.reject("Could not start the in-app player service.", e);
-        }
-    }
-
-    @PluginMethod
-    public void openMedia(PluginCall call) {
-        Double idVal = call.getDouble("id");
-        long id = idVal == null ? 0L : idVal.longValue();
-        boolean isVideo = call.getBoolean("isVideo", true);
-        try {
-            Uri uri = Uri.withAppendedPath(
-                isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                String.valueOf(id));
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(uri, isVideo ? "video/*" : "audio/*");
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
-            call.resolve();
-        } catch (Exception e) {
-            call.reject("No app found to play this media.", e);
-        }
-    }
-
-    @PluginMethod
-    public void shareMedia(PluginCall call) {
-        Double idVal = call.getDouble("id");
-        long id = idVal == null ? 0L : idVal.longValue();
-        boolean isVideo = call.getBoolean("isVideo", true);
-        try {
-            Uri uri = Uri.withAppendedPath(
-                isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                String.valueOf(id));
-            Intent intent = new Intent(Intent.ACTION_SEND);
-            intent.setType(isVideo ? "video/*" : "audio/*");
-            intent.putExtra(Intent.EXTRA_STREAM, uri);
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            Intent chooser = Intent.createChooser(intent, "Share Media");
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(chooser);
-            call.resolve();
-        } catch (Exception e) {
-            call.reject("Could not share this media.", e);
-        }
-    }
-
-    @PluginMethod
-    public void deleteMedia(PluginCall call) {
-        Double idVal = call.getDouble("id");
-        long id = idVal == null ? 0L : idVal.longValue();
-        boolean isVideo = call.getBoolean("isVideo", true);
-        try {
-            Uri uri = Uri.withAppendedPath(
-                isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                String.valueOf(id));
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                android.app.PendingIntent pi = MediaStore.createDeleteRequest(getContext().getContentResolver(), java.util.Collections.singletonList(uri));
-                getActivity().startIntentSenderForResult(pi.getIntentSender(), 10291, null, 0, 0, 0);
-                JSObject result = new JSObject();
-                result.put("requested", true);
-                call.resolve(result);
-            } else {
-                int rows = getContext().getContentResolver().delete(uri, null, null);
-                JSObject result = new JSObject();
-                result.put("deleted", rows > 0);
-                call.resolve(result);
-            }
-        } catch (Exception e) {
-            call.reject("Could not delete this media from storage.", e);
-        }
-    }
-
-    // ---------- Vault file listing ----------
-    @PluginMethod
-    public void listVaultFiles(PluginCall call) {
-        miscExecutor.execute(() -> {
-            File vaultDir = getContext().getExternalFilesDir(null);
-            JSObject result = new JSObject();
-            JSONArray items = new JSONArray();
-            if (vaultDir != null && vaultDir.isDirectory()) {
-                File[] files = vaultDir.listFiles();
-                if (files != null) {
-                    for (File f : files) {
-                        try {
-                            JSONObject obj = new JSONObject();
-                            obj.put("path", f.getAbsolutePath());
-                            obj.put("name", f.getName());
-                            obj.put("size", f.length());
-                            String lower = f.getName().toLowerCase();
-                            obj.put("isVideo", lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".mkv"));
-                            items.put(obj);
-                        } catch (Exception ignored) {}
-                    }
-                }
-            }
-            result.put("files", items);
-            call.resolve(result);
-        });
-    }
-
-    // ---------- Vault file deletion ----------
-    @PluginMethod
-    public void removeVaultFile(PluginCall call) {
-        String path = call.getString("path");
-        if (path == null) {
-            call.reject("Path is required");
-            return;
-        }
-        miscExecutor.execute(() -> {
-            File f = new File(path);
-            JSObject result = new JSObject();
-            if (f.exists() && f.delete()) {
-                result.put("deleted", true);
-                call.resolve(result);
-            } else {
-                result.put("deleted", false);
-                call.reject("Failed to delete file");
-            }
         });
     }
 
@@ -1423,14 +745,6 @@ public class DowniEnginePlugin extends Plugin {
     }
 
     @PluginMethod
-    public void openGallery(PluginCall call) {
-        android.content.Intent intent = new android.content.Intent(DownloadManager.ACTION_VIEW_DOWNLOADS);
-        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-        getContext().startActivity(intent);
-        call.resolve();
-    }
-
-    @PluginMethod
     public void getSharedUrl(PluginCall call) {
         JSObject result = new JSObject();
         android.content.Intent intent = getActivity().getIntent();
@@ -1562,30 +876,7 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve();
     }
 
-    /** Wave 3: resume EVERY paused grab (the settings card's "Resume all"). */
-    @PluginMethod
-    public void resumeAllPaused(PluginCall call) {
-        int resumed = 0;
-        try {
-            android.content.SharedPreferences prefs = getContext()
-                .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
-            org.json.JSONObject paused = new org.json.JSONObject(prefs.getString("pausedGrabs", "{}"));
-            java.util.Iterator<String> it = paused.keys();
-            while (it.hasNext()) {
-                String jobId = it.next();
-                Intent intent = new Intent(getContext(), DowniDownloadService.class);
-                intent.setAction("shared_resume");
-                intent.putExtra("jobId", jobId);
-                try { getContext().startService(intent); resumed++; } catch (Exception ignored) {}
-            }
-        } catch (Exception ignored) {}
-        JSObject r = new JSObject();
-        r.put("resumed", resumed);
-        call.resolve(r);
-    }
-
-    /** v3.1.1 (defect N7): true exactly once after the user tapped a grab notification.
-     *  Wave 2: also carries the completed Core's PEEK request — the Vault item to open. */
+    /** v3.1.1 (defect N7): true exactly once after the user tapped a grab notification. */
     @PluginMethod
     public void consumeOpenQueueFlag(PluginCall call) {
         JSObject result = new JSObject();
@@ -1595,12 +886,9 @@ public class DowniEnginePlugin extends Plugin {
                 .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
             open = prefs.getBoolean("openQueuePending", false);
             if (open) prefs.edit().putBoolean("openQueuePending", false).apply();
-            String vaultRaw = prefs.getString("openVaultPending", null);
-            if (vaultRaw != null && !vaultRaw.isEmpty()) {
-                prefs.edit().remove("openVaultPending").apply();
-                JSONObject v = new JSONObject(vaultRaw);
-                result.put("vault", v);   // { mediaId, isVideo }
-            }
+            // The Core's "peek" request is gone with the Core and the Vault. A leftover
+            // flag from an older build is cleared, never answered.
+            prefs.edit().remove("openVaultPending").apply();
         } catch (Exception ignored) {}
         result.put("open", open);
         call.resolve(result);
@@ -1616,26 +904,6 @@ public class DowniEnginePlugin extends Plugin {
         } catch (Exception ignored) {}
         result.put("enabled", enabled);
         result.put("canPrompt", Build.VERSION.SDK_INT >= 33);
-        call.resolve(result);
-    }
-
-    @PluginMethod
-    public void requestMediaPermission(PluginCall call) {
-        String alias = Build.VERSION.SDK_INT >= 33 ? "mediaModern" : "mediaLegacy";
-        if (getPermissionState(alias) == PermissionState.GRANTED) {
-            JSObject result = new JSObject();
-            result.put("granted", true);
-            call.resolve(result);
-            return;
-        }
-        requestPermissionForAlias(alias, call, "mediaPermissionCallback");
-    }
-
-    @PermissionCallback
-    private void mediaPermissionCallback(PluginCall call) {
-        String alias = Build.VERSION.SDK_INT >= 33 ? "mediaModern" : "mediaLegacy";
-        JSObject result = new JSObject();
-        result.put("granted", getPermissionState(alias) == PermissionState.GRANTED);
         call.resolve(result);
     }
 

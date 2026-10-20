@@ -118,7 +118,7 @@ Inconsistencies are in casing and the tagline:
 
 ---
 
-## REMEDIATION PLAN → ships as **v4.0.0** (no dot-release grind)
+## REMEDIATION PLAN → ships as **v3.5.0** (no dot-release grind)
 
 All UI/copy/resource-layer. **No extraction-layer changes → The Law's full matrix is not
 re-triggered by this work** (the still-pending v3.0.0 device matrix remains its own gate).
@@ -132,7 +132,7 @@ re-triggered by this work** (the still-pending v3.0.0 device matrix remains its 
 | I-5 | **Ghost exorcism (safe parts)**: Java class + drawable renames, localStorage migration w/ fallback | Java, res, JS |
 | I-6 | **Web parity audit** of downi-web against the same rules | downi-web repo |
 
-Then: full visual QA pass on device → v4.0.0 (versionCode 41).
+Then: full visual QA pass on device → v3.5.0 (versionCode 52).
 
 ---
 

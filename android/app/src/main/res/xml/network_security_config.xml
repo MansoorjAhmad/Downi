@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Cleartext HTTP is blocked everywhere except the in-app Vault player's
-  loopback stream server (127.0.0.1), which serves local media to the WebView.
+  Cleartext HTTP is blocked everywhere. The loopback exception the Vault's
+  stream server needed was removed with the Vault (v3.5.0).
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
 </network-security-config>

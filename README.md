@@ -1,10 +1,99 @@
-# DOWNI V3.3.3 ⚡
+# DOWNI V3.5.0 ⚡
 
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
 
 ---
+## 🆕 What's New in V3.5.0 — the lean release
+
+### DOWNI is now only a downloader
+
+Users told us the app had grown too much around the thing it is actually for. So the app got
+smaller. **The Vault, the Fetcher and the Core are gone**, and what is left is the part that
+works: paste a link or share one to DOWNI, and the video is in your gallery.
+
+Nothing about the **engine** changed. `yt-dlp`, the format cascade, the merge, the queue, the
+notifications and DowniDrop are exactly as they were in 3.3.3.
+
+### What was removed, and why it was worth it
+
+- **The Vault (tab, in-app player, media scanning).** Downloads went to `Movies/DOWNI/` so the
+  Vault could scope its list to it. With no Vault there is no reason for a subfolder: **files now
+  land straight in `Movies/` and `Music/`**, where the user can already see them in their own
+  gallery. The Queue still shows every grab — that history was always the real record.
+- **The Fetcher (the accessibility service, the Core orb, the black box, the quick-settings
+  tile).** It watched the platform's share sheet and drove it. It was also the app's heaviest
+  moving part, it needed a permission people do not trust a downloader with, and it came with a
+  "keep it alive on vivo" support burden. **The app no longer asks for accessibility access at
+  all.**
+- **Shield (the video-cleaning feature).** Cancelled before it shipped. The work is preserved on
+  the `feature/shield` branch, not thrown away.
+
+### The app asks for less
+
+| Before | Now |
+|---|---|
+| Accessibility | **gone** |
+| Media read (`READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`, `READ_EXTERNAL_STORAGE`) | **gone** |
+| `WRITE_SECURE_SETTINGS` | **gone** |
+| Notifications, install-packages, internet, write-storage (API ≤ 29) | unchanged |
+
+A downloader that watches your screen and reads your whole gallery is a hard sell. One that asks
+for a notification and nothing else is easy.
+
+### The home screen is one action
+
+- The tap-the-orb hero is gone. **The paste field is the home screen**: paste a link, press
+  **Grab this link**, pick a quality.
+- The "Link detected" banner is still there — a copied link still offers **⚡ Grab** in one tap.
+- The DowniDrop hint is still there — share any link to DOWNI and it grabs in the background.
+- The success confetti still fires, from the DOWNI mark instead of the orb.
+
+### Settings went from seven cards to four
+
+**App** (version, updates, the GitHub star) · **Engine** (yt-dlp version, health, network
+diagnostics) · **Appearance** (accent, AMOLED) · **Behavior & storage** (clipboard detect,
+DowniDrop, save location, clear cache).
+
+The Fetcher card took up more room than everything else put together. Most of what was in it
+was about a feature that no longer exists.
+
+### Smaller, and honest about it
+
+- **71 files deleted** — 30 native classes, 21 test classes, 20 resources and assets — 16 files
+  changed and one added (the gate below): **16,199 deletions** and ~600 lines added in all
+  (the insertion count includes these notes, so it moves; the deletions do not). The plugin's
+  public surface went from 52 annotated methods to 25.
+- **`index.html`: 188 KB → 119 KB** (188,134 → 119,271 bytes, the committed file). 67 fewer
+  `function` definitions.
+- **The APK: 46.7 MB → 42.1 MB** (debug).
+- **One defect, caught before tagging.** The cut that removed the Vault took two whole statements
+  with it: the loops in `switchTab()` that hide the view you are leaving and un-light its nav
+  item. Tapping Queue left you scrolling through the Grab screen stacked above it, and every tab
+  you had visited stayed lit. Gradle was green throughout — a browser run found it. It is fixed,
+  and `tools/_tabcheck.js` now fails the build if a tab switch ever leaks a view or a nav again.
+- **What the Core was still carrying.** Its ten Lottie state files, the four orb renders, the
+  `com.airbnb.android:lottie` runtime and the test-only Gson dependency all left with it:
+  **1,764 KB of art and JSON that nothing could reach any more.** A dead dependency is a
+  liability, not a feature waiting to return.
+- The `MIXED_CONTENT_ALWAYS_ALLOW` exception the Vault's loopback player needed is gone, and so
+  is the `127.0.0.1` cleartext exception in `network_security_config.xml` — **cleartext HTTP is
+  now blocked everywhere, with no exceptions**. The WebView is back to its default content policy.
+
+### What did not change
+
+The engine, the extraction path, `yt-dlp 2026.8.19`, the format cascade, the 3-parallel queue,
+the merge, the notifications, the updater, DowniDrop, the clipboard banner and the Inspector.
+**No extraction-layer change was made**, so the full platform × entry-point matrix was not
+required — only the truth re-checks in `READ_THIS_BEFORE_UPGRADE.md` §6.
+
+---
+## 🆕 What's New in V3.3.3 — the Instagram link-grab, fixed
+
+### The link, not the download
+
+- **The grab is 3× faster where it felt slow.** On Instagram the Fetcher took **5.01 s** to get the link in
 ## 🆕 What's New in V3.3.3 — the Instagram link-grab, fixed
 
 ### The link, not the download
@@ -353,8 +442,7 @@ separately and muxed them on the device.
 | **Platforms** | YouTube, Instagram, TikTok, Twitter/X, Facebook + any direct link |
 | **Formats** | Up to 1080p (YouTube: up to 720p), 480p, Best, MP3/M4A audio-only |
 | **Downloads** | 3 simultaneous, up to 6 in the queue — fully parallel |
-| **Vault** | Browse, play, share & delete your downloaded files |
-| **Theme** | Light & Dark mode — Settings → Appearance |
+| **Theme** | AMOLED true-black + 4 accent colours — Settings → Appearance |
 | **Clipboard detect** | Auto-detects copied video links — tap to grab instantly |
 | **Inspector** | Preview title, thumbnail & quality before downloading |
 | **Save location** | Gallery (Movies/Music) or custom folder |
