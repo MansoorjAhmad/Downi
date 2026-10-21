@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android 12+ draws the platform splash itself and reads the PLATFORM
+      attributes. The compat attributes in values/styles.xml cover API 24-30,
+      but on 12+ the splash fell back to the platform default - a black screen
+      behind the brand mark. These are the same values, declared for 31+.
+    -->
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#090B0D</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/downi_logo_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <item name="android:windowBackground">@drawable/downi_splash</item>
+        <item name="android:statusBarColor">#090B0D</item>
+        <item name="android:navigationBarColor">#090B0D</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowSplashScreenBackground">#090B0D</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/downi_logo_foreground</item>
+    </style>
+</resources>

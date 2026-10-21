@@ -462,15 +462,13 @@ public class DowniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void setNativeTheme(PluginCall call) {
-        // v3.1.1: dark/AMOLED only (light theme removed) — the system bars are always dark.
-        Boolean amoledVal = call.getBoolean("amoled", true);
-        final boolean amoled = amoledVal == null || amoledVal;
+        // 3.6.0: dark-only. The Obsidian foundation owns both system bars; the old
+        // AMOLED true-black branch retired with the toggle.
         getActivity().runOnUiThread(() -> {
             try {
                 android.view.Window window = getActivity().getWindow();
-                // AMOLED true-black must reach the system bars too, not just the page (B17).
-                window.setStatusBarColor(android.graphics.Color.parseColor(amoled ? "#000000" : "#060A13"));
-                window.setNavigationBarColor(android.graphics.Color.parseColor(amoled ? "#000000" : "#0D1421"));
+                window.setStatusBarColor(android.graphics.Color.parseColor("#090B0D"));
+                window.setNavigationBarColor(android.graphics.Color.parseColor("#090B0D"));
                 window.getDecorView().setSystemUiVisibility(0);
             } catch (Exception ignored) {}
             call.resolve();

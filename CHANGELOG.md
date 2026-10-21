@@ -3,6 +3,51 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.6.0 - the Obsidian release (versionCode 53) - 2026-10-21
+
+**A ground-up frontend rebuild, not a reskin.** Every screen, sheet and control was rebuilt on
+one dark design system - Obsidian, Graphite and Electric Lime - with the brand mark traced from
+the 1254 px artwork. There is no light mode and no AMOLED switch: DOWNI is dark, deliberately,
+everywhere, including the native splash and the launcher icon.
+
+**The new shell**
+
+- `www/assets/css/downi.css` is the whole design system: tokens, type scale, material depth,
+  focus states and reduced-motion rules in one place. The vendored Tailwind build is gone.
+- Grab, Queue, Settings and every sheet (inspect, update, error) rebuilt on the new shell.
+- The startup moment is the brand: mark, wordmark and "BUILT DIFFERENT. DESIGNED TO LAST.",
+  then a clean handoff into the app. The overlay never blocks a tap.
+- Grab home now ends with your three most recent saves, or a playlist tip on first run, instead
+  of dead space. A completed grab updates history immediately.
+- Queue gains an explicit History section, calmer SAVED tags and human-readable data units.
+- Settings loses the Appearance card and every AMOLED/accent path. One identity, no toggle.
+- Accessibility: labelled controls, visible focus rings, 44 px targets, no colour-only state.
+- Performance: hand-authored CSS and static assets only - no WebGL, no particles, no new
+  dependencies. All engine, plugin, persistence and diagnostic APIs are unchanged.
+
+**Native**
+
+- New launcher icon: dark metallic tile with the Ice White chevron and Electric Lime triangle;
+  legacy PNGs and the Android 13 monochrome layer regenerated.
+- New adaptive-icon vectors and a solid Obsidian splash (`#090B0D`) replace the old teal/purple
+  startup art. The splash mark sits inside Android 12's safe area.
+- `setNativeTheme()` paints both system bars `#090B0D`; the AMOLED branch is gone.
+- The startup is one movement now: native mark, then the web's brand lockup, then Grab. The
+  splash is **not** held - on Android 12+ it *is* the window's starting window, so holding it
+  stops the WebView from drawing at all - and the lockup starts on the page's own first
+  contentful paint, the first frame that is really on screen. No black frame, no grey frame:
+  the WebView's own background is Obsidian too.
+- The success pulse is one lime ring again, and it is drawn over the toast (which sits exactly
+  over the brand mark) so it is actually seen.
+
+**Device**
+
+- vivo V2058 (Android 13, 1080x2408), build 53 / v3.6.0, installed over v3.3.3 with
+  `adb install -r`. 17 of the 18 rows in DEVICE_TEST.md §4 (V3.6.0) are green; the clipboard
+  banner is the one row that needs the owner's finger - this ROM has no adb clipboard channel.
+- Measured on the phone: the page is ready at 663 ms (DOMContentLoaded) / 684 ms (load) and
+  paints at 2,032 ms; the native splash and the brand lockup both measure `#090B0D` throughout.
+
 ## V3.5.0 — the lean release (versionCode 52) — 2026-10-20
 
 **DOWNI is now only a downloader.** Users said the app had grown too much around the thing it

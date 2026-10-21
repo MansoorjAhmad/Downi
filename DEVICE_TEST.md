@@ -4,6 +4,59 @@
 Fill it in every time the extraction layer changes, and after any UI/wiring release like a
 hardship check. Mark ✅ / ❌ per cell.
 
+## 4. V3.6.0 — the Obsidian release (2026-10-21)
+
+> **Device pass 2026-10-21** — vivo V2058 (Android 13, 1080×2408, density 440). Build **53 /
+> v3.6.0**, release-signed (38,458,241 B), installed over v3.3.3 (versionCode 51) with
+> `adb install -r`, so the update path and the carried-over history were both exercised. Captures in
+> `Temp/opencode/ui/device/` (`boot*.mp4` = the cold start at 5–12 fps, `dl*.mp4` = the grabs).
+>
+> This is a frontend and native-shell rebuild: the engine, the 25 plugin APIs, persistence, probe
+> and diagnostics are untouched, and the rows below are the truth checks a shell rebuild can still
+> break. **4-6 needs a finger** — this ROM has no `cmd clipboard` (`adb shell cmd clipboard` answers
+> "No shell command implementation"), so the clipboard banner is the one row this pass cannot claim.
+
+| # | Check | Expected | Evidence |
+|---|---|---|---|
+| 4-1 | The app opens, no crash | ✅ | cold start from `am start` plus 3 foreground grabs and 1 share; `adb logcat` shows no FATAL EXCEPTION and no missing-asset noise; the process stayed up through every step |
+| 4-2 | **No accessibility permission** in the app's info | ✅ | `dumpsys package` requested permissions: INTERNET, REQUEST_INSTALL_PACKAGES, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, POST_NOTIFICATIONS, WAKE_LOCK — no accessibility service (no `BIND_ACCESSIBILITY_SERVICE` anywhere in the package) and no media-read permission |
+| 4-3 | A pasted link grabs | ✅ | `https://youtu.be/jNQXAC9IVRw` typed into the field → **Grab this link** → the inspector opened with the thumbnail, "Me at the zoo / jawed / 0:19" and four quality rows → 720p → the file downloaded (746,914 B) |
+| 4-4 | The file is in the gallery root, not a DOWNI subfolder | ⚠️ | **the two paths disagree** — see the note under the table. The headless share path lands at the gallery root (`/sdcard/Movies/Me at the zoo (1).mp4`, MediaStore `relative_path=Movies/`); the foreground inspector path still lands in the legacy album (`/sdcard/Movies/DOWNI/Me at the zoo (2).mp4`, `relative_path=Movies/DOWNI/`). Engine layer — outside the 3.6.0 scope, flagged to the owner |
+| 4-5 | Share → DOWNI still grabs in the background | ✅ | `am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT <url> -n com.omnidownloader.app/.DropActivity` → the Queue showed a live card ("DowniDrop · youtube ⚡ background / Warming up the engine… / 1%"), ACTIVE went to 1, the file landed in the gallery, and the notification posted ("Saved to your Vault / Me at the zoo · Gallery / Movies") |
+| 4-6 | The clipboard banner still offers ⚡ Grab | ⏳ | **owner tap** — no adb clipboard channel on this ROM; not claimed here |
+| 4-7 | The success pulse fires | ✅ | 12 fps capture of the completion frame: **1,451 lime pixels in the mark's box against a 178 median** — the one lime ring, drawn over the success toast (z-index 90) so it is actually seen. No confetti, no orb |
+| 4-8 | **§6 N8–N13 truth re-checks** | ✅ | ACTIVE counted only the live job (0 → 1 during the share → 0 after it finished); the Queue badge dot appeared only while a job was live; one grab = one notification row (`downi_progress` + `downi_alerts`); the ledger moved 1 → 2 completed and 12 MB → 13 MB the moment the grab finished; the terminal card cleared itself |
+| 4-9 | The Queue tab is honest | ✅ | history survived the update install (the v3.3.3 item was still listed) and every new grab appeared immediately — in Grab's "Recent saves" and in the Queue's History, with the quiet Titanium SAVED tag |
+| 4-10 | Settings works, and the old toggles are gone | ✅ | APP card (DOWNI v3.6.0 (53), Updates, Version, Engine yt-dlp 2026.08.19, Developer, Star on GitHub, the "BUILT **DIFFERENT**. DESIGNED TO **LAST**." tagline with lime on DIFFERENT/LAST); ENGINE card (yt-dlp engine · Python 3.11.10, **HEALTHY**, Verify engine health, Network diagnostics); BEHAVIOR & STORAGE (Clipboard auto-detect, DowniDrop · Instant, Save location — Gallery · Movies / Music, Clear engine cache). **No Appearance card, no accent picker, no AMOLED switch** |
+| 4-11 | The updater still works | ✅ | the version it reports is the build the device runs — header badge v3.6, Settings "DOWNI v3.6.0 (53)"; the GitHub feed's newest published release is v3.3.3, older than this build, so the updater correctly offers nothing |
+| 4-12 | No Vault, no Fetcher, no Shield anywhere in the UI | ✅ | three tabs only — Grab, Queue, Settings — in the nav and on every screen; all 67 control ids and the `switchTab` contract are unchanged |
+| 4-13 | **Cleartext is blocked everywhere and downloads still work** | ✅ | `network_security_config.xml` is `cleartextTrafficPermitted="false"` with no exceptions (the loopback exception is gone) and the YouTube grab completed end to end over HTTPS. One URL class was proven; TikTok/Instagram were not run this pass |
+| 4-14 | **The Core's removal left nothing broken** | ✅ | the shipped APK contains **0** `core/` or lottie assets, and the cold start plus three grabs produced no missing-asset noise and no crash |
+| 4-15 | The APK the device runs is the lean one | ✅ | `versionName=3.6.0`, `versionCode=53`; the installed `base.apk` is **38,459,093 B** — the lean build, not the 46.7 MB one |
+| 4-16 | **One tab on screen at a time, one nav item lit** | ✅ | Queue and Settings each replaced the other — one view on screen, one nav item lime with its hairline, never a stack; `tools/_tabcheck.js` passes on the source **and** on the synced copy |
+| 4-17 | **The native shell is the brand** | ✅ | the launcher icon renders as the dark tile with the Ice White chevron and the Electric Lime triangle (captured in the app drawer); the native splash is the mark on `#090B0D`; the status bar, the nav bar and the app window all measure `#090B0D` |
+| 4-18 | **The startup has no black flash and no skipped reveal** | ✅ | the 5 fps cold-start capture: native splash (mark on `#090B0D`) → the brand lockup (mark + DOWNI + "BUILT DIFFERENT. DESIGNED TO LAST." + the lime line) → Grab, with **no `#000000` frame anywhere**; the WebView's own background is `#090B0D`, so the gap while the renderer warms is Obsidian, not black or the platform's grey |
+
+### Notes for the owner
+
+1. **4-4 — two save paths, two places.** The headless share path (DowniDrop) writes to the gallery
+   root, `/sdcard/Movies/`. The foreground inspector path still writes to the legacy album,
+   `/sdcard/Movies/DOWNI/`, so the same title lands twice on the device (once per path, with the
+   counter suffix). The save code is in `DowniDownloadService.java` (`saveToGallery`, the
+   `RELATIVE_PATH` line) — the engine layer, which 3.6.0 was scoped not to touch. **It is a
+   pre-existing v3.5.0-era behaviour, not a 3.6.0 regression**, but it is visible and it should be
+   fixed before the next release.
+2. **The share notification still says "Saved to your Vault"** although the Vault is gone. The string
+   is in the same native service; cosmetic, engine layer, same ruling.
+3. **The cold start is ~6 s on this phone, and 1.4 s of it is the WebView's own cold renderer**
+   (measured in the page: DOMContentLoaded 663 ms, load 684 ms, first contentful paint 2,032 ms).
+   The native splash is NOT held — on Android 12+ the splash *is* the window's starting window, so
+   holding it stops the WebView from drawing at all and delays the app by exactly the length of the
+   hold. The brand lockup therefore starts on the page's own first contentful paint, which is the
+   first frame that is really on screen.
+
+> Sign and date here when green: ______________
+
 ## 4. V3.5.0 — the scope reduction (2026-10-20)
 
 > **Not yet run.** Every cell below is ⏳ until the build has been on the vivo V2058. The §6 truth
