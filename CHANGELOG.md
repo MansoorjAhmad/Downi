@@ -5,20 +5,34 @@ Full release notes + signed APKs live on
 
 ## V3.6.1 - the quick release (versionCode 54) - 2026-10-21
 
-**Three things, all of them found on the phone.**
+**Four things, three of them found on the phone.**
 
-- **The launcher icon is the board's own artwork now.** The metallic chevron, the graded tile and the
-  one controlled lime glow, traced from the approved art instead of a flat approximation - so the
-  adaptive icon and the legacy PNGs are finally the same picture, and the icon reads as a lit
-  surface instead of a dark blob.
-- **The startup animation is gone.** No reveal, no lockup, no delay: the splash appears and
-  leaves at once, and the app paints the moment it can. Measured on the vivo V2058, the cold
-  start went from **6.2 s to 3.4 s**, and no frame of it is black or grey.
+- **The launcher icon is the board's own artwork, seated the way the board seats it.** The metallic
+  chevron, the graded tile and the one controlled glow - the glow is the master's blurred lime
+  triangle behind the triangle, which a vector cannot blur, so it is three concentric copies at
+  falling alpha. The mark sits at the board's own proportion inside the visible shape instead of
+  crowding the circle, and the adaptive icon and the legacy PNG are finally the same picture.
+- **The startup animation is gone.** No reveal, no lockup, no delay: the splash appears and leaves
+  at once (`windowSplashScreenAnimationDuration` 0) and the app paints the moment it can. Measured
+  on the vivo V2058, the cold start went from **6.2 s to 3.4 s**, and no frame of it is black or
+  grey.
 - **Vertex is back, and it is better than Vertex.** The copy -> tap path now knows the title, the
   platform and the real quality list *before* you tap; it grabs the lane you chose in Settings
   (Best / 1080p / 720p / 480p); and if that lane fails it falls back down the list instead of
-  ending in an error. **The Inspector and DowniDrop are untouched** - they behave exactly as they
-  did, which the device pass confirmed.
+  ending in an error. The banner says **Grab now**, or **Grab again** when it knows the link, and
+  the **Inspector and DowniDrop are untouched** - they behave exactly as before, which the device
+  pass confirmed.
+- **The progress card tells the truth while it works.** The number, the ring and the bar now move
+  on one clock, so the card reads as one moving thing instead of three. The phase gets its own
+  line (*Downloading*, *Merging video + audio*, *Saving to your gallery*) instead of being buried
+  in a string of numbers, the bytes get their own line (*18.4 MB of 77.2 MB*), the speed is
+  smoothed (the engine reports a sample, not a reading - the sparkline keeps the raw shape so a
+  stall is still visible), an ETA the engine cannot know is hidden rather than promised, and
+  **Details** opens the truth: the average speed, the elapsed time, the lane and the link. The
+  keyboard also gets out of the way when a grab starts - it was sitting over the card.
+- **Nothing says "Vault" any more.** The completion notification and the saving phase now read
+  **"Saved to your gallery"** / **"Saving to your gallery."** - the Vault is gone, and so is the
+  last string that still named it.
 
 ## V3.6.0 - the Obsidian release (versionCode 53) - 2026-10-21
 

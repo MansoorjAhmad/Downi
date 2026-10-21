@@ -583,6 +583,41 @@ label.srow { cursor: pointer; }
 .job__cancel:active { background: var(--bad-dim); color: var(--bad); }
 .job__resume { font-size: 10.5px; font-weight: 800; color: var(--lime); padding: 6px 4px; }
 .job__status { font-family: var(--mono); font-size: 10px; color: var(--ti); }
+.job__bytes { margin: 2px 0 0; font-family: var(--mono); font-size: 9.5px; color: var(--mu); }
+.job__more {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--mu);
+  padding: 5px 2px;
+  flex: 0 0 auto;
+}
+.job__more:active { color: var(--ti); }
+.job__details {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 5px;
+}
+.jdetails__row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.jdetails__k {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--mu);
+  flex: 0 0 62px;
+}
+.jdetails__v {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ti);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .bar {
   height: 4px;

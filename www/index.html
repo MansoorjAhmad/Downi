@@ -683,7 +683,7 @@
       const off = c - (Math.min(100, Math.max(0, pct || 0)) / 100) * c;
       return `<svg width="24" height="24" viewBox="0 0 24 24" class="flex-shrink-0" style="transform:rotate(-90deg)">
         <circle cx="12" cy="12" r="${r}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2.5"/>
-        <circle cx="12" cy="12" r="${r}" class="jringfg" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" style="transition:stroke-dashoffset .3s ease"/>
+        <circle cx="12" cy="12" r="${r}" class="jringfg" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" style="transition:none"/>
       </svg>`;
     }
 
@@ -1135,9 +1135,23 @@
       if (o.title) label = o.title;
 
       const tempId = 'pending_' + Date.now();
-      activeJobs.set(tempId, { label, url: url, formatId: formatId, status: 'Connecting…', percent: 0, size: '', speed: '', eta: '', done: false, speedSeries: [] });
+      activeJobs.set(tempId, {
+        label, url: url, formatId: formatId, status: 'Connecting.', percent: 0,
+        size: '', speed: '', eta: '', done: false, speedSeries: [],
+        // v3.6.1: the card's own clock. shownPct is what the user sees (it eases
+        // toward the engine's truth), speedEma is the smoothed speed, and
+        // startedAt is the honest elapsed time.
+        startedAt: Date.now(), shownPct: 0, speedEma: 0, speedText: '', etaText: '', sizeText: ''
+      });
       renderJobCards();
       updateQueueBadge();
+
+      // The keyboard has no business sitting over a progress card.
+      try {
+        const inp = document.getElementById('inputManualUrl');
+        if (inp && document.activeElement === inp) inp.blur();
+        else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      } catch (e) {}
 
       showToast('Grab queued', 'DOWNI is on it — track it below.', 'success');
 
@@ -1221,9 +1235,19 @@
         job.status = p.status || 'Downloading…';
         job.percent = p.percent || 0;
         job.size = p.sizeFormatted || job.size;
+        job.sizeText = bytesText(job.size);
         job.speed = p.speedFormatted || '';
         job.eta = p.etaFormatted || '';
-        if (typeof p.speed === 'number') job.speedSeries = (job.speedSeries || []).concat(p.speed).slice(-24);
+        // The engine's speed is a sample, not a reading - it swings by megabytes
+        // between ticks. The card shows the smoothed truth; the sparkline keeps
+        // the raw shape so a stall is still visible.
+        if (typeof p.speed === 'number') {
+          job.speedSeries = (job.speedSeries || []).concat(p.speed).slice(-24);
+          job.speedEma = job.speedEma ? (job.speedEma * 0.72 + p.speed * 0.28) : p.speed;
+          job.speedText = formatSpeedJs(job.speedEma);
+        }
+        // An ETA the engine cannot know (no data yet) is worse than no ETA.
+        job.etaText = (job.speedEma && job.speedEma < 2048) ? '' : (p.etaFormatted || '');
       }
       renderJobCards();
       updateQueueBadge();
@@ -1297,30 +1321,112 @@
       }
     }
 
+    // ---- The progress card's own language ------------------------------
+    function bytesText(size) {
+      if (!size) return '';
+      return String(size).replace(/\s*\/\s*/, ' of ');
+    }
+
+    function formatSpeedJs(bytesPerSec) {
+      const b = Number(bytesPerSec) || 0;
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB/s';
+      if (b >= 1024) return Math.round(b / 1024) + ' KB/s';
+      return Math.round(b) + ' B/s';
+    }
+
+    // The engine's status carries the phase AND the live numbers
+    // ("Downloading 34% - 18.4 MB / 77.2 MB - 105 KB/s - 572s left"). The card
+    // shows the phase; the numbers live on their own lines where they can be
+    // read instead of being scrolled past.
+    function phaseLabel(status) {
+      const raw = String(status || '').trim();
+      if (!raw) return 'Working';
+      let phase = raw.split('\u00b7')[0].trim();
+      phase = phase.replace(/\s*\d+(\.\d+)?%.*$/, '').trim().replace(/\.$/, '').trim();
+      const map = {
+        'Connecting': 'Connecting to the engine',
+        'Warming up the engine': 'Waking the engine',
+        'In queue': 'In the queue',
+        'Queued': 'In the queue',
+        'Downloading': 'Downloading',
+        'Merging video + audio': 'Merging video + audio',
+        'Saving to your Vault': 'Saving to your gallery',
+        'Saved': 'Saved to your gallery'
+      };
+      return map[phase] || phase || 'Working';
+    }
+
+    function laneLabel(formatId) {
+      if (!formatId || formatId === 'best') return 'Best available';
+      if (formatId === 'audio') return 'Audio only';
+      return String(formatId).toUpperCase() + 'p';
+    }
+
+    function elapsedLabel(job) {
+      if (!job || !job.startedAt) return '-';
+      const s = Math.max(0, Math.round((Date.now() - job.startedAt) / 1000));
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60), r = s % 60;
+      return m + 'm' + (r ? ' ' + r + 's' : '');
+    }
+
+    function jobDetailsHtml(id) {
+      const job = mergedJobs().get(id);
+      if (!job) return '';
+      const rows = [
+        ['Average', job.speedText || '-'],
+        ['Elapsed', elapsedLabel(job)],
+        ['Lane', laneLabel(job.formatId)],
+        ['Link', job.url || '-']
+      ];
+      return rows.map(r =>
+        '<div class="jdetails__row"><span class="jdetails__k">' + escapeHtml(r[0]) +
+        '</span><span class="jdetails__v">' + escapeHtml(r[1]) + '</span></div>').join('');
+    }
+
+    function toggleJobDetails(id) {
+      const box = document.getElementById('jd_' + id);
+      if (!box) return;
+      const hidden = box.classList.toggle('hidden');
+      const card = document.querySelector('[data-job="' + id + '"]');
+      const btn = card ? card.querySelector('.jmore') : null;
+      if (btn) {
+        btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+        btn.textContent = hidden ? 'Details' : 'Hide';
+      }
+      if (!hidden) box.innerHTML = jobDetailsHtml(id);
+    }
+
     function jobCardHtml(id, job) {
-      const pct = Math.round(job.percent);
+      const shown = job.shownPct !== undefined && !calmMotion() ? job.shownPct : (job.percent || 0);
+      const pct = Math.round(shown);
+      const phase = job.done ? 'Saved to your gallery' : phaseLabel(job.status);
+      const bytes = job.done ? (job.sizeText || job.size || '') : (job.sizeText || '');
       return `
         <article class="job" data-job="${id}" data-done="${job.done ? 1 : 0}" data-failed="${job.failed ? 1 : 0}">
           <div class="job__top">
             <span class="job__ring jring">${job.done
               ? '<span class="done-check pop">✓</span>'
-              : ringSvg(job.percent)}</span>
+              : ringSvg(shown)}</span>
             <div class="job__id">
               <p class="job__label">${escapeHtml(job.label)}${job.background ? ' <span class="tag">⚡ background</span>' : ''}${job.done ? ' <span class="saved">Saved ✓</span>' : ''}</p>
-              <p class="job__status jstatus">${escapeHtml(job.size || job.status)}</p>
+              <p class="job__status jstatus">${escapeHtml(phase)}</p>
+              ${bytes ? `<p class="job__bytes jbytes">${escapeHtml(bytes)}</p>` : ''}
             </div>
             <span class="jpct">${pct}%</span>
           </div>
-          <div class="bar jbar job__bar${job.done ? '' : ' live'}"><div style="width:${Math.max(2, job.percent)}%"></div></div>
+          <div class="bar jbar job__bar${job.done ? '' : ' live'}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="width:${Math.max(2, shown)}%"></div></div>
           <div class="job__foot">
+            ${(job.done || job.failed) ? '' : `<button onclick="toggleJobDetails('${id}')" class="job__more jmore" aria-expanded="false" aria-controls="jd_${id}">Details</button>`}
             <div class="job__right" style="margin-left:auto">
               <span class="jspark job__spark">${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}</span>
-              <span class="jspeed job__speed">${job.speed ? escapeHtml(job.speed) : ''}</span>
-              <span class="jeta job__eta">${job.eta ? escapeHtml(job.eta) : ''}</span>
+              <span class="jspeed job__speed">${job.speedText ? escapeHtml(job.speedText) : ''}</span>
+              <span class="jeta job__eta">${job.etaText ? escapeHtml(job.etaText) : ''}</span>
               ${job.paused ? `<button onclick="resumeOneDownload('${id}')" class="job__resume">▶ Resume</button>` : ''}
               ${(job.done || job.failed) ? '' : `<button onclick="cancelOneDownload('${id}')" class="job__cancel" aria-label="Cancel download"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
             </div>
           </div>
+          <div class="job__details jdetails hidden" id="jd_${id}"></div>
         </article>
       `;
     }
@@ -1352,23 +1458,74 @@
           container.innerHTML = ids.map(id => jobCardHtml(id, jobs.get(id))).join('');
           container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
         }
-        ids.forEach(id => {
-          const job = jobs.get(id);
-          const card = frames[id];
-          if (!card || job.done || job.failed) return;
-          const pct = Math.round(job.percent);
-          const pctEl = card.querySelector('.jpct'); if (pctEl) pctEl.textContent = pct + '%';
-          const barEl = card.querySelector('.jbar > div'); if (barEl) barEl.style.width = Math.max(2, job.percent) + '%';
-          const ringEl = card.querySelector('.jringfg');
-          if (ringEl) ringEl.setAttribute('stroke-dashoffset', (RING_C - Math.min(100, Math.max(0, job.percent)) / 100 * RING_C).toFixed(1));
-          const stEl = card.querySelector('.jstatus'); if (stEl) stEl.textContent = job.size || job.status;
-          const spEl = card.querySelector('.jspeed'); if (spEl) spEl.textContent = job.speed || '';
-          const etaEl = card.querySelector('.jeta'); if (etaEl) etaEl.textContent = job.eta || '';
-          const sparkEl = card.querySelector('.jspark');
-          if (sparkEl) sparkEl.innerHTML = (job.speedSeries && job.speedSeries.length > 2) ? sparklineSvg(job.speedSeries) : '';
-        });
+        paintJobNumbers(frames, jobs, RING_C);
       });
+      // One clock for every card: the number, the ring and the bar ease toward
+      // the engine's truth together, so the card reads as one moving thing
+      // instead of three independent ones.
+      if (jobs.size && !jobTweenRaf && !calmMotion()) jobTweenRaf = requestAnimationFrame(tickJobTweens);
       renderGrabRecent();
+    }
+
+    function calmMotion() {
+      try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+    }
+
+    /** Writes the live numbers into the existing cards - never rebuilds them. */
+    function paintJobNumbers(frames, jobs, RING_C) {
+      const C = RING_C || 2 * Math.PI * 9;
+      // The frame map comes in two shapes: a plain object from the rebuild path
+      // and a Map from the tween. Take both.
+      const map = frames instanceof Map ? frames : new Map(Object.entries(frames || {}));
+      map.forEach((card, id) => {
+        const job = (jobs || mergedJobs()).get(id);
+        if (!card || !job) return;
+        const shown = job.done ? 100
+          : (calmMotion() ? (job.percent || 0)
+                          : (job.shownPct !== undefined ? job.shownPct : (job.percent || 0)));
+        const pct = Math.round(shown);
+        const pctEl = card.querySelector('.jpct'); if (pctEl) pctEl.textContent = pct + '%';
+        const barEl = card.querySelector('.jbar > div'); if (barEl) barEl.style.width = Math.max(2, shown) + '%';
+        const barBox = card.querySelector('.jbar'); if (barBox) barBox.setAttribute('aria-valuenow', String(pct));
+        const ringEl = card.querySelector('.jringfg');
+        if (ringEl) ringEl.setAttribute('stroke-dashoffset', (C - Math.min(100, Math.max(0, shown)) / 100 * C).toFixed(1));
+        if (!job.done) {
+          const stEl = card.querySelector('.jstatus'); if (stEl) stEl.textContent = phaseLabel(job.status);
+          const byEl = card.querySelector('.jbytes');
+          if (byEl) byEl.textContent = job.sizeText || '';
+        }
+        const spEl = card.querySelector('.jspeed'); if (spEl) spEl.textContent = job.speedText || '';
+        const etaEl = card.querySelector('.jeta'); if (etaEl) etaEl.textContent = job.etaText || '';
+        const sparkEl = card.querySelector('.jspark');
+        if (sparkEl) sparkEl.innerHTML = (job.speedSeries && job.speedSeries.length > 2) ? sparklineSvg(job.speedSeries) : '';
+        const detEl = card.querySelector('.jdetails');
+        if (detEl && !detEl.classList.contains('hidden')) detEl.innerHTML = jobDetailsHtml(id);
+      });
+    }
+
+    function collectJobFrames() {
+      const frames = new Map();
+      [document.getElementById('activeDownloads'), document.getElementById('queueActiveContainer')]
+        .filter(Boolean)
+        .forEach(container => container.querySelectorAll('[data-job]').forEach(el => frames.set(el.dataset.job, el)));
+      return frames;
+    }
+
+    let jobTweenRaf = null;
+    function tickJobTweens() {
+      jobTweenRaf = null;
+      const jobs = mergedJobs();
+      let animating = false;
+      jobs.forEach((job) => {
+        if (job.done || job.failed) { job.shownPct = job.done ? 100 : (job.shownPct || 0); return; }
+        const target = Number(job.percent) || 0;
+        if (job.shownPct === undefined) job.shownPct = 0;
+        const diff = target - job.shownPct;
+        if (Math.abs(diff) > 0.4) { job.shownPct += diff * 0.2; animating = true; }
+        else job.shownPct = target;
+      });
+      paintJobNumbers();
+      if (animating) jobTweenRaf = requestAnimationFrame(tickJobTweens);
     }
 
     // The Grab home ends with either the newest three saves or the playlist tip.

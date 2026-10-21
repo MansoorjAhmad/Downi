@@ -594,12 +594,12 @@ public class DowniEnginePlugin extends Plugin {
             if (job.cancelled.get()) return;
 
             JSONObject file = new JSONObject(response.toString());
-            DowniDownloadService.updateJob(getContext(), job.id, "Saving to your Vault…", 98);
+            DowniDownloadService.updateJob(getContext(), job.id, "Saving to your gallery.", 98);
 
             JSObject saving = new JSObject();
             saving.put("jobId", job.id);
             saving.put("percent", 98);
-            saving.put("status", "Saving to your Vault…");
+            saving.put("status", "Saving to your gallery.");
             notifyListeners("onProgress", saving);
 
             String destination;

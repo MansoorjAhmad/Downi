@@ -144,7 +144,7 @@ public class DowniDownloadService extends Service {
     }
 
     /**
-     * Phase update with no byte numbers yet (Queued, Merging video + audio…, Saving to your Vault…).
+     * Phase update with no byte numbers yet (Queued, Merging video + audio., Saving to your gallery.).
      * The notification shows the phase text and the given percent.
      */
     public static void updateJob(Context context, String jobId, String status, int percent) {
@@ -240,7 +240,7 @@ public class DowniDownloadService extends Service {
             JSONObject row = new JSONObject();
             row.put("id", rowId);
             row.put("title", title == null || title.isEmpty() ? "Shared video" : title);
-            row.put("dest", destination == null || destination.isEmpty() ? "Vault" : destination);
+            row.put("dest", destination == null || destination.isEmpty() ? "Gallery" : destination);
             row.put("url", url == null ? "" : url);
             row.put("bytes", Math.max(0L, bytes));
             row.put("ts", System.currentTimeMillis());
@@ -586,7 +586,7 @@ public class DowniDownloadService extends Service {
             // "MB grabbed" counter had nothing honest to add for DowniDrop grabs.
             long finalBytes = 0;
             DowniDownloadService.SaveResult saveResult = null;
-            applyPhase(jobId, "Saving to your Vault…", 98);
+            applyPhase(jobId, "Saving to your gallery.", 98);
             if (file.optBoolean("merge", false)) {
                 applyPhase(jobId, "Merging video + audio…", 96);
                 File videoPart = new File(file.getString("video_path"));
@@ -1025,7 +1025,7 @@ public class DowniDownloadService extends Service {
             Notification n = new NotificationCompat.Builder(this, CHANNEL_ALERTS)
                 .setSmallIcon(R.drawable.ic_stat_downi_done)
                 .setColor(ACCENT_COLOR)
-                .setContentTitle("Saved to your Vault")
+                .setContentTitle("Saved to your gallery")
                 .setContentText("Grab complete - tap to open DOWNI.")
                 .setContentIntent(openAppIntent())
                 .setAutoCancel(true)
@@ -1041,7 +1041,7 @@ public class DowniDownloadService extends Service {
             Notification n = new NotificationCompat.Builder(this, CHANNEL_ALERTS)
                 .setSmallIcon(R.drawable.ic_stat_downi_done)
                 .setColor(ACCENT_COLOR)
-                .setContentTitle("Saved to your Vault")
+                .setContentTitle("Saved to your gallery")
                 .setContentText(title + " · " + destination)
                 .setContentIntent(openAppIntent())
                 .setAutoCancel(true)
