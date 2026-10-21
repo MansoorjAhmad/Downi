@@ -1,477 +1,105 @@
-# DOWNI V3.5.0 ⚡
+# DOWNI
 
 > **Grab any video. One tap. Zero clutter.**
 
-DOWNI (formerly OmniDownloader) is a sleek, ultra-luxury Android application engineered to download high-definition, platform watermark-free videos and crystal-clear audio from all major social media platforms.
+DOWNI is a dark, fast Android downloader for video and audio. Copy a link, paste a link, or share
+one to DOWNI — the file lands in your gallery, watermark-free, up to 1080p.
 
----
-## 🆕 What's New in V3.5.0 — the lean release
-
-### DOWNI is now only a downloader
-
-Users told us the app had grown too much around the thing it is actually for. So the app got
-smaller. **The Vault, the Fetcher and the Core are gone**, and what is left is the part that
-works: paste a link or share one to DOWNI, and the video is in your gallery.
-
-Nothing about the **engine** changed. `yt-dlp`, the format cascade, the merge, the queue, the
-notifications and DowniDrop are exactly as they were in 3.3.3.
-
-### What was removed, and why it was worth it
-
-- **The Vault (tab, in-app player, media scanning).** Downloads went to `Movies/DOWNI/` so the
-  Vault could scope its list to it. With no Vault there is no reason for a subfolder: **files now
-  land straight in `Movies/` and `Music/`**, where the user can already see them in their own
-  gallery. The Queue still shows every grab — that history was always the real record.
-- **The Fetcher (the accessibility service, the Core orb, the black box, the quick-settings
-  tile).** It watched the platform's share sheet and drove it. It was also the app's heaviest
-  moving part, it needed a permission people do not trust a downloader with, and it came with a
-  "keep it alive on vivo" support burden. **The app no longer asks for accessibility access at
-  all.**
-- **Shield (the video-cleaning feature).** Cancelled before it shipped. The work is preserved on
-  the `feature/shield` branch, not thrown away.
-
-### The app asks for less
-
-| Before | Now |
-|---|---|
-| Accessibility | **gone** |
-| Media read (`READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`, `READ_EXTERNAL_STORAGE`) | **gone** |
-| `WRITE_SECURE_SETTINGS` | **gone** |
-| Notifications, install-packages, internet, write-storage (API ≤ 29) | unchanged |
-
-A downloader that watches your screen and reads your whole gallery is a hard sell. One that asks
-for a notification and nothing else is easy.
-
-### The home screen is one action
-
-- The tap-the-orb hero is gone. **The paste field is the home screen**: paste a link, press
-  **Grab this link**, pick a quality.
-- The "Link detected" banner is still there — a copied link still offers **⚡ Grab** in one tap.
-- The DowniDrop hint is still there — share any link to DOWNI and it grabs in the background.
-- The success confetti still fires, from the DOWNI mark instead of the orb.
-
-### Settings went from seven cards to four
-
-**App** (version, updates, the GitHub star) · **Engine** (yt-dlp version, health, network
-diagnostics) · **Appearance** (accent, AMOLED) · **Behavior & storage** (clipboard detect,
-DowniDrop, save location, clear cache).
-
-The Fetcher card took up more room than everything else put together. Most of what was in it
-was about a feature that no longer exists.
-
-### Smaller, and honest about it
-
-- **71 files deleted** — 30 native classes, 21 test classes, 20 resources and assets — 16 files
-  changed and one added (the gate below): **16,199 deletions** and ~600 lines added in all
-  (the insertion count includes these notes, so it moves; the deletions do not). The plugin's
-  public surface went from 52 annotated methods to 25.
-- **`index.html`: 188 KB → 119 KB** (188,134 → 119,271 bytes, the committed file). 67 fewer
-  `function` definitions.
-- **The APK: 46.7 MB → 42.1 MB** (debug).
-- **One defect, caught before tagging.** The cut that removed the Vault took two whole statements
-  with it: the loops in `switchTab()` that hide the view you are leaving and un-light its nav
-  item. Tapping Queue left you scrolling through the Grab screen stacked above it, and every tab
-  you had visited stayed lit. Gradle was green throughout — a browser run found it. It is fixed,
-  and `tools/_tabcheck.js` now fails the build if a tab switch ever leaks a view or a nav again.
-- **What the Core was still carrying.** Its ten Lottie state files, the four orb renders, the
-  `com.airbnb.android:lottie` runtime and the test-only Gson dependency all left with it:
-  **1,764 KB of art and JSON that nothing could reach any more.** A dead dependency is a
-  liability, not a feature waiting to return.
-- The `MIXED_CONTENT_ALWAYS_ALLOW` exception the Vault's loopback player needed is gone, and so
-  is the `127.0.0.1` cleartext exception in `network_security_config.xml` — **cleartext HTTP is
-  now blocked everywhere, with no exceptions**. The WebView is back to its default content policy.
-
-### What did not change
-
-The engine, the extraction path, `yt-dlp 2026.8.19`, the format cascade, the 3-parallel queue,
-the merge, the notifications, the updater, DowniDrop, the clipboard banner and the Inspector.
-**No extraction-layer change was made**, so the full platform × entry-point matrix was not
-required — only the truth re-checks in `READ_THIS_BEFORE_UPGRADE.md` §6.
-
----
-## 🆕 What's New in V3.3.3 — the Instagram link-grab, fixed
-
-### The link, not the download
-
-- **The grab is 3× faster where it felt slow.** On Instagram the Fetcher took **5.01 s** to get the link in
-## 🆕 What's New in V3.3.3 — the Instagram link-grab, fixed
-
-### The link, not the download
-
-- **The grab is 3× faster where it felt slow.** On Instagram the Fetcher took **5.01 s** to get the link in
-  hand — and 13–22 s on its worse runs — against ~1 s on TikTok. It measures **1.62 s** now (2.29 s and
-  2.45 s on the other runs that night), with the share control answered in **0.48 s** instead of 1.38 s.
-- **The engine was never the problem, and it was left alone.** In the same grab, Instagram resolved in
-  **4.65 s** against TikTok's 4.69 s — identical. The felt difference was entirely the wait *in front of* it:
-  `yt-dlp`, the extraction path and the whole download engine are untouched by this release.
-- **The blind waits are gone.** The chain used to sleep **1200 ms** after tapping *Copy link* before even
-  reading the clipboard, plus another 350 ms before the first read. Those are **400 ms and 120 ms** now, and
-  the read starts the instant the platform writes: the chain remembers what the clipboard held *before* the
-  copy, so a value that differs is **proof** of a fresh write, and a value that doesn't waits out a grace
-  instead of being trusted.
-- **It reacts instead of sampling a timer.** The *Copy link* row is taken when it **appears** — **0.97 s**
-  from the tap instead of 1.81 s. A content change now drives the wait, and the old 250 ms polling and its
-  fixed deadlines are gone.
-- **"Sometimes it just fails" is fixed at its cause.** Instagram's action rows load **last**, after the DM
-  list, and variably (~1.3–2.2 s) — two scans 250 ms apart could miss them completely, which is exactly what
-  those failures were. The wait now covers that variance, and still gives up quickly when a sheet is truly
-  not coming.
-- **Why the number moved.** The v3.3.2 release was withdrawn for this bug, and the fix ships as
-  **versionCode 51** rather than by moving the `v3.3.2` tag — a published tag is not moved, and the in-app
-  updater compares version *names*, so a fixed build still called 3.3.2 would read as *"Up to date"* for
-  everyone who had installed the bad one.
-- **The tap is still the only trigger,** nothing downloads without it, and the engine is untouched. The one
-  thing that changes on screen is the Core's orbit light, which now syncs to the open share sheet on
-  Instagram exactly as it always has on TikTok.
-
-Install directly over any earlier version — the signing key is unchanged, so your settings and downloads are
-preserved.
+[Releases](https://github.com/MansoorjAhmad/Downi/releases) ·
+[Changelog](CHANGELOG.md) · [Device test matrix](DEVICE_TEST.md)
 
 ---
 
-
-
-## What's New in V3.3.2 — the finish pass
-
-### The thumb, the battery, and the state machine
-
-- **Every control a thumb aims at is now the platform's 48 px.** The Vault's filter chips, per-item icon
-  buttons and rescan, the header gear, the player's close, the settings checkboxes (the whole row is the
-  target now) and the accent swatches all grew — **Vault 30 → 2** controls under the line, **Settings
-  13 → 5** — and the horizontal overflow reading stayed `+0.0 px` on all four screens. What is left is
-  labels, not controls.
-- **The inspector's primary action can't hide below the fold any more.** *Download Best Available Quality*
-  is a pinned row with *Cancel*, so a long quality list no longer needs a scroll before the tap. The first
-  attempt at this traded one defect for another (growing the Vault's icon buttons squeezed the card's Play
-  button to 40.9 px), and that regression was caught by the next audit run and fixed the same day.
-- **The last two animations that ran forever now rest.** The progress sweep and the skeleton shimmer were
-  the earlier vortex fix's own siblings: measured **565 frames / 9 s and +12 s of CPU per 9 s** for one
-  8 px bar. Both are compositor transforms now and the shimmer is bounded to four passes — the same window
-  then reads **0 frames and +1 s**.
-- **The Core's state vocabulary is data now** (M3): an explicit `Kind` (REST / TRANSIENT / HOLD / TOUCH)
-  plus a settle/legality table, so a beat with no settle target fails a test instead of freezing on
-  screen. **Wire names unchanged** — the debug channel and every gate read the same bytes — and the suite
-  is **18 suites / 123 tests, 0 failures**.
-- **Verified end to end on the shipped artefact.** A real Instagram reel typed into the field → the
-  inspector's own metadata and quality lanes → the pinned CTA → a file on disk that is **byte-identical to
-  the debug build's** (`sha256 DC816AC9…`, h264 720×1280 + aac stereo, 15.717 s), indexed in the Vault,
-  counters honest, no crash — and the installed binary was proved to *be* this artefact
-  (`/data/app/…/base.apk` hashed on the device = the local APK's own sha256).
-- **Why the number moved.** v3.3.1's tag and its published APK predate this pass — its web state is
-  174 641 B against this build's 180 230 B, and it still loops the sweep and the shimmer. Moving a
-  published tag would have been worse than a new version, so the pass ships as **versionCode 50**.
-  **No new features:** nothing here changes what DOWNI does — only how it feels and what it costs.
-
-Install directly over v3.3.1 — the signing key is unchanged, so your settings and downloads are preserved.
-
----
-
-## What's New in V3.3.1 — the Core
-
-### Fetcher 2.0, as the Core
-
-- **The bubble becomes the Core.** Your own approved orb art, ten authored animations (dormant, wake,
-  idle, press, progress, pause, complete, failure, retry, unsupported) and the sheets' C2/C3/C5/C6
-  behaviour: a real progress ring (it *is* the download's percentage), a real pause, an honest failure,
-  no red anywhere, no alarms. The chevron, the gel, the drop shadow — the material is the one you
-  approved.
-- **The edge snap now deforms the way the sheet says.** It was compressing the *wrong axis* whenever a
-  finger dragged the Core flush to an edge and let go — found by measuring the phone's own frames as an
-  ~8 % widening where C3 asks for a flattening, fixed, and confirmed on the device
-  (`CORE_SQUASH sx=0.9280425`).
-- **Resume fades back in** ("the flow returns smoothly", sheet C5) instead of cutting.
-- **The home screen stopped burning battery.** Two infinite animations were the app's entire foreground
-  cost: measured ~61 fps and ~25 s of CPU per 20 s of wall clock with nobody touching the screen. They
-  rest now and play one pass on the tap that wakes them — the same window then reads 0 frames and +0 s.
-- **C6's neutral read matches the design sheet** for hosts and paths, not only for photo posts.
-- **The failure state exhales.** C6.1's second cell — a quiet settle after the rose shift — now exists.
-
-Install directly over v3.2.0 — the signing key is unchanged, so your settings and downloads are
-preserved.
-
----
-
-## 🆕 What's New in V3.1.2
-
-### The Stay-Put Release — a share never kidnaps you again
-
-- **Share → DOWNI keeps you where you are.** If DOWNI was sitting in your recent apps, sharing a
-  video used to yank you out of TikTok/YouTube/Instagram and drop you inside DOWNI. Now a warm
-  share behaves exactly like a cold one: a toast, a silent background grab — and you never leave
-  the app you were scrolling. (The invisible share receiver now lives in its own throwaway task
-  and removes it on the way out.)
-- **Failures explain themselves.** If a background grab ever fails, the failed card inside DOWNI
-  shows the plain-language reason, and the raw engine detail is kept for diagnosis — no PC, no
-  cable, no guessing.
-
-
-## 🆕 What's New in V3.1.1
-
-### The Truth Release — what you see is what's happening
-
-- **Notifications tell the real story.** A download row now carries the same numbers as the app:
-  percent, downloaded / total size, live speed and time left — collapsed and expanded. One live row
-  per grab, posted instantly (no more Android 12+ delay), tinted with the DOWNI accent and a branded
-  icon.
-- **Background grabs are visible in the app.** A share → DOWNI grab shows up inside DOWNI too — a live
-  card in the Grab tab and the Queue with a working Cancel, a "Saved ✓" moment when it lands, one
-  deduped Queue-history row and a Vault that refreshes itself while you watch. Finished cards clear
-  out on their own after a few seconds.
-- **Share → DOWNI is always instant now.** The "Ask quality first" toggle is gone — a share grabs
-  in the background immediately, every time (the Inspector remains for the in-app paste and Vortex
-  flows, so you can still pick a quality when you're in DOWNI itself).
-- **Honest words.** Raw engine errors become plain reasons ("That link isn't a video.", "Can't reach
-  the network — try again."), a non-video link is rejected at the Inspector, and a grab you cancelled
-  yourself says "Grab canceled" instead of a scary failure.
-- **Reachability polish.** Tapping any grab notification lands on the Queue; a one-time hint offers
-  notification permission only when it's actually switched off; job-card Cancel buttons get full
-  44 dp finger targets and the live numbers leave the 10 px floor.
-- **Dark only, on purpose.** The light theme is gone; AMOLED stays the default, and the status/nav
-  bars are dark by construction.
-
-
-## 🆕 What's New in V3.1.0
-
-### DowniDrop 2.0 — instant again ⚡
-
-Share a link from any app and DOWNI **grabs it in the background immediately** — you
-never leave TikTok, YouTube or Instagram. A toast confirms the start, a silent progress
-notification rides along (with a Cancel button), and a celebration lands when it's
-saved to your Vault. It remembers your favorite quality per platform, works even when
-the app was fully closed, and saves to your custom folder if you chose one. Prefer to
-pick quality every time? **Settings → DowniDrop → Ask quality first** brings back the
-Inspector flow.
-
-### The Vault, silky at last
-
-The Vault grid no longer rebuilds itself on every interaction. Cards are created once
-and only ever **moved, added or removed** — searches, selection mode, refreshes and
-finished downloads update in place. No flicker, no lost scroll position, and a new
-download fades in as a single card while everything else stays perfectly still.
-
-## 🆕 What's New in V3.0.4
-
-### The Vault is yours now — only yours
-
-The Vault used to list **every video and song on the phone** — camera clips, WhatsApp
-media, screen recordings — because its storage query asked Android for everything and
-DOWNI saved its downloads loose into the shared `Movies/` and `Music/` roots.
-
-- **DOWNI now keeps its own folders** — every new download lands in `Movies/DOWNI/` or
-  `Music/DOWNI/`, which also gives you a clean **DOWNI album** in your gallery app.
-- **The Vault shows only what DOWNI downloaded** — the query is scoped to the DOWNI
-  folders, plus the names the app has ever saved (so downloads from older versions
-  stay listed after the update — nothing disappears).
-- **The blinking is gone for good** — the Vault's entrance animation now plays exactly
-  once. Refreshes (a download finishing, a delete, re-opening the tab) update the grid
-  silently instead of replaying every card's animation.
-
-## 🆕 What's New in V3.0.3
-
-### YouTube works again — all of it
-
-YouTube stopped handing out combined video+audio files and now serves **adaptive-only** streams
-(video-only + audio-only). Every lane that asked for a combined file — the **Vortex** one-tap grab
-and the **720p / 480p / 360p** Inspector choices — died with *"That quality is not available for
-this link."* Only the 1080p lane kept working, because it already downloaded the two streams
-separately and muxed them on the device.
-
-- **Every video lane now falls back to that same proven split + on-device merge** — H.264
-  video-only + M4A audio-only, muxed by Android's own MediaMuxer. No ffmpeg on board, no client
-  spoofing, no forced User-Agent: the pinned options in `READ_THIS_BEFORE_UPGRADE.md` are untouched.
-- **`Best Available` and `720p` cap at the highest *muxable* stream** (H.264, up to 1080p), so the
-  result plays on every supported device. VP9 needs Android 10+, AV1 needs Android 14+.
-- **Merge progress is honest now** — the split lane reported a fraction (0.95) where the app
-  expected a percentage, so the bar crawled under 1% and then jumped. It now runs
-  0→70% (video) → 95% (audio) → *Merging…* → *Saving to gallery…*.
-- **Engine health can no longer lie** — Settings → *Run diagnostics* only checked that YouTube
-  *metadata* resolved, so it stayed green while every download lane was failing. It now probes
-  whether a real download lane can resolve, and says so honestly when it cannot.
-- **Audio-only grabs were never affected** — M4A streams still resolve directly.
-- **DowniDrop works from a running app too** — a shared link now opens the Inspector even when DOWNI
-  was already open. Capacitor's native bridge delivers the share payload as properties on a plain
-  `Event` (`event.url`), not in `event.detail`, so the old listener silently dropped every warm
-  share. Cold-start shares were fine; warm-start ones were dead until now.
-- **The Vortex and the "Link detected" banner honor the freshest copied link** — the Vortex used to
-  read the URL field before the clipboard (so a stale pasted link won over a fresh copy), and the
-  banner only read the clipboard once at app start. Both now read the clipboard fresh, and the
-  banner also re-checks whenever the app regains focus.
-- **The Vault lists your downloads again on Android 10+** — the media query read `RELATIVE_PATH`
-  without projecting it, so every row threw and was silently skipped. The Vault looked empty on any
-  modern phone even though the files were sitting in Movies/Music.
-- **The Vault grid and the live download cards no longer blink** — both rebuilt their entire DOM on
-  every thumbnail/progress tick, replaying each card's entrance animation (the "blinking"). Now
-  thumbnails and progress update in place, and cards only rebuild when one is added, removed, or
-  finishes.
-
-> Tester's note: a 60fps 4K demo (e.g. *Big Buck Bunny*) is a ~258 MB 1080p download through this
-> path. When you run `DEVICE_TEST.md`, pick **short** clips — otherwise you are measuring your
-> connection, not the engine.
-
----
-
-## 🆕 What's New in V3.0.2
-
-### Fixes + gate-keeping
-- **Text-selection share works** — "DOWNI" in Android's text menu opens the Inspector (PROCESS_TEXT was wired in the manifest but never handled).
-- **No more double Inspector** — cold-start shares are consumed once.
-- **Vault always lists your downloads** — the app now asks for media access when you open the Vault (Android 13+ requires it in code, not just the manifest).
-- **Honest 1080p on every video** — VP9/AV1 ladders merge on Android 10+/14+; older phones get a clear "try 720p" message instead of a broken file.
-- **Device test matrix is now a repo file** (`DEVICE_TEST.md`) — The Law's gate is executable, checkboxes included.
-
----
-
-## 🆕 What's New in V3.0.1
-
-### The hardening release — everything fixed, everything honest
-- **Playlist batch never dies** — a failed video is skipped, the rest keep grabbing
-- **DowniDrop, for real** — shared links now open the Inspector (quality picker) instead of a silent background grab that never showed in the Queue
-- **Cancel keeps its Undo** — the Undo action no longer gets overwritten by a second generic toast
-- **Right link, right job** — history, "Last grabbed ↻" and live progress cards always belong to their own download, even with 3 parallel grabs
-- **Truthful settings** — clipboard toggle restores its real state; session stats survive restarts; the duplicate "Storage" card is gone (now Behavior + Storage)
-- **Better notifications** — unique per job, completions actually make a sound, permission asked on your first Grab instead of at launch
-- **True 1080p, smoother** — the MediaMuxer merge now writes properly interleaved files with a larger safety buffer
-- **Identity cleanup** — the whole app is DOWNI now (plugin, service, resources, settings keys — with automatic migration, nothing is lost); accent colors repaint the *entire* interface; three honest platform chips; one SVG icon language; one tagline; AMOLED black reaches the system bars
-- **Housekeeping** — stale update APKs auto-cleaned, Instagram diagnostic can't fail on a dead probe, no more stale-artifact files in the repo
-
-
-## 🆕 What's New in V3.0.0
-
-### The smooth-and-fast release
-**Feel**
-- Design system with a single motion language — springy sheets, staggered lists, press feedback, success pulses, reduced-motion support
-- Vortex confetti on every save, haptics mapped to every action
-- Vault 2.0: search, sort, storage stats, grid ⇄ list, **long-press multi-select with bulk share/delete**
-- Player 2.0: double-tap ±10s, speed control, **resumes where you left off**, swipe-down to close, tap to hide controls
-- Queue: progress ring, live speed sparkline, cancel with **Undo**
-- Grab: clipboard banner with **video thumbnail**, "Last grabbed ↻" chip, invalid-link shake
-- Inspector: **BEST PICK** badge, remembers your quality per platform, blur-up thumbnails
-- Settings: 4 accent colors, **AMOLED true-black**, clear engine cache, tap-to-copy version
-- Rich notifications with video thumbnails, Quick Settings tile, shared links open the Inspector
-
-**Speed**
-- **True 1080p Full HD on YouTube** — separate video + audio downloaded and merged on-device with Android's native MediaMuxer (no ffmpeg bloat)
-- **Instant re-inspect** — same link re-opens the picker in milliseconds (5-minute cache)
-- **Concurrent fragment downloads** (3) for faster HLS/DASH fetches
-- Engine pre-warmed at launch — the first grab starts faster
-- Downloads continue in the background — the foreground service keeps the engine alive
-
-**Power**
-- **Playlist batch mode** — paste a YouTube playlist, tap Grab all, watch them queue one by one
-- Vault custom-folder files are fully integrated (Open / Share / Delete)
-
----
-
-## 🆕 What's New in V2.6.7
-
-### The Vault, fixed for real this time
-- **Custom-folder downloads now appear in the Vault** — files saved to your chosen folder are listed straight from that folder (Open / Share / Delete), deduped against the gallery.
-- **Media scan after every save** — custom-folder saves are handed to the media scanner, so they also show up in Gallery apps and the Vault's gallery view.
-- **Rescan button** — Vault → Rescan re-indexes Movies, Music and Downloads if storage ever lags behind.
-- **Diagnostics honesty** — the TikTok check now exercises the real API instead of a bare HEAD that always 403'd.
-
----
-
-## 🆕 What's New in V2.6.6
-
-### Perfection pass — everything honest, nothing stale
-- **Build-sync guard** — Gradle refuses to build if the bundled UI is stale (`preBuild` enforces `npx cap sync android`), so an outdated interface can never ship again.
-- **Honest quality picker** — YouTube shows its real maximum (720p, since no ffmpeg merger is bundled yet — true 1080p merging is planned for v2.7); other platforms offer up to 1080p. Clear notes replace silent lies.
-- **Custom save folder, finished** — Settings shows the real save location, and DowniDrop background downloads honor it too.
-- **Updater hardened** — points at the correct `MansoorjAhmad/Downi` repo, pre-checks "Install unknown apps", and explains unavailable qualities plainly.
-- **Polish & security** — adaptive launcher icon, brand-matched splash, haptics on key actions, Vault player loopback server locked with a per-session token, cleartext HTTP restricted to the local player only, dead Capacitor plugins removed.
-
----
-
-## 🆕 What's New in V2.6.5
-
-### In-App Player + Full Light Theme
-- **In-app Vault player** — play downloaded videos and audio right inside DOWNI: full-screen video, seek bar, ±10s, prev/next through the Vault, audio supported. "Open external" still one tap away.
-- **Complete light theme** — header, sheets, cards, skeletons, backdrops and the vortex all adapt; first launch follows your system preference (Settings → Appearance still overrides); Android status/navigation bars follow the theme.
-- **Banned feature removed for good** — the old Instagram session-harvesting login code is fully deleted from the codebase (see `READ_THIS_BEFORE_UPGRADE.md`, now tracked in the repo), and the dead Cloud Boost relay folder is gone.
-
----
-
-## 🆕 What's New in V2.6.3
-
-### Light Theme + Vault UI
-- **Light / Dark theme toggle** — Settings → Appearance. Switches instantly, persists across restarts with zero flash on launch.
-- **Vault tab fully functional** — Browse, play, share, and delete all files downloaded by DOWNI. Filter by All / Video / Audio.
-
----
-
-## 🆕 What's New in V2.6.2
-
-### Restored Core Engine
-- Restored the proven v1.3.6 downloader core to fix Instagram and YouTube downloads.
-- Removed experimental client-spoofing and forced user-agent overrides that broke extraction.
-- Clean, stable extraction baseline for all supported platforms.
-
----
-
-## 🌟 Core Downloading Features
-
-1. **⚡ One-Tap Grab**
-   - Copy any video link — a banner appears instantly. Tap it to grab at best quality.
-
-2. **🔍 Inspect & Choose Quality**
-   - Paste a link, preview thumbnail + title, then pick from real available qualities (or Audio Only MP3) before downloading.
-
-3. **↗ System Share Receiver**
-   - In any app, tap **Share → DOWNI** — downloads in the background with progress notifications and 1-tap Play/Share when done.
-
----
-
-## 🚫 100% Watermark-Free
+## Three ways to grab
+
+| | How it starts | What you get |
+|---|---|---|
+| **One-tap** | Copy a link anywhere. The banner already knows the title, the platform and the real quality list — tap **Grab now**. | The file downloads in the chosen lane. If that lane fails, DOWNI falls back down the list instead of ending in an error. |
+| **Inspector** | Paste a link, or hit **Inspect** on the banner. | The thumbnail, the title and every real quality the link offers — you pick. |
+| **DowniDrop** | Share → **DOWNI**, from any app. | A silent background grab. You never leave the app you were in. |
+
+**Nothing downloads without a tap.** DOWNI never grabs a link you did not ask for.
+
+## What it does
+
+- **YouTube, TikTok, Instagram, X, Facebook, Reddit, Pinterest** — and anything that resolves to a
+  direct media link.
+- **Up to 1080p on YouTube** — the video and audio streams are downloaded separately and merged on
+  the device with Android's own MediaMuxer. No ffmpeg, no client spoofing.
+- **Audio only** — MP3 / M4A.
+- **3 parallel downloads**, 6 queued behind them, with live progress, speed and ETA in the app and
+  in the notification.
+- **Playlists** — paste a playlist link and DOWNI grabs every video in it, one after another.
+- **Engine health and network diagnostics** in Settings, so "it didn't work" has an answer.
+- **In-app updater** — Settings → Updates.
+
+## 100% watermark-free
 
 | Platform | Method |
 |----------|--------|
-| **YouTube & Shorts** | HD via yt-dlp (up to 720p muxed; 1080p merging planned) |
+| **YouTube & Shorts** | yt-dlp, up to 1080p muxed on device |
 | **Instagram** | Clean MP4 — Reels, Stories, Posts |
 | **TikTok** | Direct HD CDN (`hdplay`) — no bouncing watermark |
 | **Facebook** | Clean CDN stream |
 | **X (Twitter)** | Native video extraction |
 | **Reddit / Pinterest** | Clean CDN streams |
 
+## The app asks for very little
+
+| Permission | Why |
+|---|---|
+| Internet | That is the whole job. |
+| Notifications | Progress and completion. Asked for on your first grab, not at launch. |
+| Foreground service | Keeps a download alive when you leave the app. |
+| Install packages | The in-app updater installs the next version. |
+
+**No accessibility access. No media read. No "manage all files".** A downloader that watches your
+screen and reads your whole gallery is a hard sell. One that asks for a notification and nothing
+else is easy.
+
+## Install
+
+Grab the APK from [Releases](https://github.com/MansoorjAhmad/Downi/releases/latest), allow
+installs from your file manager, and install it. It updates over any earlier version — the signing
+key is unchanged, so your settings and your downloads stay.
+
+Requires Android 7.0 (API 24) or newer.
+
+## Build it yourself
+
+```bash
+npm install
+npx cap sync android
+cd android && ./gradlew assembleRelease
+```
+
+- `npx cap sync android` is enforced by the `preBuild` guard, so the bundled UI can never ship
+  stale.
+- `versionCode` / `versionName` live in `android/app/build.gradle`.
+- Local release builds read `android/keystore.properties` (gitignored). CI uses the
+  `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` secrets.
+- `tools/_tabcheck.js` fails the build if a tab switch ever leaks a view or leaves two nav items
+  lit — the one regression a browser run cannot see.
+- `DEVICE_TEST.md` is the on-device matrix, and **no release ships before it passes on a real
+  phone**.
+
+## Architecture
+
+- **Capacitor 6** for the shell, **Chaquopy** for an on-device Python engine, **yt-dlp 2026.8.19**
+  for extraction. No server, no account, no tracking.
+- **The engine is on the phone.** Resolution, the format cascade, the merge and the queue all run
+  locally — the app only needs a network that can reach the platform.
+- **One hand-authored stylesheet** (`www/assets/css/downi.css`) is the whole design system. No CSS
+  framework, no font CDN, no third-party script — the app is self-contained and works offline.
+- **Three tabs**: Grab, Queue, Settings. The Queue shows every grab, live and finished.
+
+## The brand
+
+Obsidian `#090B0D`, Graphite `#151A1E`, Electric Lime `#C6FF3D`, Ice White `#F4F7F8`. Dark only, by
+design — there is no light mode and no AMOLED switch, on purpose.
+
 ---
 
-## 💎 Features
-
-| Feature | Details |
-|---------|---------|
-| **Platforms** | YouTube, Instagram, TikTok, Twitter/X, Facebook + any direct link |
-| **Formats** | Up to 1080p (YouTube: up to 720p), 480p, Best, MP3/M4A audio-only |
-| **Downloads** | 3 simultaneous, up to 6 in the queue — fully parallel |
-| **Theme** | AMOLED true-black + 4 accent colours — Settings → Appearance |
-| **Clipboard detect** | Auto-detects copied video links — tap to grab instantly |
-| **Inspector** | Preview title, thumbnail & quality before downloading |
-| **Save location** | Gallery (Movies/Music) or custom folder |
-| **In-app updater** | Auto-checks GitHub and installs new versions |
-
----
-
-## 🏗 Architecture
-
-- **Dual-Engine Core**: Capacitor 6 + native Java bridges + Chaquopy on-device Python (yt-dlp `2026.8.19`)
-- **Parallel Queue**: `MAX_ACTIVE = 3` thread pool, `MAX_QUEUED = 6` overflow queue
-- **Offline-First UI**: All web assets (Tailwind, fonts) bundled inside the APK — works with zero internet
-- **Resilient Fallback**: Platform-aware multi-tier stream selection, 100% on-device
-
----
-
-## 📦 Releasing a New Version
-
-1. Run `npx cap sync android` (enforced automatically by the `preBuild` guard since v2.6.6).
-2. Bump `versionCode` / `versionName` in `android/app/build.gradle`.
-3. Commit and tag: `git tag vX.Y.Z && git push origin main --tags`.
-4. GitHub Actions builds the signed APK and attaches it to the release automatically.
-5. Users tap **Check Updates** in the app — progress bar, one-tap install.
-
-### Signing (CI)
-
-Repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
-Local builds read the same values from `android/keystore.properties` (gitignored — never commit it).
-
-### Icons
-
-`python tools/generate_icons.py <path-to-logo.png>` generates every launcher density, splash, and web asset from one square PNG.
+<div align="center">
+  <sub>BUILT <b>DIFFERENT</b>. DESIGNED TO <b>LAST</b>.</sub>
+</div>

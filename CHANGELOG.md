@@ -3,6 +3,23 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.6.1 - the quick release (versionCode 54) - 2026-10-21
+
+**Three things, all of them found on the phone.**
+
+- **The launcher icon is the board's own artwork now.** The metallic chevron, the graded tile and the
+  one controlled lime glow, traced from the approved art instead of a flat approximation - so the
+  adaptive icon and the legacy PNGs are finally the same picture, and the icon reads as a lit
+  surface instead of a dark blob.
+- **The startup animation is gone.** No reveal, no lockup, no delay: the splash appears and
+  leaves at once, and the app paints the moment it can. Measured on the vivo V2058, the cold
+  start went from **6.2 s to 3.4 s**, and no frame of it is black or grey.
+- **Vertex is back, and it is better than Vertex.** The copy -> tap path now knows the title, the
+  platform and the real quality list *before* you tap; it grabs the lane you chose in Settings
+  (Best / 1080p / 720p / 480p); and if that lane fails it falls back down the list instead of
+  ending in an error. **The Inspector and DowniDrop are untouched** - they behave exactly as they
+  did, which the device pass confirmed.
+
 ## V3.6.0 - the Obsidian release (versionCode 53) - 2026-10-21
 
 **A ground-up frontend rebuild, not a reskin.** Every screen, sheet and control was rebuilt on

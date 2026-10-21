@@ -23,6 +23,9 @@
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">#090B0D</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/downi_logo_foreground</item>
+        <!-- No startup animation: the splash is the platform's, and it
+             appears and leaves at once. -->
+        <item name="windowSplashScreenAnimationDuration">0</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
         <item name="android:windowBackground">@drawable/downi_splash</item>
         <item name="android:statusBarColor">#090B0D</item>

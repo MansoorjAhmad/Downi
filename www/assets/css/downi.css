@@ -398,9 +398,17 @@ a { color: var(--lime); }
 .clipboard__thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .clipboard__body { flex: 1; min-width: 0; }
 .clipboard__label { margin: 0; font-size: 9px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--lime); }
-.clipboard__url {
+.clipboard__title {
   margin: 2px 0 0;
-  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ice);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clipboard__meta {
+  margin: 1px 0 0;
   font-size: 10.5px;
   color: var(--ti);
   overflow: hidden;
@@ -408,6 +416,23 @@ a { color: var(--lime); }
   white-space: nowrap;
 }
 .clipboard__actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+
+/* -------------------------------------------------- segmented setting */
+.seg { display: flex; gap: 6px; margin-top: 10px; }
+.seg__btn {
+  flex: 1;
+  min-height: 34px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: rgba(244, 247, 248, .04);
+  color: var(--ti);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  transition: background .18s var(--ease), border-color .18s var(--ease), color .18s var(--ease);
+}
+.seg__btn.on { background: var(--lime-dim); border-color: var(--lime-line); color: var(--lime); }
 
 /* ---------------------------------------------------------------- hints */
 .hint {
@@ -1102,70 +1127,6 @@ label.srow { cursor: pointer; }
   to { opacity: 0; transform: scale(5.5); }
 }
 
-/* ---------------------------------------------------------------- boot */
-.boot {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  pointer-events: none;
-  background:
-    radial-gradient(120% 60% at 50% 38%, rgba(198, 255, 61, .05), rgba(198, 255, 61, 0) 60%),
-    var(--bg);
-  opacity: 1;
-  visibility: visible;
-  transition: opacity .42s var(--ease), visibility 0s linear .42s;
-}
-.boot.done { opacity: 0; visibility: hidden; pointer-events: none; }
-.boot__mark { height: 74px; animation: boot-mark .55s var(--ease) both; }
-.boot__word { width: 152px; animation: boot-word .55s .08s var(--ease) both; }
-.boot__tag {
-  margin: 4px 0 0;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .24em;
-  text-transform: uppercase;
-  color: var(--ti);
-  animation: boot-word .55s .16s var(--ease) both;
-}
-.boot__tag em { font-style: normal; color: var(--lime); }
-.boot__line {
-  width: 92px;
-  height: 2px;
-  margin-top: 4px;
-  border-radius: 2px;
-  background: rgba(167, 176, 183, .18);
-  overflow: hidden;
-}
-.boot__line::after {
-  content: "";
-  display: block;
-  height: 100%;
-  width: 100%;
-  background: var(--lime);
-  transform-origin: left;
-  animation: boot-line .6s .12s var(--ease) both;
-}
-@keyframes boot-mark { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: none; } }
-@keyframes boot-word { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@keyframes boot-line { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-
-/* The composition waits for the first painted frame. On native the system splash
-   covers the WebView's early frames, so an animation that starts behind it is
-   half finished before anyone can see it. JS adds .play and starts the fade
-   clock on that same frame, so the two can never drift apart. */
-@media (prefers-reduced-motion: no-preference) {
-  .boot__mark, .boot__word, .boot__tag, .boot__line::after { animation-play-state: paused; }
-  .boot.play .boot__mark,
-  .boot.play .boot__word,
-  .boot.play .boot__tag,
-  .boot.play .boot__line::after { animation-play-state: running; }
-}
-
 /* ---------------------------------------------------------------- responsive */
 @media (min-width: 480px) {
   .main { padding-left: 20px; padding-right: 20px; }
@@ -1185,5 +1146,4 @@ label.srow { cursor: pointer; }
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
-  .boot { transition: none; }
 }

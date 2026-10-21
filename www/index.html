@@ -11,14 +11,6 @@
 </head>
 <body>
 
-  <!-- STARTUP REVEAL — brand moment only. Removes itself; never traps input. -->
-  <div id="boot" class="boot" aria-hidden="true">
-    <img class="boot__mark" src="assets/brand/downi-symbol.svg" alt="">
-    <img class="boot__word" src="assets/brand/downi-wordmark.svg" alt="">
-    <p class="boot__tag">Built <em>different</em>. Designed to <em>last</em>.</p>
-    <div class="boot__line"></div>
-  </div>
-
   <!-- TOAST -->
   <div id="appToast" class="toast" role="status" aria-live="polite">
     <div class="toast__inner">
@@ -71,12 +63,13 @@
             <img id="clipboardThumb" src="" alt="" class="hidden">
           </div>
           <div class="clipboard__body">
-            <p class="clipboard__label">Link detected</p>
-            <p id="clipboardUrlText" class="clipboard__url">https://…</p>
+            <p class="clipboard__label" id="clipboardLabel">Link detected</p>
+            <p id="clipboardTitle" class="clipboard__title">…</p>
+            <p id="clipboardUrlText" class="clipboard__meta">…</p>
           </div>
           <div class="clipboard__actions">
             <button onclick="handleGrabClipboardLink()" class="btn btn--sm">Inspect</button>
-            <button onclick="handleClipboardFastDl()" class="btn btn--sm btn--accent">Grab</button>
+            <button id="clipboardGrabBtn" onclick="handleClipboardFastDl()" class="btn btn--sm btn--accent">Grab now</button>
           </div>
         </div>
 
@@ -304,6 +297,20 @@
               </div>
               <input type="checkbox" id="chkClipboard" class="switch" checked onchange="toggleClipboardDetect(this.checked)">
             </label>
+            <div class="srow" style="display:block">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <div class="srow__main">
+                  <p class="srow__title">One-tap quality</p>
+                  <p class="srow__sub">What a copied link grabs with one tap</p>
+                </div>
+              </div>
+              <div class="seg" id="oneTapQuality" role="group" aria-label="One-tap quality">
+                <button class="seg__btn" data-q="best" onclick="setOneTapQuality('best')">Best</button>
+                <button class="seg__btn" data-q="1080" onclick="setOneTapQuality('1080')">1080p</button>
+                <button class="seg__btn" data-q="720" onclick="setOneTapQuality('720')">720p</button>
+                <button class="seg__btn" data-q="480" onclick="setOneTapQuality('480')">480p</button>
+              </div>
+            </div>
             <div class="srow">
               <div class="srow__main">
                 <p class="srow__title">DowniDrop</p>
@@ -498,8 +505,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.6.0';
-    let installedVersionCode = 53;
+    let installedVersion = '3.6.1';
+    let installedVersionCode = 54;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -703,10 +710,10 @@
           const clean = extractUrl(text);
           if (clean && clean !== detectedClipboardUrl) {
             detectedClipboardUrl = clean;
-            document.getElementById('clipboardUrlText').innerText = clean;
             document.getElementById('clipboardBanner')?.classList.remove('hidden');
             const ct = document.getElementById('clipboardThumb');
             if (ct) ct.classList.add('hidden');
+            updateClipboardBanner(null, clean);
             prefetchInspect(clean);
           }
         }
@@ -767,9 +774,80 @@
       return extractUrl(text);
     }
 
+    // ---- The one-tap (the successor to Vertex) --------------------------
+    // The tap is still the only trigger, but the app knows what it is about to
+    // grab BEFORE the tap: the clipboard prefetch has already resolved the
+    // title, the thumbnail and the real quality list. So the banner can promise
+    // an actual file, and a lane that fails falls back down the list instead of
+    // ending in an error.
+    const ONE_TAP_QUALITIES = ['best', '1080', '720', '480'];
+
+    function oneTapQualityId() {
+      const saved = storeGet('one_tap_quality');
+      return ONE_TAP_QUALITIES.indexOf(saved) >= 0 ? saved : 'best';
+    }
+
+    function oneTapQualityName(id) {
+      return id === 'best' ? 'Best available' : (id + 'p');
+    }
+
+    function oneTapLadder(url) {
+      // The lane the user chose first, then every other real lane the
+      // prefetch resolved - the fallback order, not a guess.
+      const want = oneTapQualityId();
+      const info = (inspectCache.get(url) || {}).info;
+      const ids = (info && Array.isArray(info.formats))
+        ? info.formats.filter(f => f && f.id && f.id !== 'audio').map(f => f.id)
+        : [];
+      const ladder = [want];
+      ids.forEach(id => { if (ladder.indexOf(id) === -1) ladder.push(id); });
+      if (ladder.indexOf('best') === -1) ladder.push('best');
+      return ladder;
+    }
+
+    function updateClipboardBanner(info, url) {
+      if (!url || detectedClipboardUrl !== url) return;
+      const titleEl = document.getElementById('clipboardTitle');
+      const metaEl = document.getElementById('clipboardUrlText');
+      const labelEl = document.getElementById('clipboardLabel');
+      const btn = document.getElementById('clipboardGrabBtn');
+      const seen = downloadsHistory.some(hh => hh && hh.url === url);
+      if (!info) {
+        if (titleEl) titleEl.textContent = url;
+        if (metaEl) metaEl.textContent = 'Reading the link…';
+        if (labelEl) labelEl.textContent = 'Link detected';
+        if (btn) btn.textContent = 'Grab now';
+        return;
+      }
+      if (labelEl) labelEl.textContent = seen ? 'Already grabbed' : 'Link detected';
+      if (titleEl) titleEl.textContent = info.title || url;
+      const want = oneTapQualityId();
+      const bits = [];
+      // The lane, not its paragraph: the banner has one line to work with.
+      bits.push(oneTapQualityName(want));
+      if (info.platform) bits.push(String(info.platform).toUpperCase());
+      if (info.duration) bits.push(formatDuration(info.duration));
+      if (metaEl) metaEl.textContent = bits.join(' · ');
+      if (btn) btn.textContent = seen ? 'Grab again' : 'Grab now';
+    }
+
+    function setOneTapQuality(id) {
+      try { storeSet('one_tap_quality', id); } catch (e) {}
+      paintOneTapQuality();
+      const url = detectedClipboardUrl;
+      if (url) updateClipboardBanner((inspectCache.get(url) || {}).info, url);
+    }
+
+    function paintOneTapQuality() {
+      const cur = oneTapQualityId();
+      document.querySelectorAll('#oneTapQuality .seg__btn').forEach(b => {
+        b.classList.toggle('on', b.getAttribute('data-q') === cur);
+      });
+    }
+
     async function handleClipboardFastDl() {
-      // Same as the Inspect button: a fresh clipboard read, cached value only as
-      // the fallback if the read fails.
+      // A fresh clipboard read, the cached value only as the fallback if the
+      // read fails.
       let url = detectedClipboardUrl;
       try {
         url = (await grabClipboardUrl()) || url;
@@ -779,8 +857,12 @@
       document.getElementById('inputManualUrl').value = url;
       document.getElementById('clipboardBanner')?.classList.add('hidden');
       currentInspectedUrl = url;
+      const info = (inspectCache.get(url) || {}).info;
+      const ladder = oneTapLadder(url);
+      const first = ladder[0];
       triggerHaptic('medium');
-      initiateDownload(url, 'best');
+      showToast('Grabbing ' + oneTapQualityName(first), (info && info.title) || 'your link', 'success');
+      initiateDownload(url, first, { fallbacks: ladder.slice(1), title: (info && info.title) || '' });
     }
 
     // ================= Inspect =================
@@ -903,6 +985,8 @@
         inspectCache.set(url, { ts: Date.now(), info });
         const t = document.getElementById('clipboardThumb');
         if (t && info.thumbnail && detectedClipboardUrl === url) t.classList.remove('hidden'), t.src = info.thumbnail;
+        // The prefetch knows everything the one-tap needs - tell the banner.
+        updateClipboardBanner(info, url);
       }).catch(() => {});
     }
 
@@ -1033,7 +1117,12 @@
     }
 
     // ================= Parallel download pipeline =================
-    function initiateDownload(url, formatId) {
+    function initiateDownload(url, formatId, opts) {
+      // opts is optional and only the one-tap uses it: opts.fallbacks is the
+      // lane ladder if this lane fails, opts.title is the resolved title for
+      // the job card. Every other caller passes nothing and behaves exactly as
+      // it did before.
+      const o = opts || {};
       lastFailedUrl = url;
       lastFailedFormat = formatId;
 
@@ -1043,6 +1132,7 @@
         label = new URL(url).hostname.replace('www.', '');
       } catch (e) {}
       if (formatId === 'audio') label += ' · MP3';
+      if (o.title) label = o.title;
 
       const tempId = 'pending_' + Date.now();
       activeJobs.set(tempId, { label, url: url, formatId: formatId, status: 'Connecting…', percent: 0, size: '', speed: '', eta: '', done: false, speedSeries: [] });
@@ -1069,6 +1159,17 @@
             renderJobCards();
             const msg = (err && err.message) ? err.message : 'Download failed';
             if (!msg.toLowerCase().includes('cancel')) {
+              // A lane that failed is not the end of the road: the one-tap falls
+              // back down the real quality list instead of leaving the user with
+              // an error and a link they have to try again by hand.
+              const fallbacks = (o.fallbacks || []).slice();
+              if (fallbacks.length) {
+                const next = fallbacks.shift();
+                showToast('Trying ' + oneTapQualityName(next), msg, 'info');
+                initiateDownload(url, next, { fallbacks: fallbacks, title: o.title });
+                updateQueueBadge();
+                return;
+              }
               // Cancels already toasted (with Undo) at the cancel call-site — a
               // second generic toast here would overwrite the Undo action (B2).
               onDownloadError(msg, url, formatId);
@@ -1919,39 +2020,9 @@
     }
 
     // ================= Boot =================
-    // The startup reveal is the brand moment between the native splash and the
-    // app: mark, wordmark, tagline. The composition and the fade share one
-    // clock, and that clock only starts once the user can actually see it - on
-    // native the system splash is held until the web view reports in (see
-    // setNativeTheme), so the lockup is never drawn behind it. The overlay is
-    // pointer-events:none and removes itself, so it can never trap a tap.
-    // Reduced motion gets an instant cut.
-    let bootRevealStarted = false;
-    function startBootReveal() {
-      if (bootRevealStarted) return;
-      bootRevealStarted = true;
-      const boot = document.getElementById('boot');
-      if (!boot) return;
-      const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      boot.classList.add('play');
-      setTimeout(() => boot.classList.add('done'), calm ? 60 : 1000);
-      setTimeout(() => boot.remove(), calm ? 220 : 1700);
-    }
-    // The reveal starts on the page's FIRST CONTENTFUL PAINT: that is the first
-    // frame the user can actually see, and it is the only honest signal. The DOM
-    // clock is not one - the WebView can take over a second to produce that
-    // frame, and a timer started at parse expires long before it.
-    (function armBootReveal() {
-      try {
-        if (performance.getEntriesByType('paint').length) { startBootReveal(); return; }
-      } catch (e) { startBootReveal(); return; }
-      requestAnimationFrame(armBootReveal);
-    })();
-    // Safety net: if the page never paints, the reveal still runs and the app
-    // still opens.
-    setTimeout(startBootReveal, 6000);
-    // Native: the splash is held until the whole startup frame is ready (styles
-    // + brand art), then the bars are painted and the splash is released.
+    // No startup animation. The splash is the platform's and it does not
+    // animate either; the web paints the app the moment it can, and the only
+    // thing the native side does here is paint the bars Obsidian.
     if (document.readyState === 'complete') {
       applyNativeTheme();
     } else {
@@ -1972,6 +2043,7 @@
       // checked regardless of the saved setting (B6).
       const chkClip = document.getElementById('chkClipboard');
       if (chkClip) chkClip.checked = storeGet('clipboard_detect') !== '0';
+      paintOneTapQuality();
 
       // DowniDrop 2.0: mirror the per-platform quality memory to the native side
       // (DropActivity reads it without a WebView). v3.1.1: the Instant/Ask toggle is
