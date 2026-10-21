@@ -8,6 +8,8 @@
   <title>DOWNI — Grab any video. One tap.</title>
   <link rel="icon" type="image/svg+xml" href="assets/brand/favicon.svg">
   <link rel="stylesheet" href="assets/css/downi.css">
+  <link rel="preload" href="assets/vendor/DOWNISans-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/vendor/JetBrainsMono.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
 
@@ -228,7 +230,7 @@
               </div>
               <div class="srow__main">
                 <p class="srow__title">DOWNI</p>
-                <p class="srow__sub" id="appVersionDisplay" style="font-family:var(--mono);color:var(--lime)">v3.6.0</p>
+                <p class="srow__sub mono" id="appVersionDisplay" style="color:var(--lime)">v3.6.0</p>
               </div>
               <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn btn--sm btn--accent">Updates</button>
             </div>
@@ -393,7 +395,7 @@
       <div id="playlistBanner" class="card card--lime hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;margin-top:10px">
         <div style="min-width:0">
           <p class="srow__title"><span id="playlistCount">0</span> videos in this playlist</p>
-          <p class="srow__sub" style="font-family:var(--mono);font-size:9px">Batch mode — one tap grabs them all</p>
+          <p class="srow__sub mono" style="font-size:9.5px">Batch mode — one tap grabs them all</p>
         </div>
         <button onclick="grabAllPlaylist()" class="btn btn--sm btn--accent" style="flex:0 0 auto">Grab all</button>
       </div>
@@ -422,7 +424,7 @@
           </button>
         </div>
         <h2 id="updateVersionTitle" class="sheet__title">Update available</h2>
-        <p style="margin:3px 0 0;font-family:var(--mono);font-size:9px;color:var(--lime)">GitHub Releases</p>
+        <p class="mono" style="margin:3px 0 0;font-size:9.5px;color:var(--lime)">GitHub Releases</p>
         <div id="updateChangelog" class="changelog"></div>
       </div>
 
@@ -432,7 +434,7 @@
           <span id="updateProgressPercent" class="srow__value srow__value--lime">0%</span>
         </div>
         <div class="bar live"><div id="updateProgressBar" style="width:0%"></div></div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-family:var(--mono);font-size:9.5px;color:var(--ti)">
+        <div class="mono" style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:9.5px;color:var(--ti)">
           <span id="updateProgressRatio">0 MB / 0 MB</span>
           <span id="updateProgressSpeed" style="color:var(--lime)">--</span>
         </div>
@@ -465,7 +467,7 @@
       <div class="err-box">
         <p id="errorModalMessage" class="err-msg">The download could not be completed.</p>
         <div id="errorTechnicalDetailsBox" class="hidden" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
-          <p class="eyebrow" style="font-size:8.5px">Technical details</p>
+          <p class="eyebrow">Technical details</p>
           <pre id="errorModalDetails" class="err-details"></pre>
         </div>
       </div>
@@ -1784,7 +1786,7 @@
               <span style="display:grid;place-items:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:900;flex:0 0 auto;${r.ok ? 'background:rgba(198,255,61,.15);color:var(--lime)' : 'background:rgba(255,122,122,.15);color:var(--bad)'}">${r.ok ? '✓' : '✕'}</span>
               <span style="font-size:10.5px;font-weight:600;color:var(--ice);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.check)}</span>
             </div>
-            <span style="font-family:var(--mono);font-size:9px;flex:0 0 auto;color:${r.ok ? 'var(--lime)' : 'var(--bad)'}">${r.ok ? r.ms + 'ms' : 'blocked'}</span>
+            <span class="mono" style="font-size:9.5px;flex:0 0 auto;color:${r.ok ? 'var(--lime)' : 'var(--bad)'}">${r.ok ? r.ms + 'ms' : 'blocked'}</span>
           </div>
         `).join('');
         box.innerHTML = rows;

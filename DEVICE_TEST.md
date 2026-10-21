@@ -57,6 +57,44 @@ hardship check. Mark ✅ / ❌ per cell.
 
 > Sign and date here when green: ______________
 
+## 5. V3.6.1 — the lime tile and the new type (2026-10-21)
+
+> **Device pass 2026-10-21** — vivo V2058 (Android 13, 1080x2408, density 440). Build **54 /
+> v3.6.1**, release-signed (38,462,064 B), installed over v3.6.0 with `adb install -r`. Captures in
+> `Temp/opencode/ui/device/` (`tile_drawer2.png`, `drawer_seat2.png`, `icon_seat2_zoom.png`,
+> `home_seat2.png`).
+>
+> v3.6.1 is a **launcher-icon and typography** release. The app's own UI, the native shell, the
+> engine, the queue and the notifications are untouched — the rows below cover the two things that
+> changed and the one thing that must not have.
+
+| # | Check | Expected | Evidence |
+|---|---|---|---|
+| 5-1 | **The launcher icon is the lime tile** | ✅ | the app drawer and the home screen both show the Electric Lime circle with the Obsidian mono chevron — the favicon composition at launcher scale, and the only lime mark on either screen |
+| 5-2 | **The mark is seated right** | ✅ | the round mask crops the mark's left arm, so it is seated 2 units right of the visible centre at 67% of the visible shape (the favicon's own proportion): the triangle clears the left edge and the chevron's point keeps its right margin. 0 / +2 / +4 / +6 were compared in the same mask; the owner gave the direction, the sheet gave the number |
+| 5-3 | The legacy PNGs are the same picture | ✅ | all five densities (48 / 72 / 96 / 144 / 192) render the same lime tile + mono mark; the adaptive background is the flat lime field, the foreground the mono mark, the monochrome layer the same mark flat for themed icons |
+| 5-4 | **Nothing in the app changed** | ✅ | the in-app brand tile still shows the old mark (Ice White chevron + Electric Lime triangle), the splash is the v3.6.0 flat mark, and the colours, layout, nav, startup and engine are the 3.6.0 ones. The icon work touches `res/drawable/ic_launcher_*` and `res/mipmap-*` only |
+| 5-5 | **Hubot Sans is the interface face** | ✅ | the browser harness reports `DOWNI Sans 200 900 normal [loaded]` and `JetBrains Mono 400 700 normal [loaded]`; body / heading / label families all resolve to `"DOWNI Sans"`, and its width is provably distinct from the generic fallback (469 vs 460) |
+| 5-6 | **No text is too small and nothing overflows** | ✅ | the harness walks the live DOM: **0 elements under 9.5px**, **0 elements wider than their box**, smallest rendered size 9.5px (the mono data floor) |
+| 5-7 | The data layer is untouched | ✅ | every data class (`.job__speed`, `.job__eta`, `.job__bytes`, `.job__status`, `.srow__value`, `.about__ver`, `.ver`, `.quality-card__ext`) computes to **JetBrains Mono** with `font-variant-ligatures: none`; the mono values hold at 9.5px and the status / value rows at 10px |
+| 5-8 | The label tier is width-neutral | ✅ | the micro-labels moved from 9.5px / 700 / 0.19em to 10px / 700 / 0.10em — 11.02 against 11.00 units of rendered width, so nothing reflowed; the nav labels, the version badge and the error details moved with them |
+| 5-9 | The fonts are local and legal | ✅ | `assets/vendor/DOWNISans-Variable.woff2` (102,216 B, 418 glyphs, both axes) is bundled — no runtime download and no fallback flash; the OFL text for Hubot Sans and JetBrains Mono and `FONT-LICENSES.md` ship beside it. The family is renamed "DOWNI Sans" because OFL forbids a derivative from using the reserved name "Hubot" |
+| 5-10 | The app still starts clean | ✅ | cold start on the phone: the splash leaves at once and the first painted frame is already Hubot Sans — no swap flash and no fallback frame |
+| 5-11 | **The clipboard banner tap** | ⚠️ | **owner tap** — this ROM has no `cmd clipboard`, so the one-tap banner cannot be proven from adb. Not claimed here |
+
+### Notes for the owner
+
+1. **The icon is the favicon, not a new picture.** The browser tab and the home screen now show the
+   same composition. On this launcher the mask is a circle, so the tile shows as a lime circle —
+   that is the launcher's shape, not ours.
+2. **The splash is the v3.6.0 flat mark** (the "previous logo that was already correct"). The
+   metallic splash that sat in the last commit is gone; say the word and it comes back.
+3. **The typography is the whole type system**, not a blanket resize: Hubot Sans for the interface,
+   JetBrains Mono for every number, a rebuilt 10px micro-label tier, and ligatures switched off in
+   the data layer only.
+4. **The version is still 3.6.1 / 54** — the same numbers as the previous commit, which now holds
+   different content. A release wants a bump (3.6.2 / 55); that is the owner's call.
+
 ## 4. V3.5.0 — the scope reduction (2026-10-20)
 
 > **Not yet run.** Every cell below is ⏳ until the build has been on the vivo V2058. The §6 truth

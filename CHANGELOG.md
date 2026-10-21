@@ -5,13 +5,13 @@ Full release notes + signed APKs live on
 
 ## V3.6.1 - the quick release (versionCode 54) - 2026-10-21
 
-**Four things, three of them found on the phone.**
+**Five things, four of them found on the phone.**
 
-- **The launcher icon is the board's own artwork, seated the way the board seats it.** The metallic
-  chevron, the graded tile and the one controlled glow - the glow is the master's blurred lime
-  triangle behind the triangle, which a vector cannot blur, so it is three concentric copies at
-  falling alpha. The mark sits at the board's own proportion inside the visible shape instead of
-  crowding the circle, and the adaptive icon and the legacy PNG are finally the same picture.
+- **The launcher icon is the favicon, at launcher scale.** The Electric Lime tile with the Obsidian
+  mono mark - the same picture the browser tab already shows, and the one the owner picked. It is
+  seated for the launcher's *round* mask: 67% of the visible shape (the favicon's own proportion)
+  and two units right, because the mark's weight sits on the left and the round crop otherwise
+  leaves it looking off-centre. The legacy PNGs are the same art.
 - **The startup animation is gone.** No reveal, no lockup, no delay: the splash appears and leaves
   at once (`windowSplashScreenAnimationDuration` 0) and the app paints the moment it can. Measured
   on the vivo V2058, the cold start went from **6.2 s to 3.4 s**, and no frame of it is black or
@@ -55,6 +55,22 @@ everywhere, including the native splash and the launcher icon.
 - Accessibility: labelled controls, visible focus rings, 44 px targets, no colour-only state.
 - Performance: hand-authored CSS and static assets only - no WebGL, no particles, no new
   dependencies. All engine, plugin, persistence and diagnostic APIs are unchanged.
+
+**Typography**
+
+- **Hubot Sans is the interface face** (TypeType / Google Fonts - Tobias Bjerrome Ahlin for GitHub,
+  with Degarism Studio and Sebastian Carewe), under the SIL Open Font License 1.1. Bundled as a local
+  variable WOFF2 - 102 KB, both axes kept (`wght` 200-900, `wdth` 75-125) - so there is no runtime
+  download and no fallback flash. The family is renamed "DOWNI Sans" because a derivative may not use
+  the reserved name "Hubot"; the licence text and the upstream attribution ship with the file.
+- **The data layer stays JetBrains Mono** - percentages, speeds, ETAs, sizes, versions, links - with
+  ligatures switched off in the data rules only, so a value can never be rewritten.
+- **The small-label tier was rebuilt, not just resized**: the uppercase labels move to 10px / 700 /
+  0.10em, which renders the same width as the old 9.5px / 700 / 0.19em. Nothing reflows, and the
+  labels gain the breathing room the squared caps need. The mono data values hold at 9.5px, because
+  the download card's foot row is the tightest row in the app.
+- Nothing else moved: no colour, no layout, no navigation, no logo placement, no animation.
+
 
 **Native**
 
