@@ -98,6 +98,14 @@ cd android && ./gradlew assembleRelease
 Obsidian `#090B0D`, Graphite `#151A1E`, Electric Lime `#C6FF3D`, Ice White `#F4F7F8`. Dark only, by
 design — there is no light mode and no AMOLED switch, on purpose.
 
+**The launcher icon is the browser tab's own picture** — the Electric Lime tile with the Obsidian
+mono mark — seated for the launcher's round mask so the mark lands centred.
+
+**The type** is Hubot Sans for the interface, bundled locally as a variable font and renamed
+*DOWNI Sans* under the OFL, and JetBrains Mono for every number — speed, ETA, size, version — with
+ligatures switched off in the data layer so a value can never be rewritten. Both faces ship with
+their licence text in `www/assets/vendor/`; nothing is fetched at runtime.
+
 ---
 
 <div align="center">

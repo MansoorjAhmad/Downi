@@ -1,4 +1,22 @@
 import os
+import sys
+
+# ---------------------------------------------------------------------------
+# RETIRED - 2026-10-21.
+#
+# This script writes a 2026-era "OmniDownloader 2.0" page (Tailwind from a CDN,
+# Plus Jakarta Sans, the old brand, the old nav) straight over www/index.html.
+# The live UI is the hand-authored v3.6.x shell - www/index.html plus
+# www/assets/css/downi.css - and running this file would destroy it.
+#
+# The file is kept only as a record of where the old markup came from. It
+# refuses to run.
+# ---------------------------------------------------------------------------
+sys.exit(
+    "tools/update_ui.py is retired and refuses to run.\n"
+    "It would overwrite www/index.html with the 2026 'OmniDownloader 2.0' page.\n"
+    "The live UI is www/index.html + www/assets/css/downi.css, hand-authored."
+)
 
 html_code = """<!DOCTYPE html>
 <html lang="en" class="h-full bg-[#03070d]">
