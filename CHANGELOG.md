@@ -3,15 +3,62 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
-## V3.6.1 - the quick release (versionCode 54) - 2026-10-21
+## V3.6.2 - the truth release (versionCode 55) - 2026-10-21
 
-**Five things, four of them found on the phone.**
+**The app says what actually happened.** Until now, every failure that did not match four keyword
+buckets landed on one sentence - *"The media stream could not be downloaded. The video may be
+private, restricted, or the connection dropped."* - and the engine's real reason was destroyed
+before the user could see it: the 1080p split swallowed every exception and reported "no separate
+1080p stream" instead, the inspector swallowed every exception and fabricated a card, and the Java
+bridge rewrote the raw text the UI was matching on. So a request the site refused was reported to
+the user as a problem with **their video**. This release ends that.
 
+**Seven things.**
+
+- **The engine keeps its reason, and the app says it.** Every failure the engine raises is now
+  tagged with a cause - `blocked`, `rate_limited`, `private`, `geo`, `format`, `link`, `network`,
+  `unknown` - and the raw reason travels untouched to every surface: the error sheet, the
+  inspector, the DowniDrop card and the notification. The cause is classified in exactly one place
+  (`android/app/src/main/python/truth.py`, unit-tested by `tools/test_truth.py`), so no layer can
+  invent a reason, and no layer can blame the user's video for something the engine never said.
+- **The error sheet tells the truth and stops guessing.** The sheet names what happened - "The site
+  refused DOWNI's request (HTTP 403). That is on the site's side of the line, not your video's" -
+  and the quick fix follows the cause: the Wi-Fi advice only appears for a network failure, and
+  **"Try again" is hidden when trying again cannot help** (a refused request, a rate limit, a
+  private video). The engine's exact reason is always one tap away under **View details**, and
+  **Copy details** still copies it verbatim.
+- **The one-tap no longer burns the whole quality list on a failure that is not a quality
+  problem.** It used to try 1080p, then 720p, then 480p on a refused request - the same failure
+  three times. Now only a genuine format failure falls back to the next lane.
+- **The engine moved to the newest nightly** (`yt-dlp 2026.10.10.233141`). A site that changes
+  breaks every app on the same stable version at the same moment, and the nightlies are where
+  yt-dlp ships the fix first. The pin is deliberate and documented, and the `player_client`
+  cascade and the forced mobile User-Agent stay gone - both caused 403s and Instagram breakage.
+- **The diagnostics can finally see a block.** The YouTube probe resolves a format and then pulls
+  a real 64 KB of the media, because resolving metadata proves the page was readable, not that
+  the media request is allowed - that is exactly what a block looks like. The diagnostics also
+  report the newest yt-dlp on PyPI, so a user on an old engine is told plainly that a newer one
+  exists (the extraction layer ships inside the APK, so only a newer DOWNI can carry a site fix).
+- **One save path, one album.** The foreground inspector path wrote to `Movies/DOWNI/` while the
+  headless share path wrote to `Movies/` - so the same grab landed in two places and the app
+  showed two different folders. Both now land in the gallery root, as Settings always said.
 - **The launcher icon is the favicon, at launcher scale.** The Electric Lime tile with the Obsidian
   mono mark - the same picture the browser tab already shows, and the one the owner picked. It is
   seated for the launcher's *round* mask: 67% of the visible shape (the favicon's own proportion)
   and two units right, because the mark's weight sits on the left and the round crop otherwise
   leaves it looking off-centre. The legacy PNGs are the same art.
+- **Hubot Sans is the interface face** (TypeType / Google Fonts - Tobias Bjerrome Ahlin for GitHub,
+  with Degarism Studio and Sebastian Carewe), under the SIL Open Font License 1.1. Bundled as a local
+  variable WOFF2 - 102 KB, both axes kept (`wght` 200-900, `wdth` 75-125) - so there is no runtime
+  download and no fallback flash. The family is renamed "DOWNI Sans" because a derivative may not use
+  the reserved name "Hubot"; the licence text and the upstream attribution ship with the file.
+- **The data layer stays JetBrains Mono** - percentages, speeds, ETAs, sizes, versions, links - with
+  ligatures switched off in the data rules only, so a value can never be rewritten.
+- **The small-label tier was rebuilt, not just resized**: the uppercase labels move to 10px / 700 /
+  0.10em, which renders the same width as the old 9.5px / 700 / 0.19em. Nothing reflows, and the
+  labels gain the breathing room the squared caps need. The mono data values hold at 9.5px, because
+  the download card's foot row is the tightest row in the app.
+- Nothing else moved: no colour, no layout, no navigation, no logo placement, no animation.
 - **The startup animation is gone.** No reveal, no lockup, no delay: the splash appears and leaves
   at once (`windowSplashScreenAnimationDuration` 0) and the app paints the moment it can. Measured
   on the vivo V2058, the cold start went from **6.2 s to 3.4 s**, and no frame of it is black or
@@ -58,19 +105,8 @@ everywhere, including the native splash and the launcher icon.
 
 **Typography**
 
-- **Hubot Sans is the interface face** (TypeType / Google Fonts - Tobias Bjerrome Ahlin for GitHub,
-  with Degarism Studio and Sebastian Carewe), under the SIL Open Font License 1.1. Bundled as a local
-  variable WOFF2 - 102 KB, both axes kept (`wght` 200-900, `wdth` 75-125) - so there is no runtime
-  download and no fallback flash. The family is renamed "DOWNI Sans" because a derivative may not use
-  the reserved name "Hubot"; the licence text and the upstream attribution ship with the file.
-- **The data layer stays JetBrains Mono** - percentages, speeds, ETAs, sizes, versions, links - with
-  ligatures switched off in the data rules only, so a value can never be rewritten.
-- **The small-label tier was rebuilt, not just resized**: the uppercase labels move to 10px / 700 /
-  0.10em, which renders the same width as the old 9.5px / 700 / 0.19em. Nothing reflows, and the
-  labels gain the breathing room the squared caps need. The mono data values hold at 9.5px, because
-  the download card's foot row is the tightest row in the app.
-- Nothing else moved: no colour, no layout, no navigation, no logo placement, no animation.
-
+- v3.6.0 shipped with Plus Jakarta Sans for the interface and JetBrains Mono for the data layer.
+  The typeface changed in v3.6.2 - see the release notes below.
 
 **Native**
 

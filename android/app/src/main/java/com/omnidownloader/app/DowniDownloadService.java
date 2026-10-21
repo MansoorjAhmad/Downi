@@ -659,7 +659,11 @@ public class DowniDownloadService extends Service {
                 notifySharedCanceled();
                 Log.i("DOWNI", "drop canceled " + jobId + " (user)"); // (D) logcat breadcrumb
             } else {
-                String friendly = friendlyError(detail);
+                String friendly = EngineError.phrase(EngineError.cause(detail));
+                // The raw reason rides next to the phrase, so the failed card in the app
+                // can show what actually happened - not a guess about the video.
+                String rawReason = EngineError.raw(detail);
+                String causeCode = EngineError.cause(detail);
                 // DowniDrop self-diagnosis (09-24 "fails twice, third works" report): the
                 // failed card carries the plain reason into the app, and the RAW engine
                 // text is parked in dropLastError so getDropJobs() can hand it back —
@@ -672,8 +676,9 @@ public class DowniDownloadService extends Service {
                         .putString("dropLastError", new JSONObject()
                             .put("id", jobId)
                             .put("url", url == null ? "" : url)
+                            .put("cause", causeCode)
                             .put("friendly", friendly)
-                            .put("raw", detail)
+                            .put("raw", rawReason)
                             .put("ts", System.currentTimeMillis()).toString())
                         .apply();
                 } catch (Exception ignored) {}
@@ -999,22 +1004,6 @@ public class DowniDownloadService extends Service {
                 if (files != null) for (File f : files) f.delete();
             }
         } catch (Exception ignored) {}
-    }
-
-    private String friendlyError(String detail) {
-        String lower = detail.toLowerCase(Locale.US);
-        // v3.1.1 (G): plain, honest reasons for the two rawest engine texts.
-        if (lower.contains("url parsing") || lower.contains("unsupported url")) return "That link isn't a video.";
-        if (lower.contains("getaddrinfo") || lower.contains("name or service not known") || lower.contains("name resolution")
-                || lower.contains("no address associated") || lower.contains("transport") || lower.contains("connection refused")
-                || lower.contains("network is unreachable") || lower.contains("connectionreset") || lower.contains("connection reset")
-                || lower.contains("errno 7") || lower.contains("errno 101") || lower.contains("errno 111")) return "Can't reach the network — try again.";
-        if (lower.contains("cancel")) return "Grab canceled."; // Cancel UX: never scary
-        if (lower.contains("certificate") || lower.contains("ssl")) return "Secure connection failed. Check your internet, then retry.";
-        if (lower.contains("private") || lower.contains("login") || lower.contains("sign in")) return "This video needs an account or is private. Try a public link.";
-        if (lower.contains("requested format is not available")) return "That quality is not available for this link. Try Best Available or a lower quality.";
-        if (lower.contains("unsupported") || lower.contains("no video formats")) return "This public link is not supported yet. Try another public video link.";
-        return "Download failed: " + detail;
     }
 
     // ---------- Notifications ----------

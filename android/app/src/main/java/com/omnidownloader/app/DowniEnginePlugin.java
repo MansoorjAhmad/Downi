@@ -251,8 +251,8 @@ public class DowniEnginePlugin extends Plugin {
         } catch (Exception e) {
             // Defect C (v3.1.1): THIS SPOT MUST MATCH build.gradle versionCode/versionName —
             // it is one of the three version spots bumped at release (see MISSION §J).
-            result.put("versionName", "3.5.0");
-            result.put("versionCode", 52L);
+            result.put("versionName", "3.6.2");
+            result.put("versionCode", 55L);
             call.resolve(result);
         }
     }
@@ -660,11 +660,16 @@ public class DowniEnginePlugin extends Plugin {
                 progress.put("jobId", job.id);
                 progress.put("failed", true);
                 String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
-                progress.put("error", friendlyError(detail));
+                String cause = EngineError.cause(detail);
+                String raw = EngineError.raw(detail);
+                progress.put("error", raw);
+                progress.put("cause", cause);
                 notifyListeners("onProgress", progress);
                 DowniDownloadService.finishJob(getContext(), job.id, false);
-                try { job.call.reject(friendlyError(detail), error); } catch (Exception ignored) {}
-                Log.i("DOWNI", "job failed " + job.id + ": " + detail); // (D) logcat breadcrumb
+                // The cause rides as the rejection's code, so the web layer phrases it
+                // without re-reading (or rewriting) the reason.
+                try { job.call.reject(raw, cause, error); } catch (Exception ignored) {}
+                Log.i("DOWNI", "job failed " + job.id + " [" + cause + "]: " + raw); // (D) logcat breadcrumb
             }
         } finally {
             jobs.remove(job.id);
@@ -719,7 +724,13 @@ public class DowniEnginePlugin extends Plugin {
                 }
                 call.resolve(result);
             } catch (Exception error) {
-                call.reject("This public link could not be inspected. It may be private, protected, or temporarily unsupported.", error);
+                // The truth layer (v3.6.2): the engine's reason survives. "It may be
+                // private, protected, or temporarily unsupported" was a guess - the
+                // engine knows which one it was, and says so.
+                String detail = error.getMessage() == null ? "" : error.getMessage();
+                String cause = EngineError.cause(detail);
+                String raw = EngineError.raw(detail);
+                call.reject(raw.isEmpty() ? "DOWNI couldn't read that link." : raw, cause, error);
             }
         });
     }
@@ -735,6 +746,10 @@ public class DowniEnginePlugin extends Plugin {
                 JSObject result = new JSObject();
                 result.put("results", com.getcapacitor.JSArray.from(info.optJSONArray("results") != null ? info.optJSONArray("results") : new JSONArray()));
                 result.put("ytDlp", info.optString("yt_dlp", ""));
+                // The engine's own note: whether a newer extraction layer exists
+                // (the extraction layer ships inside the APK, so only a newer
+                // DOWNI can carry a site fix).
+                result.put("engineNote", info.optString("engine_note", ""));
                 call.resolve(result);
             } catch (Exception error) {
                 call.reject("Diagnostics failed: " + error.getMessage(), error);
@@ -973,10 +988,13 @@ public class DowniEnginePlugin extends Plugin {
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
             values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // DOWNI's own folders: Movies/DOWNI/ and Music/DOWNI/. This is what
-                // lets the Vault scope itself to OUR downloads only (and gives users
-                // a clean "DOWNI" album in their gallery app).
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, (mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES) + "/DOWNI/");
+                // Straight into the gallery root - Movies/ or Music/, no DOWNI
+                // subfolder, exactly like the headless path in
+                // DowniDownloadService.saveToGallery. The two paths used to
+                // disagree (this one wrote Movies/DOWNI/, that one wrote
+                // Movies/), so the same grab landed in two albums and the app
+                // showed two different folders. One path, one album.
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, (mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES) + "/");
                 values.put(MediaStore.MediaColumns.IS_PENDING, 1);
             }
 
@@ -1068,22 +1086,6 @@ public class DowniEnginePlugin extends Plugin {
         } catch (Exception ignored) {
             return false;
         }
-    }
-
-    private String friendlyError(String detail) {
-        String lower = detail.toLowerCase(Locale.US);
-        // v3.1.1 (G): plain, honest reasons for the two rawest engine texts.
-        if (lower.contains("url parsing") || lower.contains("unsupported url")) return "That link isn't a video.";
-        if (lower.contains("getaddrinfo") || lower.contains("name or service not known") || lower.contains("name resolution")
-                || lower.contains("no address associated") || lower.contains("transport") || lower.contains("connection refused")
-                || lower.contains("network is unreachable") || lower.contains("connectionreset") || lower.contains("connection reset")
-                || lower.contains("errno 7") || lower.contains("errno 101") || lower.contains("errno 111")) return "Can't reach the network — try again.";
-        if (lower.contains("cancel")) return "Grab canceled."; // Cancel UX: never scary
-        if (lower.contains("certificate") || lower.contains("ssl")) return "Secure connection failed. Check your internet, then retry.";
-        if (lower.contains("private") || lower.contains("login") || lower.contains("sign in")) return "This video needs an account or is private. Try a public link.";
-        if (lower.contains("requested format is not available")) return "That quality is not available for this link. Try Best Available or a lower quality.";
-        if (lower.contains("unsupported") || lower.contains("no video formats")) return "This public link is not supported yet. Try another public video link.";
-        return "Download failed: " + detail;
     }
 
     private String safeFileName(String requested, Uri uri) {

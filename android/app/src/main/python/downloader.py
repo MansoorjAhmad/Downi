@@ -24,6 +24,20 @@ class PausedError(Exception):
     pass
 
 
+# ---------------------------------------------------------------------------
+# THE TRUTH LAYER - one classifier, one raised shape.
+#
+# The rules live in truth.py (no yt-dlp imports there, so the classifier can
+# be unit-tested on a plain Python - see tools/test_truth.py). Every failure
+# this engine produces is tagged with its cause, and the raw reason survives
+# to every surface: nothing here guesses, and nothing here blames the user's
+# video for a reason the engine never verified.
+# ---------------------------------------------------------------------------
+
+from truth import classify as _classify, fail as _fail  # noqa: E402
+
+
+
 def _safe_name(value):
     """Sanitize filename to valid characters within 120 bytes."""
     if not value:
@@ -194,14 +208,17 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
         # A pause must keep BOTH partials (video + audio) for the resume pass — fall through
         # to nothing only for genuine failures.
         raise
-    except Exception:
+    except Exception as exc:
         for leftover in (video_path, audio_path):
             if leftover:
                 try:
                     os.remove(leftover)
                 except OSError:
                     pass
-        return None
+        # THE TRUTH LAYER: returning None here would report "this video has no
+        # separate 1080p stream" for whatever actually went wrong (a 403, a
+        # timeout, a refused request). The reason is the reason - raise it.
+        _fail(exc)
 
     return {
         'merge': True,
@@ -298,11 +315,11 @@ def _download_stream_direct(stream_url, target_path, referer='', progress_listen
 def _download_tiktok_direct(url, target_dir, is_audio=False, progress_listener=None):
     data = _fetch_tiktok_data(url)
     if data.get('code') != 0:
-        raise RuntimeError(data.get('msg') or 'TikTok video not available')
+        _fail(data.get('msg') or 'TikTok video not available')
     item = data.get('data') or {}
     stream_url = item.get('music') if is_audio else (item.get('hdplay') or item.get('play') or item.get('wmplay'))
     if not stream_url:
-        raise RuntimeError('No downloadable stream found in TikTok response')
+        _fail('No downloadable stream found in TikTok response')
     if stream_url.startswith('/'):
         stream_url = urllib.parse.urljoin('https://www.tikwm.com', stream_url)
     raw_title = item.get('title') or ('tiktok_' + str(item.get('id', int(time.time()))))
@@ -362,10 +379,16 @@ def inspect(url):
         'ca_certs': certifi.where(),
     }
     info = None
+    inspect_error = None
     try:
         with YoutubeDL(options) as ydl:
             info = ydl.extract_info(clean, download=False)
-    except Exception:
+    except Exception as exc:
+        # THE TRUTH LAYER: fabricating a card here made a link we could not
+        # read look like a video with no title, and the layer above then told
+        # the user "That link isn't a video" - a cause we never verified. Keep
+        # the reason and pass it up.
+        inspect_error = exc
         info = None
 
     if info:
@@ -375,6 +398,9 @@ def inspect(url):
         thumbnail = info.get('thumbnail') or ''
         webpage_url = info.get('webpage_url') or clean
     else:
+        if inspect_error is not None:
+            # Nothing could be read from this link - and we know why.
+            _fail(inspect_error)
         title = _safe_name(platform.capitalize() + ' Video')
         uploader = platform.capitalize()
         duration = 0
@@ -435,8 +461,10 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
         try:
             res = _download_tiktok_direct(clean, target_dir, is_audio, progress_listener)
             return json.dumps(res)
+        except PausedError:
+            raise                                  # a pause is never a "try the next way"
         except RuntimeError:
-            raise
+            raise                                  # the reason is classified - keep it
         except Exception:
             pass
 
@@ -446,7 +474,10 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
         split = _download_split(clean, target_dir, 1080, progress_listener)
         if split:
             return json.dumps(split)
-        raise RuntimeError('This video has no separate 1080p stream — pick 720p HD or Best Available.')
+        # Only reached when the split SUCCEEDED but produced no separate streams
+        # - a genuine "there is no 1080p here". A split that failed raises its
+        # own reason and never reaches this line.
+        _fail('This video has no separate 1080p stream - pick 720p HD or Best Available.')
 
     # 3) Universal yt-dlp download with proven v1.3.6 format cascading
     video_formats = {
@@ -524,7 +555,7 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
             if candidates:
                 path = max(candidates, key=os.path.getmtime)
             else:
-                raise RuntimeError('The site did not provide a downloadable public media file.')
+                _fail('The site did not provide a downloadable public media file.')
 
     title = _safe_name((info.get('title') if info else '') or 'video')
     ext = os.path.splitext(path)[1].lower().lstrip('.') or ('m4a' if is_audio else 'mp4')
@@ -559,16 +590,24 @@ def download(url, target_dir, format_id='best', progress_listener=None):
         raise                                  # a pause must never trigger a lane fallback
     except Exception as exc:
         if str(format_id).lower() in ('audio', 'mp3', 'm4a'):
-            raise
+            _fail(exc)
         if 'requested format is not available' not in str(exc).lower():
-            raise
+            _fail(exc)
         clean = _clean_url(url)
         if _detect_platform(clean) != 'youtube':
+            _fail(exc)
+        try:
+            split = _download_split(clean, target_dir, _lane_height(format_id), progress_listener)
+        except PausedError:
             raise
-        split = _download_split(clean, target_dir, _lane_height(format_id), progress_listener)
+        except Exception as split_exc:
+            # The split failed for its OWN reason (a refused request, a
+            # timeout). That reason is the truth - not the stale "format"
+            # error that sent us here.
+            _fail(split_exc)
         if split:
             return json.dumps(split)
-        raise
+        _fail(exc)
 
 
 def engine_info():
@@ -580,6 +619,37 @@ def engine_info():
         'yt_dlp_version': yt_dlp.version.__version__,
         'python': platform.python_version(),
     })
+
+
+def _version_tuple(value):
+    """The numeric part of a version, so two versions can be compared honestly."""
+    parts = []
+    for chunk in re.split(r'[.\-+]', str(value or '')):
+        m = re.match(r'^(\d+)', chunk)
+        if not m:
+            break
+        parts.append(int(m.group(1)))
+    return tuple(parts)
+
+
+def _latest_ytdlp_version():
+    """The newest yt-dlp on PyPI, or '' when we cannot ask.
+
+    A lookup, never a check: no network means "couldn't check", never "the
+    engine is broken". The extraction layer ships inside the APK, so a site
+    that changed can only be fixed by a newer DOWNI - and the newest yt-dlp is
+    what carries the fix.
+    """
+    try:
+        import yt_dlp
+        req = urllib.request.Request(
+            'https://pypi.org/pypi/yt-dlp/json',
+            headers={'User-Agent': 'DOWNI-Android/' + yt_dlp.version.__version__})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode('utf-8', 'replace'))
+        return str(data.get('info', {}).get('version') or '')
+    except Exception:
+        return ''
 
 
 def playlist_inspect(url, max_items=25):
@@ -649,6 +719,37 @@ def diagnose():
         with YoutubeDL(opts) as ydl:
             ydl.extract_info(u, download=False)
 
+    def _fetch_media_range(u):
+        """Pull the first 64 KB of the real media - the only proof that bytes flow.
+
+        Resolving a format proves the page was readable, not that the media
+        request is allowed. A block shows up here and nowhere earlier.
+        """
+        import tempfile
+        outtmpl = os.path.join(tempfile.gettempdir(), 'downi_probe.%(ext)s')
+        opts = {
+            'quiet': True, 'no_warnings': True, 'noplaylist': True,
+            'ca_certs': certifi.where(),
+            'format': 'best[ext=mp4][vcodec!=none]/best[vcodec!=none]/best',
+            'outtmpl': outtmpl,
+            'download_ranges': [(0, 65535)],
+            'retries': 1,
+            'socket_timeout': 20,
+        }
+        path = None
+        try:
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(u, download=True)
+                path = ydl.prepare_filename(info)
+            if not path or not os.path.exists(path) or os.path.getsize(path) <= 0:
+                raise RuntimeError('the media request returned no bytes')
+        finally:
+            if path:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
     def _check_instagram():
         # The probe reel can be deleted or made private at any time — a dead
         # probe must not report a working network as broken. If extraction
@@ -682,6 +783,11 @@ def diagnose():
                     'ca_certs': certifi.where(), 'format': selector}
             with YoutubeDL(opts) as ydl:
                 ydl.extract_info(u, download=False)
+        # The formats resolved - now prove the bytes actually come. A media
+        # request can be refused AFTER the page and the formats resolve (that is
+        # what a block looks like), so resolving metadata alone let the engine
+        # report HEALTHY while every grab died.
+        _fetch_media_range(u)
 
     check('Internet reachability', lambda: _head('https://www.google.com/generate_204'))
     check('YouTube extraction', _youtube_downloadable)
@@ -691,8 +797,21 @@ def diagnose():
     # made working downloads show up as a failed diagnostic.
     check('TikTok API reachability', lambda: _fetch_tiktok_data('https://www.tiktok.com/@tiktok/video/7106594312292453675'))
 
+    # The extraction layer ships inside the APK, so a site that changed can only
+    # be fixed by a newer DOWNI. This is a LOOKUP, never a check: no network
+    # means "couldn't check", not "the engine is broken".
+    latest = _latest_ytdlp_version()
+    note = ''
+    if not latest:
+        note = "Couldn't check for a newer engine (no network). "
+    elif _version_tuple(yt_dlp.version.__version__) < _version_tuple(latest):
+        note = "A newer yt-dlp (%s) is out - update DOWNI to get it. " % latest
+    elif 'dev' in str(yt_dlp.version.__version__):
+        note = "Running a nightly yt-dlp build - the fixes for broken sites land there first. "
     return json.dumps({
         'results': results,
         'yt_dlp': yt_dlp.version.__version__,
         'python': platform.python_version(),
+        'latest_ytdlp': latest,
+        'engine_note': note.strip(),
     })

@@ -10,7 +10,16 @@ chaquopy {
             // or immediately when a platform breaks) — and every bump is an
             // extraction-layer change: READ_THIS_BEFORE_UPGRADE.md's full device
             // matrix applies before release.
-            install("yt-dlp==2026.8.19")
+            //
+            // v3.6.2: moved to the newest NIGHTLY build. A site that changes
+            // breaks every app on the same stable version at the same moment,
+            // and the nightlies are where yt-dlp ships the fix first. The pin
+            // below is the newest nightly as of 2026-10-10; the diagnostics
+            // report the newest stable so a user can see when they are behind.
+            // Do NOT re-introduce the player_client cascade or a forced mobile
+            // User-Agent here: both caused 403s and Instagram breakage
+            // (READ_THIS_BEFORE_UPGRADE.md §2).
+            install("yt-dlp==2026.10.10.233141.dev0")
             install("certifi")
         }
     }
@@ -43,8 +52,8 @@ android {
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
-        versionCode 54
-        versionName "3.6.1"
+        versionCode 55
+        versionName "3.6.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

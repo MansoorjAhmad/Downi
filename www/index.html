@@ -230,13 +230,13 @@
               </div>
               <div class="srow__main">
                 <p class="srow__title">DOWNI</p>
-                <p class="srow__sub mono" id="appVersionDisplay" style="color:var(--lime)">v3.6.0</p>
+                <p class="srow__sub mono" id="appVersionDisplay" style="color:var(--lime)">v3.6.2</p>
               </div>
               <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn btn--sm btn--accent">Updates</button>
             </div>
             <button class="srow srow--tap" onclick="copyAppVersion()" title="Tap to copy the version">
               <div class="srow__main"><p class="srow__title">Version</p></div>
-              <span class="srow__value">DOWNI <span id="aboutVersion">v3.6.0</span></span>
+              <span class="srow__value">DOWNI <span id="aboutVersion">v3.6.2</span></span>
             </button>
             <div class="srow">
               <div class="srow__main"><p class="srow__title">Engine</p></div>
@@ -477,7 +477,7 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
           Quick fixes
         </p>
-        <p class="quickfix__text">On mobile data? Switch to <b>Wi-Fi</b> (or the reverse) — networks get blocked per-IP.</p>
+        <p class="quickfix__text" id="errorQuickFixText">On mobile data? Switch to <b>Wi-Fi</b> (or the reverse) — networks get blocked per-IP.</p>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px">
           <button onclick="runDiagnosticsFromError()" class="btn btn--sm">Run diagnostics</button>
           <button onclick="copyErrorDetails()" class="btn btn--sm">Copy details</button>
@@ -488,7 +488,7 @@
         <button onclick="toggleErrorDetails()" id="btnToggleErrorDetails" class="btn btn--sm btn--ghost" style="color:var(--lime)">View details</button>
         <div style="display:flex;align-items:center;gap:6px">
           <button onclick="closeErrorModal()" class="btn btn--sm btn--ghost">Dismiss</button>
-          <button onclick="retryCurrentDownload()" class="btn btn--sm btn--accent">Try again</button>
+          <button onclick="retryCurrentDownload()" id="btnRetryDownload" class="btn btn--sm btn--accent">Try again</button>
         </div>
       </div>
     </div>
@@ -507,8 +507,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.6.1';
-    let installedVersionCode = 54;
+    let installedVersion = '3.6.2';
+    let installedVersionCode = 55;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -919,7 +919,11 @@
         }
       } catch (e) {
         closeInspector();
-        showToast('Inspect failed', (e && e.message) ? e.message : 'This link could not be inspected.', 'error');
+        // The truth layer: the engine's reason and its cause come back with the
+        // rejection, so say what happened instead of "could not be inspected".
+        currentRawError = (e && e.message) ? e.message : '';
+        const voice = ERROR_VOICES[(e && e.code) || 'unknown'] || ERROR_VOICES.unknown;
+        showToast('Inspect failed', voice.short, 'error');
       } finally {
         if (btn) btn.innerText = 'Grab this link';
       }
@@ -1174,11 +1178,15 @@
             if (activeJobs.has(tempId)) activeJobs.delete(tempId);
             renderJobCards();
             const msg = (err && err.message) ? err.message : 'Download failed';
+            const cause = (err && err.code) ? err.code : 'unknown';
             if (!msg.toLowerCase().includes('cancel')) {
               // A lane that failed is not the end of the road: the one-tap falls
               // back down the real quality list instead of leaving the user with
               // an error and a link they have to try again by hand.
-              const fallbacks = (o.fallbacks || []).slice();
+              // ONLY a format failure can be fixed by another quality. A blocked
+              // request, a rate limit or a dead network fail the same way in
+              // every lane, so we stop instead of burning the whole list.
+              const fallbacks = (cause === 'format') ? (o.fallbacks || []).slice() : [];
               if (fallbacks.length) {
                 const next = fallbacks.shift();
                 showToast('Trying ' + oneTapQualityName(next), msg, 'info');
@@ -1188,7 +1196,7 @@
               }
               // Cancels already toasted (with Undo) at the cancel call-site — a
               // second generic toast here would overwrite the Undo action (B2).
-              onDownloadError(msg, url, formatId);
+              onDownloadError(msg, url, formatId, cause);
             }
             updateQueueBadge();
           });
@@ -1208,7 +1216,7 @@
         activeJobs.delete(p.jobId);
         renderJobCards();
         updateQueueBadge();
-        onDownloadError(p.error || 'The download was interrupted.', lastFailedUrl, lastFailedFormat);
+        onDownloadError(p.error || 'The download was interrupted.', lastFailedUrl, lastFailedFormat, p.cause || 'unknown');
         return;
       }
       let job = activeJobs.get(p.jobId);
@@ -1296,26 +1304,76 @@
       setTimeout(() => initiateDownload(next.url, next.formatId), 1000);
     }
 
-    function onDownloadError(errStr, url, formatId) {
+    // ---- The truth layer: one cause, one honest sentence ------------------
+    // The engine tags every failure with a cause and hands over the raw reason
+    // (see android/app/src/main/python/truth.py). This table is the ONLY place
+    // that turns a cause into words, so no surface can invent a reason and no
+    // surface can blame the user's video for something the engine never said.
+    // 'unknown' says exactly that: the engine's reason is under View details.
+    const ERROR_VOICES = {
+      blocked: {
+        short: "The site refused DOWNI's request (403).",
+        message: "The site refused DOWNI's request (HTTP 403). That is on the site's side of the line, not your video's - and trying again right now won't change it.",
+        fix: "If a newer DOWNI is out, updating is the fix. Otherwise give it a few minutes - the same block hits every request from this device.",
+        retry: false
+      },
+      rate_limited: {
+        short: "The site is rate-limiting this device (429).",
+        message: "The site is rate-limiting this device (HTTP 429) - too many requests from here, too fast.",
+        fix: "Wait a few minutes before the next grab. Nothing is wrong with your link.",
+        retry: true
+      },
+      private: {
+        short: "That video needs an account, or it is private.",
+        message: "That video needs an account, or it is private. DOWNI downloads without a session, so it can't reach it.",
+        fix: "Try another public video - one that plays in a browser without signing in.",
+        retry: false
+      },
+      geo: {
+        short: "That video isn't available in your country.",
+        message: "That video isn't available from this country or region.",
+        fix: "Try a video that plays for you in a browser.",
+        retry: false
+      },
+      format: {
+        short: "That quality isn't offered for this video.",
+        message: "That quality isn't offered for this video - the site served different formats than the one you picked.",
+        fix: "Pick another quality: Best Available is the safe one.",
+        retry: true
+      },
+      link: {
+        short: "DOWNI couldn't read a video from that link.",
+        message: "DOWNI couldn't read a video from that link.",
+        fix: "Check the link - it may be a playlist, a channel page, or a post without a video in it.",
+        retry: false
+      },
+      network: {
+        short: "DOWNI couldn't reach the network.",
+        message: "DOWNI couldn't reach the network.",
+        fix: "On mobile data? Switch to Wi-Fi (or the reverse) - networks get blocked per-IP.",
+        retry: true
+      },
+      unknown: {
+        short: "DOWNI's engine couldn't fetch this stream.",
+        message: "DOWNI's engine couldn't fetch this stream. The engine's exact reason is under View details.",
+        fix: "Run diagnostics to see whether the engine can still reach the sites.",
+        retry: true
+      }
+    };
+
+    function onDownloadError(errStr, url, formatId, cause) {
       // Cancel UX: a user-initiated cancel is not a failure — the call-site already
       // toasted it (B2). Never pop the scary error sheet for it (this also arrives via
       // the plugin's failed-progress event on cancelDownload).
       if ((errStr || '').toLowerCase().includes('cancel')) return;
       triggerHaptic('heavy');
       currentRawError = errStr;
-      let friendly = "The media stream could not be downloaded. The video may be private, restricted, or the connection dropped.";
-      const lower = (errStr || "").toLowerCase();
-
-      if (lower.includes("instagram is blocking") || lower.includes("empty media response")) {
-        friendly = "Instagram did not return media for this post. It may be private or temporarily restricted.";
-      } else if (lower.includes("private") || lower.includes("login") || lower.includes("sign in") || lower.includes("account")) {
-        friendly = "This video requires account access or is private. Try another public link.";
-      } else if (lower.includes("timeout") || lower.includes("connect") || lower.includes("network")) {
-        friendly = "Connection timed out. Check your internet and try again.";
-      } else if (lower.includes("unsupported") || lower.includes("format")) {
-        friendly = "This format isn't available for the video. Try another quality.";
-      }
-      showErrorModal('Download stopped', friendly, errStr);
+      // The cause comes from the engine (tagged there, carried across the bridge).
+      // We do NOT re-read the raw text here - that is what let the old keyword
+      // buckets drift out of sync with the Java side and killed every specific
+      // message we had.
+      const voice = ERROR_VOICES[cause] || ERROR_VOICES.unknown;
+      showErrorModal('Download stopped', voice.message, errStr, voice);
       // A failed playlist item is skipped, not fatal — the batch goes on (B1).
       if (playlistPending.length > 0) {
         showToast('Playlist batch', 'One video failed — grabbing the next…', 'info');
@@ -1381,6 +1439,10 @@
         ['Lane', laneLabel(job.formatId)],
         ['Link', job.url || '-']
       ];
+      if (job.failed) {
+        const reason = job.reason || job.size || '';
+        if (reason) rows.push(['Reason', reason]);
+      }
       return rows.map(r =>
         '<div class="jdetails__row"><span class="jdetails__k">' + escapeHtml(r[0]) +
         '</span><span class="jdetails__v">' + escapeHtml(r[1]) + '</span></div>').join('');
@@ -1654,9 +1716,13 @@
       const engine = getEngine();
       if (!engine?.getDropJobs) return;
       let jobs = [];
+      let lastError = null;
       try {
         const res = await engine.getDropJobs();
         jobs = (res && res.jobs) || [];
+        if (res && res.lastError) {
+          try { lastError = JSON.parse(res.lastError); } catch (e) { lastError = null; }
+        }
       } catch (e) { return; }
       const alive = new Set();
       let changed = false;
@@ -1678,6 +1744,12 @@
         // as its sub-line — show real byte totals when known, else the state copy. Phase text
         // is only meaningful while the grab is still running.
         job.size = j.total ? (fmtBgBytes(j.downloaded) + ' / ' + fmtBgBytes(j.total)) : (state === 'running' ? (j.status || '') : (state === 'failed' && j.error ? j.error : ''));
+        // The engine's raw reason for the last headless failure - the card shows the
+        // phrase, the details show what the engine actually said.
+        if (state === 'failed' && lastError && lastError.id === j.id) {
+          job.reason = lastError.raw || '';
+          job.cause = lastError.cause || '';
+        }
         job.speed = state === 'running' ? fmtBgSpeed(j.speed) : '';
         if (j.speed > 0 && state === 'running') job.speedSeries = (job.speedSeries || []).concat(j.speed).slice(-24);
         bgJobs.set(j.id, job);
@@ -1734,12 +1806,22 @@
     }
 
     // ================= Error sheet =================
-    function showErrorModal(title, message, rawDetail) {
+    function showErrorModal(title, message, rawDetail, voice) {
       document.getElementById('errorModalTitle').innerText = title;
       document.getElementById('errorModalMessage').innerText = message;
       document.getElementById('errorModalDetails').innerText = rawDetail || message;
       document.getElementById('errorTechnicalDetailsBox').classList.add('hidden');
       document.getElementById('btnToggleErrorDetails').innerText = 'View details';
+      // The quick fix follows the cause: the Wi-Fi advice only helps a network
+      // failure, and a blocked request needs the truth, not another attempt.
+      const fix = document.getElementById('errorQuickFixText');
+      if (fix) fix.textContent = (voice && voice.fix) ? voice.fix : '';
+      // "Try again" is only offered when trying again can actually help.
+      const retry = document.getElementById('btnRetryDownload');
+      if (retry) {
+        if (voice && voice.retry === false) retry.classList.add('hidden');
+        else retry.classList.remove('hidden');
+      }
       document.getElementById('errorModal')?.classList.remove('hidden');
     }
     function closeErrorModal() {
@@ -1795,6 +1877,17 @@
           showToast('All clear ✓', 'Every check passed on this network.', 'success');
         } else {
           showToast(fails.length + ' blocked', 'This network is limiting those platforms.', 'error');
+        }
+        // The engine's own note: a newer extraction layer may exist. The engine
+        // ships inside the APK, so only a newer DOWNI can carry a site fix - and
+        // the user should be told that plainly instead of guessing why a grab
+        // died. This is a note, not a verdict.
+        const note = (res && res.engineNote) ? res.engineNote : '';
+        if (note) {
+          const el = document.createElement('p');
+          el.style.cssText = 'margin:8px 0 0;font-size:10.5px;line-height:1.5;color:var(--ti)';
+          el.textContent = note;
+          box.appendChild(el);
         }
       }).catch(err => {
         box.innerHTML = `<p style="font-size:11px;color:var(--bad)">${escapeHtml(err?.message || 'Diagnostics failed')}</p>`;

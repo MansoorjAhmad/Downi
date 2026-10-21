@@ -30,7 +30,12 @@ one to DOWNI — the file lands in your gallery, watermark-free, up to 1080p.
 - **3 parallel downloads**, 6 queued behind them, with live progress, speed and ETA in the app and
   in the notification.
 - **Playlists** — paste a playlist link and DOWNI grabs every video in it, one after another.
-- **Engine health and network diagnostics** in Settings, so "it didn't work" has an answer.
+- **Engine health and network diagnostics** in Settings, so "it didn't work" has an answer. The
+  YouTube probe pulls real bytes, not just metadata, so a blocked request can't hide behind a
+  green tick.
+- **Honest failures.** When a grab fails, DOWNI says what actually happened — a refused request, a
+  rate limit, a private video, a dead network — instead of guessing. The engine's exact reason is
+  one tap away under **View details**.
 - **In-app updater** — Settings → Updates.
 
 ## 100% watermark-free
@@ -85,8 +90,9 @@ cd android && ./gradlew assembleRelease
 
 ## Architecture
 
-- **Capacitor 6** for the shell, **Chaquopy** for an on-device Python engine, **yt-dlp 2026.8.19**
-  for extraction. No server, no account, no tracking.
+- **Capacitor 6** for the shell, **Chaquopy** for an on-device Python engine, **yt-dlp 2026.10.10**
+  for extraction (the nightly channel — that is where a site's fixes land first). No server, no
+  account, no tracking.
 - **The engine is on the phone.** Resolution, the format cascade, the merge and the queue all run
   locally — the app only needs a network that can reach the platform.
 - **One hand-authored stylesheet** (`www/assets/css/downi.css`) is the whole design system. No CSS
