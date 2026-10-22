@@ -700,26 +700,40 @@
     // ================= Clipboard =================
     async function checkClipboard() {
       if (storeGet('clipboard_detect') === '0') return;
+      let text = "";
       try {
-        let text = "";
         const engine = getEngine();
         if (engine?.getClipboardText) {
           text = (await engine.getClipboardText()).text || "";
         } else if (navigator.clipboard?.readText) {
           text = await navigator.clipboard.readText();
         }
-        if (text && /^https?:\/\//i.test(text.trim())) {
-          const clean = extractUrl(text);
-          if (clean && clean !== detectedClipboardUrl) {
-            detectedClipboardUrl = clean;
-            document.getElementById('clipboardBanner')?.classList.remove('hidden');
-            const ct = document.getElementById('clipboardThumb');
-            if (ct) ct.classList.add('hidden');
-            updateClipboardBanner(null, clean);
-            prefetchInspect(clean);
-          }
-        }
-      } catch (e) {}
+      } catch (e) { return; }
+
+      const banner = document.getElementById('clipboardBanner');
+      const clean = extractUrl(text || "");
+      if (!clean) {
+        // Nothing on the clipboard: the banner has nothing to offer, so it goes.
+        detectedClipboardUrl = '';
+        banner?.classList.add('hidden');
+        return;
+      }
+      // THE BANNER STAYS for as long as the link is on the clipboard. It does
+      // not vanish because a grab started, and it does not come back only when
+      // the URL changes - it goes when the clipboard is empty. The owner's ask:
+      // the link is still there, so the banner is still useful ("Grab again"
+      // is right there, with the title and the lane already read).
+      const changed = clean !== detectedClipboardUrl;
+      detectedClipboardUrl = clean;
+      banner?.classList.remove('hidden');
+      if (changed) {
+        const ct = document.getElementById('clipboardThumb');
+        if (ct) ct.classList.add('hidden');
+        updateClipboardBanner(null, clean);
+        prefetchInspect(clean);
+      } else {
+        updateClipboardBanner((inspectCache.get(clean) || {}).info, clean);
+      }
     }
 
     async function handleGrabClipboardLink() {
@@ -733,7 +747,8 @@
       if (!url) return;
       detectedClipboardUrl = url;
       document.getElementById('inputManualUrl').value = url;
-      document.getElementById('clipboardBanner')?.classList.add('hidden');
+      // The banner is NOT hidden here. The link is still on the clipboard, and
+      // the banner stays exactly as long as the clipboard holds it.
       handleInspectAndOpenModal(url);
     }
 
@@ -857,7 +872,7 @@
       if (!url) return;
       detectedClipboardUrl = url;
       document.getElementById('inputManualUrl').value = url;
-      document.getElementById('clipboardBanner')?.classList.add('hidden');
+      // The banner stays: the link is still on the clipboard.
       currentInspectedUrl = url;
       const info = (inspectCache.get(url) || {}).info;
       const ladder = oneTapLadder(url);
@@ -1862,7 +1877,15 @@
       box.classList.remove('hidden');
       box.innerHTML = '<div class="skel h-8" style="margin-bottom:6px"></div><div class="skel h-8" style="margin-bottom:6px"></div><div class="skel h-8"></div>';
       engine.diagnose().then(res => {
-        const rows = (res.results || []).map(r => `
+        const checks = Array.isArray(res.results) ? res.results : [];
+        if (checks.length === 0) {
+          // Never say "all clear" when no check actually ran. An empty list is
+          // a bridge/engine problem, not a healthy network.
+          box.innerHTML = '<p style="font-size:11px;color:var(--bad)">The engine returned no checks. Run it again.</p>';
+          showToast('No results', 'The engine returned no checks.', 'error');
+          return;
+        }
+        const rows = checks.map(r => `
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(244,247,248,.03)">
             <div style="display:flex;align-items:center;gap:8px;min-width:0">
               <span style="display:grid;place-items:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:900;flex:0 0 auto;${r.ok ? 'background:rgba(198,255,61,.15);color:var(--lime)' : 'background:rgba(255,122,122,.15);color:var(--bad)'}">${r.ok ? '✓' : '✕'}</span>
@@ -1872,7 +1895,7 @@
           </div>
         `).join('');
         box.innerHTML = rows;
-        const fails = (res.results || []).filter(r => !r.ok);
+        const fails = checks.filter(r => !r.ok);
         if (fails.length === 0) {
           showToast('All clear ✓', 'Every check passed on this network.', 'success');
         } else {
@@ -2133,7 +2156,15 @@
         if (res && res.label) document.getElementById('folderText').innerText = res.label;
       } catch (e) {}
     }
-    function toggleClipboardDetect(enabled) { storeSet('clipboard_detect', enabled ? '1' : '0'); }
+    function toggleClipboardDetect(enabled) {
+      storeSet('clipboard_detect', enabled ? '1' : '0');
+      if (!enabled) {
+        // Detection off means the banner goes too - it exists only to offer
+        // what is on the clipboard.
+        detectedClipboardUrl = '';
+        document.getElementById('clipboardBanner')?.classList.add('hidden');
+      }
+    }
 
     // ================= DowniDrop 2.0 settings (v3.1.0) =================
     // The web layer owns the per-platform quality memory (localStorage); DropActivity
@@ -2324,6 +2355,10 @@
         if (!document.hidden) syncGrabLedger(); // N9: headless grabs recorded while we were away
         consumeOpenQueueRequest();
       });
+      // The banner must go the moment the clipboard is cleared, not only when
+      // the app is refocused: poll while the app is on screen. The banner's
+      // whole lifetime is "a link is on the clipboard".
+      setInterval(() => { if (!document.hidden) checkClipboard(); }, 4000);
       syncBgPolling();
 
       const engine = getEngine();

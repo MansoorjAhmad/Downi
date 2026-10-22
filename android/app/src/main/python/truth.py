@@ -81,7 +81,13 @@ def split_cause(message):
 
 
 def fail(raw, cause=None):
-    """Raise the reason, tagged with its cause, so no layer has to guess later."""
+    """Raise the reason, tagged with its cause, so no layer has to guess later.
+
+    A reason that is already tagged is raised as it is - tagging it twice would
+    leave a stray "[cause:x]" in the text the user finally reads.
+    """
     text = str(raw)
+    if text.startswith(CAUSE_PREFIX):
+        raise RuntimeError(text)
     code = cause or classify(text)
     raise RuntimeError('%s%s] %s' % (CAUSE_PREFIX, code, text))

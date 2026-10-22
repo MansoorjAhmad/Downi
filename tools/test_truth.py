@@ -76,6 +76,23 @@ def main():
     check('split_cause() classifies an untagged message', cause, 'format')
     check('split_cause() keeps an untagged message', raw, 'ERROR: Requested format is not available')
 
+    # --- a reason that passes through two layers is tagged ONCE -----------
+    # (the 1080p split tags it, then download() re-raises it - a double tag
+    #  would leave a stray "[cause:x]" in the text the user reads)
+    try:
+        try:
+            truth.fail('ERROR: HTTP Error 403: Forbidden')
+        except RuntimeError as exc:
+            truth.fail(exc)
+    except RuntimeError as exc:
+        message = str(exc)
+        check('fail() does not tag twice', message.count('[cause:'), 1)
+        cause, raw = truth.split_cause(message)
+        check('the single tag still classifies', cause, 'blocked')
+        check('the raw reason is untouched', raw, 'ERROR: HTTP Error 403: Forbidden')
+    else:
+        FAILURES.append('fail() did not raise twice')
+
     # --- the rule that matters most: 'unknown' never blames the video ----
     check('unknown stays unknown',
           truth.classify('the media stream could not be downloaded'), 'unknown')

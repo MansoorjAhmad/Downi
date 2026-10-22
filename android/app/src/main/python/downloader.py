@@ -37,6 +37,43 @@ class PausedError(Exception):
 from truth import classify as _classify, fail as _fail  # noqa: E402
 
 
+def _ydl_opts(**extra):
+    """The options every yt-dlp call in this engine uses.
+
+    js_runtimes is EMPTY on purpose. The newer yt-dlp solves YouTube's JS
+    challenge by spawning deno (or node) as a subprocess, and Chaquopy cannot
+    spawn one on Android - the app died with SIGSEGV inside
+    _posixsubprocess the first time the nightly touched a YouTube link. The
+    formats resolve perfectly well without a runtime (the probe found 48 of
+    them on a machine WITH deno installed and the same 48 with it switched
+    off), so we never ask for a runtime we cannot have.
+    """
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'ca_certs': certifi.where(),
+        'js_runtimes': {},
+        # There is no ffmpeg on this device, and yt-dlp must be told so in
+        # the one way it understands: a location that does not exist. It then
+        # reports "Continuing without ffmpeg" and NEVER probes for the binary.
+        #
+        # Two things this avoids, both found on the phone:
+        #   - the default (None) makes yt-dlp RUN ffmpeg to read its version,
+        #     and Chaquopy cannot spawn a process on Android: SIGSEGV inside
+        #     _posixsubprocess, the app dies.
+        #   - False is not handled by yt-dlp at all: its ffmpeg postprocessor
+        #     calls os.path.exists(False) and raises
+        #     "expected str, bytes or os.PathLike object, not bool", which
+        #     killed every 1080p grab AFTER the media had downloaded.
+        #
+        # DOWNI does not need ffmpeg: the 1080p merge is Android's own
+        # MediaMuxer, in Java.
+        'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
+    }
+    opts.update(extra)
+    return opts
+
+
 
 def _safe_name(value):
     """Sanitize filename to valid characters within 120 bytes."""
@@ -162,6 +199,8 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
     base = {
         'quiet': True,
         'no_warnings': True,
+        'js_runtimes': {},
+        'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
         'noplaylist': True,
         'ca_certs': certifi.where(),
         'outtmpl': os.path.join(target_dir, '%(title).120B-%(id)s.%(ext)s'),
@@ -374,6 +413,8 @@ def inspect(url):
     options = {
         'quiet': True,
         'no_warnings': True,
+        'js_runtimes': {},
+        'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
         'skip_download': True,
         'noplaylist': True,
         'ca_certs': certifi.where(),
@@ -523,6 +564,8 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
     options = {
         'quiet': True,
         'no_warnings': True,
+        'js_runtimes': {},
+        'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
         'noplaylist': True,
         'ca_certs': certifi.where(),
         'format': fmt,
@@ -661,6 +704,8 @@ def playlist_inspect(url, max_items=25):
     opts = {
         'quiet': True,
         'no_warnings': True,
+        'js_runtimes': {},
+        'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
         'skip_download': True,
         'extract_flat': 'in_playlist',
         'playlist_items': '1:%d' % max_items,
@@ -715,40 +760,49 @@ def diagnose():
         urllib.request.urlopen(req, timeout=10).read(0)
 
     def _extract(u):
-        opts = {'quiet': True, 'no_warnings': True, 'skip_download': True, 'ca_certs': certifi.where()}
+        opts = _ydl_opts(skip_download=True)
         with YoutubeDL(opts) as ydl:
             ydl.extract_info(u, download=False)
 
     def _fetch_media_range(u):
-        """Pull the first 64 KB of the real media - the only proof that bytes flow.
+        """Pull the first 64 KB of the real video, and 16 KB of the audio.
 
         Resolving a format proves the page was readable, not that the media
         request is allowed. A block shows up here and nowhere earlier.
+
+        This is a direct Range GET on the URL yt-dlp resolved - the same URL
+        the download lanes pull from - so it proves bytes actually flow. It
+        deliberately does NOT ask yt-dlp to cut a section: section cutting
+        needs ffmpeg, which is not bundled on the device, and the m3u8
+        variants need it too. Either would report a working network broken.
         """
-        import tempfile
-        outtmpl = os.path.join(tempfile.gettempdir(), 'downi_probe.%(ext)s')
-        opts = {
-            'quiet': True, 'no_warnings': True, 'noplaylist': True,
-            'ca_certs': certifi.where(),
-            'format': 'best[ext=mp4][vcodec!=none]/best[vcodec!=none]/best',
-            'outtmpl': outtmpl,
-            'download_ranges': [(0, 65535)],
-            'retries': 1,
-            'socket_timeout': 20,
-        }
-        path = None
-        try:
+        def resolve(selector):
+            opts = {
+                'quiet': True, 'no_warnings': True, 'skip_download': True,
+                'js_runtimes': {}, 'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
+                'noplaylist': True, 'ca_certs': certifi.where(),
+                'format': selector,
+            }
             with YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(u, download=True)
-                path = ydl.prepare_filename(info)
-            if not path or not os.path.exists(path) or os.path.getsize(path) <= 0:
+                return ydl.extract_info(u, download=False)
+
+        def pull(info, nbytes):
+            url = (info or {}).get('url')
+            if not url:
+                raise RuntimeError('the engine resolved no media URL')
+            headers = dict(info.get('http_headers') or {})
+            headers['Range'] = 'bytes=0-%d' % (nbytes - 1)
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = resp.read(nbytes)
+            if not data:
                 raise RuntimeError('the media request returned no bytes')
-        finally:
-            if path:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+
+        video = resolve('bestvideo[protocol=https][ext=mp4][vcodec^=avc1][height<=1080]/'
+                        'bestvideo[protocol=https][height<=1080]')
+        pull(video, 65536)
+        audio = resolve('bestaudio[protocol=https][ext=m4a]/bestaudio[protocol=https]')
+        pull(audio, 16384)
 
     def _check_instagram():
         # The probe reel can be deleted or made private at any time — a dead
@@ -760,33 +814,33 @@ def diagnose():
             _head('https://www.instagram.com/')
 
     def _youtube_downloadable():
-        """Probe what a download actually needs, not just metadata.
+        """Probe what a download actually needs - and prove the bytes come.
 
-        Metadata extraction alone cannot tell a working network from a broken
-        download path: YouTube now serves adaptive-only streams, so every
-        combined selector misses and the split+merge lane has to carry it
-        (v3.0.3). Engine health has to fail when neither can resolve, or it
-        reports green while every video lane is dead.
+        YouTube serves adaptive-only streams, so the app's lanes resolve a
+        VIDEO-ONLY format and merge the audio on device (v3.0.3). The probe
+        does exactly that - and then pulls a real 64 KB of the media. Resolving
+        a format proves the page was readable, not that the media request is
+        allowed, and a block looks exactly like that. So the probe has to try
+        the same lanes the app tries, and report the real reason when none of
+        them resolve.
         """
         u = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-        combined = 'best[ext=mp4][vcodec!=none]/best[vcodec!=none]/best'
-        try:
-            with YoutubeDL({'quiet': True, 'no_warnings': True, 'skip_download': True,
-                            'ca_certs': certifi.where(), 'format': combined}) as ydl:
-                ydl.extract_info(u, download=False)
-            return
-        except Exception:
-            pass
+        last = ''
         for selector in ('bestvideo[ext=mp4][vcodec^=avc1][height<=1080]/bestvideo[height<=1080]',
                          'bestaudio[ext=m4a]/bestaudio'):
-            opts = {'quiet': True, 'no_warnings': True, 'skip_download': True,
-                    'ca_certs': certifi.where(), 'format': selector}
-            with YoutubeDL(opts) as ydl:
-                ydl.extract_info(u, download=False)
-        # The formats resolved - now prove the bytes actually come. A media
-        # request can be refused AFTER the page and the formats resolve (that is
-        # what a block looks like), so resolving metadata alone let the engine
-        # report HEALTHY while every grab died.
+            try:
+                opts = {'quiet': True, 'no_warnings': True, 'skip_download': True,
+                        'js_runtimes': {}, 'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
+                        'ca_certs': certifi.where(), 'format': selector}
+                with YoutubeDL(opts) as ydl:
+                    ydl.extract_info(u, download=False)
+                last = ''
+                break
+            except Exception as e:
+                last = str(e)[:220]
+        if last:
+            raise RuntimeError(last)
+        # The formats resolved - now prove the bytes actually come.
         _fetch_media_range(u)
 
     check('Internet reachability', lambda: _head('https://www.google.com/generate_204'))
@@ -801,13 +855,17 @@ def diagnose():
     # be fixed by a newer DOWNI. This is a LOOKUP, never a check: no network
     # means "couldn't check", not "the engine is broken".
     latest = _latest_ytdlp_version()
+    ours = _version_tuple(yt_dlp.version.__version__)
     note = ''
     if not latest:
-        note = "Couldn't check for a newer engine (no network). "
-    elif _version_tuple(yt_dlp.version.__version__) < _version_tuple(latest):
-        note = "A newer yt-dlp (%s) is out - update DOWNI to get it. " % latest
-    elif 'dev' in str(yt_dlp.version.__version__):
-        note = "Running a nightly yt-dlp build - the fixes for broken sites land there first. "
+        note = "Couldn't check for a newer engine (no network)."
+    elif ours < _version_tuple(latest):
+        note = "A newer yt-dlp (%s) is out - update DOWNI to get it." % latest
+    elif ours > _version_tuple(latest):
+        note = ("Running a newer yt-dlp than the latest stable (%s) - the fixes for "
+                "broken sites land there first." % latest)
+    else:
+        note = "Your engine is the latest stable yt-dlp."
     return json.dumps({
         'results': results,
         'yt_dlp': yt_dlp.version.__version__,

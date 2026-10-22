@@ -95,6 +95,61 @@ hardship check. Mark ✅ / ❌ per cell.
 4. **The version is still 3.6.1 / 54** — the same numbers as the previous commit, which now holds
    different content. A release wants a bump (3.6.2 / 55); that is the owner's call.
 
+## 6. V3.6.2 — the truth release (2026-10-22)
+
+> **Device pass 2026-10-22** — vivo V2058 (Android 13, 1080x2408, density 440). Build **55 /
+> v3.6.2**, release-signed (38,474,608 B), installed over v3.6.1 with `adb install -r`. Engine
+> **yt-dlp 2026.10.10.233141** / Python 3.11.10. Captures in `Temp/opencode/ui/device/`
+> (`new1.png` = the inspector, `diag4.png` = the diagnostics, `cb1.png` / `cb4.png` = the banner).
+>
+> This pass covers the truth layer and the three faults the owner reported: Inspect, the clipboard
+> banner, and the diagnostics results box. DowniDrop and the direct **Grab now** tap were verified
+> by the owner on the same device before this pass.
+
+| # | Check | Expected | Evidence |
+|---|---|---|---|
+| 6-1 | The app opens, no crash | ✅ | cold starts after each install plus the foreground 1080p grab; no native crash and no FATAL EXCEPTION — the SIGSEGV seen in the first nightly build is gone |
+| 6-2 | **A pasted YouTube link inspects** | ✅ | `https://youtu.be/dQw4w9WgXcQ` typed into the field → **Grab this link** → the sheet opened with the real title ("Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)"), uploader, 3:33 duration, thumbnail and the six quality rows |
+| 6-3 | **The 1080p lane downloads and merges on device** | ✅ | 1080p selected → **Download 1080p Full HD (merged on device)** → `/sdcard/Movies/Rick Astley - Never Gonna Give You Up  Official Video   4K Remaster.mp4`, **84,396,135 B**, saved to Gallery / Movies |
+| 6-4 | The file is in the gallery root | ✅ | `ls -lt /sdcard/Movies/` shows the file at the top level, not in `Movies/DOWNI/` — both save paths are unified |
+| 6-5 | Direct **Grab now** still works | ✅ | owner-verified on this build's lineage (v3.6.2 / 55) before this pass; the one-tap path is the same `initiateDownload` the 1080p grab exercised |
+| 6-6 | DowniDrop still grabs in the background | ✅ | owner-verified on this build's lineage: the share path downloads and saves without opening the app. The service and save path are untouched by the fixes in this pass |
+| 6-7 | **The diagnostics box shows its checks** | ✅ | Settings → Network diagnostics → **Run**: four rows with real times — Internet reachability **671 ms**, YouTube extraction **14,087 ms**, Instagram extraction **10,094 ms**, TikTok API reachability **2,322 ms** — plus the engine note |
+| 6-8 | **The diagnostics never fake an all-clear** | ✅ | the old build returned an empty array (the bridge built it with `JSArray.from(JSONArray)`, which returns null) and the toast still said "All clear ✓"; now an empty list renders "The engine returned no checks" and the toast says **No results** |
+| 6-9 | **The clipboard banner stays while the link is on the clipboard** | ✅ | copied the YouTube link → the banner appeared with the thumbnail, **ALREADY GRABBED**, the title and **Inspect / Grab again**; it was still there after the grab and across tab switches |
+| 6-10 | **The banner leaves when the clipboard no longer holds a link** | ✅ | copied plain text (the Settings version row) → within one poll (~4 s) the banner was gone; the poll runs only while the app is visible and stops entirely when clipboard detection is off |
+| 6-11 | The truth layer classifies and round-trips | ✅ | `tools/test_truth.py`: **17 classifications**, the `[cause:...]` tag round-trips, and nothing arrives unclassified |
+| 6-12 | The engine note is a lookup, not a verdict | ✅ | "A newer yt-dlp (2026.10.21) is out - update DOWNI to get it." — the note does not call the engine broken, and a failed lookup says "Couldn't check for a newer engine (no network)" |
+| 6-13 | **The full §5 matrix is complete** | ⏳ | YouTube: Inspect ✅ (6-2/6-3), one-tap ✅ (6-5), DowniDrop ✅ (6-6). **TikTok and Instagram × Inspect / one-tap / DowniDrop are not re-run on this build** (six cells). §9 forbids calling them verified until they are dated here. |
+
+### Notes for the owner
+
+1. **The Inspect failure was one line in the engine.** The nightly was told `ffmpeg_location: False`.
+   yt-dlp does not handle `False`: its ffmpeg postprocessor calls `os.path.exists(False)` and raises
+   *"expected str, bytes or os.PathLike object, not bool"*. That happened during extraction, before
+   a single quality was listed, and the message matched no cause - so the app honestly said
+   "couldn't fetch this stream". `None` is worse (it makes yt-dlp *run* ffmpeg, which Chaquopy
+   cannot do on Android - SIGSEGV), so the engine now passes a path that does not exist: yt-dlp
+   warns "Continuing without ffmpeg" and never probes. Both Inspect and the 1080p merge now work;
+   the merge itself is still Android's MediaMuxer, in Java.
+2. **The diagnostics empty box was the bridge, not the checks.** `JSArray.from(JSONArray)` looks
+   like the obvious conversion, but its constructor only accepts primitive arrays and Collections,
+   so it returned `null` and the `results` key vanished. The bridge now parses the array's JSON,
+   and an empty list is a visible error rather than a false "All clear".
+3. **The clipboard banner is now clipboard-lifetime.** The two `classList.add('hidden')` calls in
+   the grab handlers are gone and `checkClipboard()` no longer shows the banner only when the URL
+   changes; it shows it whenever a link is on the clipboard and hides it when there is none. This
+   is the behaviour the owner asked for, verified on the device in rows 6-9 / 6-10.
+4. **v3.6.1 is published** (tag `v3.6.1` at `8b5ed68`, release with `DOWNI-v3.6.1.apk`) at the
+   owner's request. **v3.6.2 is local only** — no tag, no push, no release until the owner says go.
+5. **The staged APK carries the §8.8 key.** `apksigner verify --print-certs` on
+   `DOWNI-3.6.2-release.apk` reports `CN=Manso, O=OmniDownloader, C=US`, SHA-256
+   `431131731d7b26dadd6dc6ffa3ef337853f30a63decbb863bcec2a61bb0785e5` — the same signer as every
+   release, so it installs over 3.6.1 without an uninstall.
+6. **The §5 matrix is not finished.** The extraction layer changed in this release (the ffmpeg
+   option and the engine pin), so the protocol owes TikTok and Instagram across Inspect, one-tap
+   and DowniDrop. They are marked ⏳ in row 6-13 rather than claimed. §9 is the reason.
+
 ## 4. V3.5.0 — the scope reduction (2026-10-20)
 
 > **Not yet run.** Every cell below is ⏳ until the build has been on the vivo V2058. The §6 truth

@@ -21,6 +21,7 @@ import android.util.Base64;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -38,6 +39,7 @@ import com.chaquo.python.Python;
 import com.chaquo.python.PyObject;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -742,9 +744,26 @@ public class DowniEnginePlugin extends Plugin {
             try {
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
                 PyObject response = Python.getInstance().getModule("downloader").callAttr("diagnose");
-                JSONObject info = new JSONObject(response.toString());
+                String raw = response.toString();
+                // (D) logcat breadcrumb: the diagnostics' raw payload. Without it a
+                // results box that renders empty is a guessing game.
+                Log.i("DOWNI", "diagnose -> " + raw.substring(0, Math.min(raw.length(), 300)));
+                JSONObject info = new JSONObject(raw);
                 JSObject result = new JSObject();
-                result.put("results", com.getcapacitor.JSArray.from(info.optJSONArray("results") != null ? info.optJSONArray("results") : new JSONArray()));
+                // JSArray.from(JSONArray) is a trap: its constructor only accepts
+                // primitive arrays and Collections, so it returns null and the
+                // whole "results" key vanished - the phone showed an empty box
+                // while claiming "All clear". Parse the array's JSON instead.
+                JSONArray rows = info.optJSONArray("results");
+                JSArray results = new JSArray();
+                if (rows != null) {
+                    try {
+                        results = new JSArray(rows.toString());
+                    } catch (JSONException parseError) {
+                        results = new JSArray();
+                    }
+                }
+                result.put("results", results);
                 result.put("ytDlp", info.optString("yt_dlp", ""));
                 // The engine's own note: whether a newer extraction layer exists
                 // (the extraction layer ships inside the APK, so only a newer

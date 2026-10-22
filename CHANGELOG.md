@@ -3,7 +3,7 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
-## V3.6.2 - the truth release (versionCode 55) - 2026-10-21
+## V3.6.2 - the truth release (versionCode 55) - 2026-10-22
 
 **The app says what actually happened.** Until now, every failure that did not match four keyword
 buckets landed on one sentence - *"The media stream could not be downloaded. The video may be
@@ -13,7 +13,7 @@ before the user could see it: the 1080p split swallowed every exception and repo
 bridge rewrote the raw text the UI was matching on. So a request the site refused was reported to
 the user as a problem with **their video**. This release ends that.
 
-**Seven things.**
+**What changed.**
 
 - **The engine keeps its reason, and the app says it.** Every failure the engine raises is now
   tagged with a cause - `blocked`, `rate_limited`, `private`, `geo`, `format`, `link`, `network`,
@@ -80,6 +80,32 @@ the user as a problem with **their video**. This release ends that.
 - **Nothing says "Vault" any more.** The completion notification and the saving phase now read
   **"Saved to your gallery"** / **"Saving to your gallery."** - the Vault is gone, and so is the
   last string that still named it.
+
+**The three faults behind the reports.**
+
+- **Inspect works on every YouTube link again.** The nightly's ffmpeg postprocessor was handed
+  `ffmpeg_location: False`; the first extraction then died with *"expected str, bytes or
+  os.PathLike object, not bool"* before a single quality was listed, and because that message
+  matches no known cause it was shown as *"DOWNI's engine couldn't fetch this stream."* The engine
+  now tells yt-dlp there is no ffmpeg in the one way it understands - a location that does not
+  exist - so yt-dlp never probes (no SIGSEGV) and never crashes the postprocessor. Verified on the
+  phone: a pasted YouTube link opens the inspector with its real title, thumbnail and qualities,
+  and the 1080p lane downloads, merges on device and saves an 84 MB file to the gallery.
+- **The diagnostics results box shows its checks.** The bridge built the array with
+  `JSArray.from(JSONArray)` - a constructor that only accepts primitive arrays and Collections -
+  so it returned `null`, the key disappeared, and the box said **"All clear"** with nothing in it.
+  The bridge now parses the engine's JSON array, and an empty list is reported as *"The engine
+  returned no checks"*, never as a healthy network. The YouTube probe also stops asking yt-dlp to
+  cut a section (`download_ranges` needs ffmpeg) and instead pulls 64 KB from the resolved video
+  URL and 16 KB from the audio URL, so a working network is never reported blocked. Verified on
+  the phone: Internet reachability, YouTube extraction, Instagram extraction and TikTok API all
+  pass, and the numbers are real.
+- **The clipboard banner stays until the clipboard is empty.** It used to hide as soon as a grab
+  started and come back only when the URL changed. Now it lives exactly as long as a link is on
+  the clipboard - checked while the app is visible - and leaves only when the clipboard holds no
+  link, or when clipboard detection is switched off. Verified on the phone: the banner held while
+  the link stayed on the clipboard, showed **Already grabbed / Grab again**, and disappeared when
+  the clipboard was replaced with plain text.
 
 ## V3.6.0 - the Obsidian release (versionCode 53) - 2026-10-21
 
