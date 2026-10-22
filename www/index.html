@@ -76,7 +76,7 @@
         </div>
 
         <!-- THE ONE ACTION: paste a link, or share one to DOWNI from any app. -->
-        <div class="card grab-card">
+        <div class="card grab-card" onscroll="this.scrollLeft=0">
           <p class="eyebrow">New grab</p>
           <h1 class="grab-title">Paste a link. Get the <em>file</em>.</h1>
           <p class="grab-sub">YouTube · TikTok · Instagram — one link is all it takes.</p>
@@ -912,6 +912,8 @@
       thumbReset.classList.remove('loaded');
       thumbReset.src = 'assets/brand/downi-symbol.svg';
       document.getElementById('inspectorTitle').innerText = 'Scanning qualities…';
+      const durationReset = document.getElementById('inspectorDuration');
+      if (durationReset) { durationReset.innerText = ''; durationReset.classList.add('hidden'); }
       document.getElementById('inspectorUploader').innerText = '';
       document.getElementById('inspectorQualitiesList').innerHTML = '<div class="skel h-14"></div><div class="skel h-14"></div><div class="skel h-14"></div>';
       const noteReset = document.getElementById('inspectorQualityNote');
@@ -951,7 +953,17 @@
       thumb.src = info.thumbnail || 'assets/brand/downi-symbol.svg';
       document.getElementById('inspectorTitle').innerText = info.title || 'Video';
       document.getElementById('inspectorUploader').innerText = info.uploader || (info.platform || 'Media').toUpperCase();
-      document.getElementById('inspectorDuration').innerText = formatDuration(info.duration);
+      const durationEl = document.getElementById('inspectorDuration');
+      if (durationEl) {
+        const seconds = Number(info.duration) || 0;
+        if (seconds > 0) {
+          durationEl.innerText = formatDuration(seconds);
+          durationEl.classList.remove('hidden');
+        } else {
+          durationEl.innerText = '';
+          durationEl.classList.add('hidden');
+        }
+      }
       document.getElementById('inspectorPlatformBadge').innerText = (info.platform || 'video').toUpperCase();
       renderInspectorQualities(info.formats);
       const noteEl = document.getElementById('inspectorQualityNote');
@@ -1075,11 +1087,7 @@
     function renderInspectorQualities(formats) {
       if (!formats || formats.length === 0) {
         formats = [
-          { id: 'best', label: 'Best Available Quality', ext: 'mp4', badge: 'Best' },
-          { id: '1080', label: 'Up to 1080p Full HD', ext: 'mp4', badge: '1080p' },
-          { id: '720', label: '720p HD Quality', ext: 'mp4', badge: '720p' },
-          { id: '480', label: '480p Standard', ext: 'mp4', badge: '480p' },
-          { id: 'audio', label: 'Audio Only (MP3)', ext: 'mp3', badge: 'MP3' }
+          { id: 'best', label: 'Best Available Quality', ext: 'mp4', badge: 'Best' }
         ];
       }
       // Remember the user's last quality choice per platform.

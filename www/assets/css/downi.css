@@ -232,7 +232,11 @@ a { color: var(--lime); }
 .card--danger { border-color: var(--bad-line); }
 
 /* the grab card: one controlled spotlight, top-right */
-.grab-card { padding: 20px 18px 18px; overflow: hidden; }
+/* overflow: clip keeps the spotlight clipped without making the card a scroll
+   container. With only overflow: hidden, WebView pans the card horizontally to
+   reveal the URL input's caret/selection and leaves NEW GRAB clipped. Older
+   WebViews ignore clip; the element's onscroll guard resets scrollLeft. */
+.grab-card { padding: 20px 18px 18px; overflow: hidden; overflow: clip; }
 .grab-card::before {
   content: "";
   position: absolute;

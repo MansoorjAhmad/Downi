@@ -120,6 +120,8 @@ v3.1.1 earned the name **"The Truth Release"** by killing the ways the app contr
 | **N13** | The ledger sat **one grab behind** (`COMPLETED` ticked up, `MB GRABBED` didn't) until the next resume. | **No stale totals, ever:** fold the service ledger in the moment state changes. Two tiles that disagree are a bug, not a refresh delay. |
 | **N14** | The diagnostics reported **"All clear" with zero checks** — `JSArray.from(JSONArray)` returned `null`, the `results` key vanished, and an empty box was read as health (v3.6.2, 2026-10-22). | **An empty result set is never a pass.** Render every check the engine returned; if it returned none, say *"The engine returned no checks"* and never *"All clear"*. Absence of evidence is not evidence of health. |
 | **N15** | The YouTube diagnostic **called a working network blocked** because it tested a section cut (`download_ranges`) that needs ffmpeg — a tool this app does not have (v3.6.2, 2026-10-22). | **A diagnostic must test the claim it makes.** Media reachability is a real Range GET (64 KB video + 16 KB audio) on the resolved URL, not a metadata read and not a tool‑dependent cut. If the instrument cannot run, say so; never report it as the site's verdict. |
+| **N16** | **Unknown duration was rendered as a real zero** — the Instagram inspector showed `0:00` for `reel/DcZTAe4jKBp`; the downloaded file is **18.97 s** (ffprobe; the first pass measured 18.83 s). `index.html` always wrote `formatDuration(info.duration)`, and `formatDuration(0)` returned `"0:00"` (v3.6.2 matrix, 2026-10-22). | **Missing is not zero.** If `duration` is absent/0, hide the duration badge or show an explicit unknown (`—`); never invent a time. The subtitle already omits it (`if (info.duration)`); the thumbnail badge must do the same. **Fixed in the 3.6.2 build (55) and verified on-device 2026-10-22:** the Instagram badge is hidden when duration is absent/0; YouTube/TikTok still show real durations. |
+| **N17** | **A quality label promised a resolution the file did not have** — the Instagram sheet preselected **“Up to 1080p Full HD”**; ffprobe of the delivered file reports **720×1280**. `downloader.py` gives every non‑YouTube platform a generic 1080p/720p/480p list without reading `info['formats']` (v3.6.2 matrix, 2026-10-22). | **A quality label is a claim about the file.** Derive the rows from the extractor's actual formats, or offer only **Best available** when the real height is unknown. "Up to 1080p" is not permission to deliver 720p under a 1080p‑selected button. **Fixed in the 3.6.2 build (55) and verified on-device 2026-10-22:** non-YouTube offers only **Best Available Quality**; Instagram's 1080p is video-only DASH and is no longer offered. |
 | **N8** | Terminal cards lingered **indefinitely** (a failed card from 12:47 still on screen at 13:05) because the snapshot was only pruned while a grab ran. | **Terminal state is honest but temporary** — 20 s, re‑pruned on **every read**, and failed cards must show failure copy with no Cancel. |
 | **U5** | A moving progress bar **badged / vibrated / sounded** like an unread notification. | **Progress never badges, sounds or vibrates; only completion does.** (Android locks channel policy at creation — policy changes shape new installs only.) |
 | **C** | The UI showed a **stale version** the build wasn't. | **No hardcoded version strings** — read them from the build. |
@@ -208,7 +210,7 @@ These are **not defects**. Each is a property of the platform or a deliberate de
 
 ## 9️⃣ Claims Discipline – What A Release Note May And May Not Say
 
-- **"Verified" is a fact, not a mood.** A note may only say fixed/verified for cells **dated ✅ in `DEVICE_TEST.md`**. Cells still marked "— not re-run this pass" — for v3.6.2 that includes **TikTok and Instagram across all three entry points** — must be described as **unchanged**, or left out — never upgraded to "fixed".
+- **"Verified" is a fact, not a mood.** A note may only say fixed/verified for cells **dated ✅ in `DEVICE_TEST.md`**. For v3.6.2 the six TikTok/Instagram cells are dated ✅ (row 6-13) and file-checked with ffprobe (row 6-14); the Instagram **duration** and **quality label** rows are now ✅ (6-15/6-16) and the grab-card pan is ✅ (6-17) on the fixed build (same 3.6.2 / 55, hash `AFB29A0D…`). The owner ruled on 2026-10-22 to ship pause/resume as-is; it is deferred, not fixed.
 - **The supported-site claim stays at three chips**: YouTube, TikTok, Instagram. Never "all sites", never "1000+ sites" — and the TikTok chip means **video**.
 - **The offline claim must stay scoped**: *the UI* works with zero internet (Tailwind and the fonts are bundled in the APK). Downloads obviously need the network; the only outbound calls are the grab itself and the GitHub update check — so "no analytics / no tracking" is honest, but a bare "works offline" is not.
 - **The tagged commit's message IS the published release notes** (`release.yml` uses `github.event.head_commit.message`). The tagged commit must carry the full summary — never tag a commit whose message reads "wip", "fixes", "bump" or "release vehicle".
@@ -219,7 +221,7 @@ These are **not defects**. Each is a property of the platform or a deliberate de
 
 ## 🔟 v3.6.2 — The Truth Release Case Notes (2026-10-22, versionCode 55)
 
-Seven lessons from this release. Each one is a line of code that looks harmless and is not:
+Ten lessons from this release. Each one is a line of code that looks harmless and is not:
 
 1. **`ffmpeg_location: False` is not "off".** yt‑dlp's ffmpeg postprocessor calls
    `os.path.exists(False)` and raises `TypeError: expected str, bytes or os.PathLike object, not
@@ -247,12 +249,38 @@ Seven lessons from this release. Each one is a line of code that looks harmless 
 7. **The engine pin is deliberate.** yt‑dlp `2026.10.10.233141`, with **no** `player_client`
    cascade and **no** forced mobile User‑Agent — both are documented causes of 403s and Instagram
    breakage (§2). A newer nightly is a release decision, not an automatic upgrade.
+8. **Unknown duration is not `0:00`.** The Instagram inspector rendered the thumbnail badge with
+   `formatDuration(info.duration)` unconditionally; `formatDuration(0)` returns `"0:00"`. The
+   downloaded file was **18.97 s**. The fixed build hides the badge while scanning and whenever
+   the extractor has no duration, and restores it only for a real positive value; YouTube **3:33**
+   and TikTok **0:24** still show. Verified on-device 2026-10-22. See N16.
+9. **The generic quality list is a promise the extractor did not make.** Non‑YouTube platforms
+   were offered 1080p / 720p / 480p rows regardless of `info['formats']`; the selected “Up to
+   1080p Full HD” lane delivered a **720×1280** file. The fixed build offers only **Best Available
+   Quality** for Instagram, with a note that higher resolutions may exist only as separate streams
+   it does not merge. Instagram's 1080p is **video-only DASH**; the playable single file is 720p.
+   YouTube's **1080p Full HD (merged on device)** row is unchanged. Verified on-device 2026-10-22;
+   the delivered Instagram file is H.264 720×1280 + AAC, 4,603,266 B. See N17.
+10. **A hidden overflow container is still scrollable.** The grab card's `overflow: hidden` plus
+    its `::before` spotlight (`right: -20%`) made the card a horizontal scroll container. When the
+    URL input was long-pressed, WebView scrolled the card to reveal the caret/selection and left it
+    panned: `NEW GRAB` clipped to `AB`, the field/button clipped, while the header, banner and other
+    cards stayed put. Force‑stop/relaunch cleared it; it reproduced on TikTok and Instagram. This is
+    a pre‑existing UI defect, not a v3.6.2 extraction change. **Fixed in the 3.6.2 build (55):**
+    `.grab-card` now has `overflow: hidden; overflow: clip;` plus an `onscroll="this.scrollLeft=0"`
+    guard for WebViews that ignore `clip`. Verified on-device 2026-10-22: long-press opened the
+    real selection menu with the URL highlighted, the card stayed aligned, and **Copy** still
+    updated the clipboard banner. See `DEVICE_TEST.md` 6-17.
 
-**Release status at the time of writing:** build 55 is device‑verified for the three reported
-faults and the YouTube 1080p path (rows 6‑1 … 6‑12 in `DEVICE_TEST.md`). The full §5 matrix is
-**not** re‑run for TikTok and Instagram; §9 forbids calling those cells verified until they are
-dated in `DEVICE_TEST.md`. The APK is signed with the §8.8 key and **local only** — no tag, push
-or release until the owner says go.
+**Release status at the time of writing (2026-10-22, after the fixed-build retest):** build 55 is
+device‑verified for the three reported faults, the YouTube 1080p path, and all six TikTok /
+Instagram cells (rows 6‑1 … 6‑17 in `DEVICE_TEST.md`). The delivered files are real media
+(ffprobe: TikTok HEVC 1080×1920 / 24.40 s; Instagram H.264 720×1280 / 18.97 s), and all three
+Instagram paths delivered the same SHA-256 `9438E8E8…`. **The two truth defects and the UI defect
+are fixed and dated ✅** (6‑15 / N16, 6‑16 / N17, 6‑17): Instagram offers only **Best Available
+Quality**, unknown duration is hidden, and long-press selection no longer pans the card. The APK
+is signed with the §8.8 key and **local only** — no tag, push or release until the owner says go.
+The owner ruled on 2026-10-22 to ship pause/resume as-is; it is deferred, not fixed.
 
 ---
 
@@ -265,6 +293,7 @@ or release until the owner says go.
 - Always run the **full Instagram / YouTube / TikTok × 3 entry‑point test suite** before any modification.
 
 - **Show only what is actually happening** (v3.1.1, §6). If a change makes any tile, card, badge or notification say something the system is not doing, it is a blocker — not a polish item.
+- **A missing value is not a zero, and a quality label is a claim** (N16/N17): hide an unknown duration, and derive quality rows from the formats the extractor will actually deliver (or offer only **Best Available**). A hidden overflow container is still scrollable; `overflow: clip` plus a scroll reset fixes the card pan, and long-press text selection must be re-tested on a real device.
 - **Any change touching live state, counters, notifications or the ledger must re-run the §6 re-checks (N8‑N13) on a real device** before it ships. A green build proves nothing about truthfulness.
 - **Never re-introduce §7 by stealth** — no "just one" new permission, no new pause surface. The pause/resume that already shipped is **frozen as shipped** (§7.1); do not extend it.
 - **Chaquopy cannot spawn a process** — `js_runtimes: {}` and a non‑existent `ffmpeg_location` stay; no ffmpeg, no subprocess, no "quick fix" that enables either (§8.9).

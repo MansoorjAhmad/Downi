@@ -107,6 +107,30 @@ the user as a problem with **their video**. This release ends that.
   the link stayed on the clipboard, showed **Already grabbed / Grab again**, and disappeared when
   the clipboard was replaced with plain text.
 
+**The fixed-build truth pass (same 3.6.2 / 55).**
+
+After the first device pass surfaced three truth/UI defects, the same version was rebuilt with the
+fixes and re-tested on the vivo V2058:
+
+- **Instagram no longer invents quality tiers.** Its 1080p stream is video-only DASH, and this
+  engine has no ffmpeg to merge non-YouTube streams. The sheet now offers exactly one
+  **Best Available Quality** row, with a note that higher resolutions may exist only as separate
+  streams. The delivered file is still H.264 720×1280 + AAC, 4,603,266 B; all three Instagram
+  entry points delivered the same SHA-256.
+- **Unknown duration is hidden, not `0:00`.** The Instagram inspector no longer shows a duration
+  badge when the extractor has none; YouTube **3:33** and TikTok **0:24** still show on the same
+  build.
+- **The grab card no longer pans on text selection.** `overflow: clip` (with the `overflow: hidden`
+  fallback) plus an `onscroll` scroll reset keeps the card still while the real Android selection
+  menu is open; **Copy** still updates the clipboard banner.
+- **Pause/resume is unchanged.** It remains frozen exactly as shipped; the owner reviewed it on
+  2026-10-22 and deferred the fix to a follow-up. This release does not claim to fix it.
+- **Re-verified on the fixed APK:** Instagram Inspect / one-tap / DowniDrop at 13:43 / 14:05 /
+  14:20 (4,603,266 B each), TikTok at 15:12 (3,360,445 B), and a YouTube inspector smoke check
+  (3:33, 1080p Full HD row). The APK is **38,474,784 B**, SHA-256
+  `AFB29A0D94ECD4C469EC55BDF070885481BD032BDC531156AFCD4CC27FFED319`, signed with the §8.8 key.
+  Local only: no tag, push or release until the owner says go.
+
 ## V3.6.0 - the Obsidian release (versionCode 53) - 2026-10-21
 
 **A ground-up frontend rebuild, not a reskin.** Every screen, sheet and control was rebuilt on

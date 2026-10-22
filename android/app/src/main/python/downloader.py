@@ -448,9 +448,10 @@ def inspect(url):
         thumbnail = ''
         webpage_url = clean
 
-    # Honest, platform-aware quality choices. No ffmpeg is bundled on-device, so
-    # every download is a single muxed (video+audio) stream. YouTube only serves
-    # muxed streams up to 720p, so advertising 1080p there would be a lie.
+    # Honest, platform-aware quality choices. No ffmpeg is bundled on-device.
+    # YouTube's 1080p is a separate video+audio pair merged by Android's
+    # MediaMuxer; other sites' 1080p is often video-only DASH, which this engine
+    # cannot merge, so their only honest lane is the best single file.
     if platform == 'youtube':
         formats = [
             {'id': 'best', 'label': 'Best Available Quality (HD)', 'ext': 'mp4', 'badge': 'HD'},
@@ -463,14 +464,18 @@ def inspect(url):
         note = ('YouTube serves 1080p as separate video and audio — DOWNI merges them on your '
                 'device. Pick "Best" for the fastest grab, or 1080p Full HD for maximum quality.')
     else:
+        # Instagram (and any other non-YouTube site) does not expose a
+        # trustworthy set of single-file resolutions to this engine. Its 1080p
+        # stream is usually video-only DASH, and DOWNI has no ffmpeg to merge
+        # non-YouTube streams. Offering 1080p/720p/480p rows here promised
+        # resolutions the delivered file did not have (v3.6.2 matrix: the
+        # "Up to 1080p" lane delivered 720x1280). Offer only the honest best
+        # single-file lane; do not invent tiers.
         formats = [
-            {'id': 'best', 'label': 'Best Available Quality (HD)', 'ext': 'mp4', 'badge': 'HD'},
-            {'id': '1080', 'label': 'Up to 1080p Full HD', 'ext': 'mp4', 'badge': '1080p'},
-            {'id': '720', 'label': '720p HD Quality', 'ext': 'mp4', 'badge': '720p'},
-            {'id': '480', 'label': '480p Standard Quality', 'ext': 'mp4', 'badge': '480p'},
-            {'id': 'audio', 'label': 'Audio Track (MP3 / M4A)', 'ext': 'mp3', 'badge': 'MP3'},
+            {'id': 'best', 'label': 'Best Available Quality', 'ext': 'mp4', 'badge': 'Best'},
         ]
-        note = ''
+        note = ('Best single file available. Higher resolutions may exist only as '
+                'separate video and audio streams, which DOWNI does not merge for this site.')
 
     return json.dumps({
         'title': title,

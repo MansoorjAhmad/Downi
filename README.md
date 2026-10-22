@@ -3,7 +3,8 @@
 > **Grab any video. One tap. Zero clutter.**
 
 DOWNI is a dark, fast Android downloader for video and audio. Copy a link, paste a link, or share
-one to DOWNI — the file lands in your gallery, watermark-free, up to 1080p.
+one to DOWNI — the file lands in your gallery, watermark-free. YouTube goes up to 1080p; other
+sites get the best single file they actually serve.
 
 [Releases](https://github.com/MansoorjAhmad/Downi/releases) ·
 [Changelog](CHANGELOG.md) · [Device test matrix](DEVICE_TEST.md)

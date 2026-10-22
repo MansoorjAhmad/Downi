@@ -98,13 +98,20 @@ hardship check. Mark ✅ / ❌ per cell.
 ## 6. V3.6.2 — the truth release (2026-10-22)
 
 > **Device pass 2026-10-22** — vivo V2058 (Android 13, 1080x2408, density 440). Build **55 /
-> v3.6.2**, release-signed (38,474,608 B), installed over v3.6.1 with `adb install -r`. Engine
+> v3.6.2**, release-signed (38,474,784 B, SHA-256 `AFB29A0D94ECD4C469EC55BDF070885481BD032BDC531156AFCD4CC27FFED319`), installed over v3.6.1 with `adb install -r`. Engine
 > **yt-dlp 2026.10.10.233141** / Python 3.11.10. Captures in `Temp/opencode/ui/device/`
 > (`new1.png` = the inspector, `diag4.png` = the diagnostics, `cb1.png` / `cb4.png` = the banner).
+>
+> The fixed build (same 3.6.2 / 55) was rebuilt after the three truth/UI fixes and installed over
+> the same version; the 6-13 re-run and the 6-15…6-17 results below are from that fixed APK.
 >
 > This pass covers the truth layer and the three faults the owner reported: Inspect, the clipboard
 > banner, and the diagnostics results box. DowniDrop and the direct **Grab now** tap were verified
 > by the owner on the same device before this pass.
+>
+> The full TikTok / Instagram × Inspect / one-tap / DowniDrop matrix was run on this build on
+> 2026-10-22 after the initial pass; rows 6-13 / 6-14 hold the dated results, and 6-15…6-17 hold
+> the three defects it surfaced.
 
 | # | Check | Expected | Evidence |
 |---|---|---|---|
@@ -120,7 +127,11 @@ hardship check. Mark ✅ / ❌ per cell.
 | 6-10 | **The banner leaves when the clipboard no longer holds a link** | ✅ | copied plain text (the Settings version row) → within one poll (~4 s) the banner was gone; the poll runs only while the app is visible and stops entirely when clipboard detection is off |
 | 6-11 | The truth layer classifies and round-trips | ✅ | `tools/test_truth.py`: **17 classifications**, the `[cause:...]` tag round-trips, and nothing arrives unclassified |
 | 6-12 | The engine note is a lookup, not a verdict | ✅ | "A newer yt-dlp (2026.10.21) is out - update DOWNI to get it." — the note does not call the engine broken, and a failed lookup says "Couldn't check for a newer engine (no network)" |
-| 6-13 | **The full §5 matrix is complete** | ⏳ | YouTube: Inspect ✅ (6-2/6-3), one-tap ✅ (6-5), DowniDrop ✅ (6-6). **TikTok and Instagram × Inspect / one-tap / DowniDrop are not re-run on this build** (six cells). §9 forbids calling them verified until they are dated here. |
+| 6-13 | **The full §5 matrix is complete** | ✅ | **YouTube** Inspect ✅ (6-2/6-3), one-tap ✅ (6-5), DowniDrop ✅ (6-6). **TikTok** (`@tiktok/video/7106594312292453675`): Inspect ✅ **3,360,445 B** at 11:08; one-tap **Grab again** ✅ **3,360,445 B** at 11:16; DowniDrop SEND ✅ **3,360,445 B** at 11:19. **Instagram** (`reel/DcZTAe4jKBp`): Inspect ✅ **4,603,266 B** at 11:35; one-tap **Grab again** ✅ **4,603,266 B** at 11:41; DowniDrop SEND ✅ **4,603,266 B** at 11:41. Every file landed in `Movies/` and posted **Saved to your gallery**. **Re-run on the fixed build** (same 3.6.2 / 55, hash `AFB29A0D…`, installed before the 13:43 Inspect): Instagram Inspect ✅ **4,603,266 B** at 13:43; one-tap **Grab again** ✅ **4,603,266 B** at 14:05; DowniDrop SEND ✅ **4,603,266 B** at 14:20 (launcher stayed focused, no UI opened); TikTok Inspect/download ✅ **3,360,445 B** at 15:12; YouTube Inspect smoke ✅ **3:33** duration and the **1080p Full HD (merged on device)** row. |
+| 6-14 | **The delivered files are real media, not empty stubs** | ✅ | Pulled one file per platform and ran **ffprobe**: TikTok **HEVC 1080×1920, 24.40 s, AAC**, 3,360,445 B; Instagram **H.264 720×1280, 18.97 s, AAC**, 4,603,266 B; both `mov,mp4,m4a,3gp,3g2,mj2`. On the fixed build, all three Instagram paths (Inspect, one-tap, DowniDrop) delivered the **same SHA-256** `9438E8E86DE7D769B5EEEC20B505952FC23D3FF1D6D1B8DCB0DCFC0FA8AFCAED`; the TikTok file hashed `5D58665E5F1E9F82FE33E82591F0EBE719B9589858E8EF0A9CAF3A00833112B2`. |
+| 6-15 | **The Instagram inspector tells the truth about duration** | ✅ | **Fixed in the same 3.6.2 build (55), verified on-device 2026-10-22 13:43.** The inspector for `reel/DcZTAe4jKBp` now shows **no duration badge at all** — the old `0:00` is gone; the downloaded file is **18.97 s** (ffprobe). `index.html` now hides the badge while scanning and whenever `info.duration` is absent/0, and restores it only for a real positive duration. YouTube still shows **3:33** and TikTok still shows **0:24** on the same build. |
+| 6-16 | **The Instagram quality label matches the delivered file** | ✅ | **Fixed in the same 3.6.2 build (55), verified on-device 2026-10-22 13:43.** The Instagram sheet now offers exactly one row, **Best Available Quality (MP4)**, with the note *"Best single file available. Higher resolutions may exist only as separate video and audio streams, which DOWNI does not merge for this site."* The delivered file is **H.264 720×1280 + AAC, 4,603,266 B** — the label no longer promises 1080p. Instagram's 1080p is **video-only DASH**; non-YouTube has no ffmpeg/merge path, so 1080p is deliberately not offered. YouTube's **1080p Full HD (merged on device)** row is unchanged and still verified. |
+| 6-17 | **Text selection does not pan the grab card** | ✅ | **Fixed in the same 3.6.2 build (55), verified on-device 2026-10-22 13:56.** Long-pressing the URL field opened the real Android selection menu (**Open / Cut / Copy / Select all / Read aloud / DOWNI**) with the URL highlighted; the grab card stayed **aligned** — `NEW GRAB`, the headline, field, buttons and DowniDrop card all remained in place, and **Copy** still updated the clipboard banner. Fix: `.grab-card { overflow: hidden; overflow: clip; }` plus the element's `onscroll="this.scrollLeft=0"` guard for WebViews that ignore `clip`. |
 
 ### Notes for the owner
 
@@ -146,9 +157,31 @@ hardship check. Mark ✅ / ❌ per cell.
    `DOWNI-3.6.2-release.apk` reports `CN=Manso, O=OmniDownloader, C=US`, SHA-256
    `431131731d7b26dadd6dc6ffa3ef337853f30a63decbb863bcec2a61bb0785e5` — the same signer as every
    release, so it installs over 3.6.1 without an uninstall.
-6. **The §5 matrix is not finished.** The extraction layer changed in this release (the ffmpeg
-   option and the engine pin), so the protocol owes TikTok and Instagram across Inspect, one-tap
-   and DowniDrop. They are marked ⏳ in row 6-13 rather than claimed. §9 is the reason.
+6. **The §5 matrix is complete, and the fixed build was re-run.** The extraction layer changed in
+   this release (the ffmpeg option and the engine pin), so the protocol owed TikTok and Instagram
+   across Inspect, one-tap and DowniDrop. The original six cells are in row 6-13; the fixed build
+   (same 3.6.2 / 55, hash `AFB29A0D…`) was re-run on 2026-10-22 at 13:43 / 14:05 / 14:20
+   (Instagram) and 15:12 (TikTok), and every delivered file was checked with ffprobe (row 6-14).
+   The two Instagram truth defects and the grab-card pan are now dated ✅ in rows 6-15…6-17.
+7. **The matrix surfaced two Instagram truth defects; both are fixed in this build.** The old
+   inspector showed **0:00** for a file that is actually **18.97 s**, and offered **“Up to 1080p
+   Full HD”** for a file that is actually **720×1280**. The fixed build hides an unknown duration
+   (no badge) and offers only **Best Available Quality** for Instagram, with an explicit note that
+   higher resolutions may exist only as separate streams it cannot merge. The delivered file is
+   still valid (H.264 720×1280 + AAC, 4,603,266 B). Rows 6-15/6-16.
+8. **The grab-card pan is fixed.** Long-press → selection menu no longer shifts the card; the
+   real Copy action still updates the clipboard banner. The cause was the card becoming a
+   horizontal scroll container; `overflow: clip` (with `overflow: hidden` fallback) plus an
+   `onscroll` reset keeps `scrollLeft` at 0. Row 6-17; verified on the fixed build at 13:56.
+9. **Release status:** v3.6.2 is released under tag `v3.6.2` with the owner's approval on
+   2026-10-22. The fixed APK is installed and the matrix/truth/UI retests are green
+   (rows 6-13…6-17). Pause/resume stays exactly as shipped; the owner reviewed it and deferred the
+   fix to a follow-up, so this release does not claim to fix it.
+10. **Why Instagram has no 1080p row.** The extractor exposes 1080p only as a **video-only DASH**
+    stream; the playable single file is 720×1280. DOWNI merges separate streams only on YouTube
+    (Android MediaMuxer); it has no ffmpeg for non-YouTube. Offering 1080p there would repeat the
+    lie this release removes. If 1080p Instagram is ever wanted, it is a new merge feature, not a
+    label fix, and it is out of scope for v3.6.2.
 
 ## 4. V3.5.0 — the scope reduction (2026-10-20)
 
