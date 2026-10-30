@@ -21,7 +21,8 @@ final class EngineError {
 
     /** The cause code the engine tagged, or "unknown" when it tagged nothing. */
     static String cause(String message) {
-        String text = raw(message);
+        if (message == null) return "unknown";
+        String text = message.trim();
         if (text.startsWith(PREFIX)) {
             int end = text.indexOf(']');
             if (end > PREFIX.length()) {

@@ -165,11 +165,16 @@ public class DowniDownloadService extends Service {
 
     /** @param success true posts a completion celebration, false (cancel/fail) stays silent. */
     public static void finishJob(Context context, String jobId, boolean success) {
+        finishJob(context, jobId, success, false);
+    }
+
+    public static void finishJob(Context context, String jobId, boolean success, boolean inForeground) {
         activeJobs.remove(jobId);
         Intent intent = new Intent(context, DowniDownloadService.class);
         intent.setAction("job_finish");
         intent.putExtra("jobId", jobId);
         intent.putExtra("success", success);
+        intent.putExtra("inForeground", inForeground);
         try { context.startService(intent); } catch (Exception ignored) {}
     }
 
@@ -402,9 +407,10 @@ public class DowniDownloadService extends Service {
             case "job_finish": {
                 String jobId = intent.getStringExtra("jobId");
                 boolean success = intent.getBooleanExtra("success", false);
+                boolean inForeground = intent.getBooleanExtra("inForeground", false);
                 live.remove(jobId);
                 releaseJobRow(jobId); // N10: drop this job's row and hand the slot to the next live one
-                if (success) notifyCompletion();
+                if (success && !inForeground) notifyCompletion();
                 maybeStop();
                 break;
             }
@@ -587,6 +593,7 @@ public class DowniDownloadService extends Service {
             long finalBytes = 0;
             DowniDownloadService.SaveResult saveResult = null;
             applyPhase(jobId, "Saving to your gallery.", 98);
+            boolean wantUnique = getSharedPreferences("downi_settings", MODE_PRIVATE).getBoolean("autoUnique", true);
             if (file.optBoolean("merge", false)) {
                 applyPhase(jobId, "Merging video + audio…", 96);
                 File videoPart = new File(file.getString("video_path"));
@@ -597,16 +604,46 @@ public class DowniDownloadService extends Service {
                     try { audioPart.delete(); } catch (Exception ignored) {}
                     throw new IllegalStateException("Could not merge 1080p on this device. Try 720p HD or Best Available.");
                 }
-                finalBytes = merged.length();
-                saveResult = saveToGallery(merged, title, "mp4");
+                File toSave = merged;
+                if (wantUnique) {
+                    try {
+                        applyPhase(jobId, "Making video unique…", 97);
+                        File uniqueOut = new File(videoPart.getParentFile(), title + "-unique.mp4");
+                        if (VideoUniquifier.process(merged, uniqueOut)) {
+                            try { merged.delete(); } catch (Exception ignored) {}
+                            toSave = uniqueOut;
+                        }
+                    } catch (Throwable t) {
+                        Log.w("DOWNI", "DowniDrop uniquifier error, using original: " + t.getMessage());
+                    }
+                }
+                finalBytes = toSave.length();
+                saveResult = saveToGallery(toSave, title, "mp4");
                 destination = saveResult.label;
+                try { if (toSave != merged) toSave.delete(); } catch (Exception ignored) {}
                 try { videoPart.delete(); } catch (Exception ignored) {}
                 try { audioPart.delete(); } catch (Exception ignored) {}
             } else {
                 File single = new File(file.getString("path"));
-                finalBytes = single.length();
-                saveResult = saveToGallery(single, title, file.getString("ext"));
+                File toSave = single;
+                String ext = file.getString("ext");
+                if (wantUnique && !"audio".equalsIgnoreCase(formatId) && !"mp3".equalsIgnoreCase(ext) && !"m4a".equalsIgnoreCase(ext)) {
+                    try {
+                        applyPhase(jobId, "Making video unique…", 97);
+                        File uniqueOut = new File(single.getParentFile(), title + "-unique.mp4");
+                        if (VideoUniquifier.process(single, uniqueOut)) {
+                            try { single.delete(); } catch (Exception ignored) {}
+                            toSave = uniqueOut;
+                            ext = "mp4";
+                        }
+                    } catch (Throwable t) {
+                        Log.w("DOWNI", "DowniDrop uniquifier error, using original: " + t.getMessage());
+                    }
+                }
+                finalBytes = toSave.length();
+                saveResult = saveToGallery(toSave, title, ext);
                 destination = saveResult.label;
+                try { if (toSave != single) toSave.delete(); } catch (Exception ignored) {}
             }
             if (cancelled != null && cancelled.get()) {
                 writeDropSnapshot(jobId, "canceled", null, null);
@@ -975,12 +1012,29 @@ public class DowniDownloadService extends Service {
     }
 
     private String safeFileName(String requested, Uri uri) {
-        String base = requested.replaceAll("[^a-zA-Z0-9._ -]", " ").trim();
-        if (base.isEmpty()) base = "video";
-        String path = uri.getPath() == null ? "" : uri.getPath();
+        if (requested == null || requested.trim().isEmpty()) requested = "Video";
+        // Strip illegal filesystem characters: \ / : * ? " < > | and control chars
+        String base = requested.replaceAll("[\\/:*?\"<>|\r\n\t]+", " ");
+        // Collapse multiple spaces into one
+        base = base.replaceAll("\s+", " ").trim();
+        // Strip leading/trailing dots and dashes that cause issues on Android storage
+        base = base.replaceAll("^[.-]+|[.-]+$", "").trim();
+        if (base.isEmpty()) base = "Video";
+
+        String path = (uri != null && uri.getPath() != null) ? uri.getPath() : "";
         String ext = path.contains(".") ? path.substring(path.lastIndexOf('.')).toLowerCase(Locale.US) : ".mp4";
-        if (!base.toLowerCase(Locale.US).endsWith(ext)) base += ext;
-        return base.length() > 100 ? base.substring(0, 100 - ext.length()) + ext : base;
+        if (ext.isEmpty() || ext.equals(".")) ext = ".mp4";
+
+        if (base.toLowerCase(Locale.US).endsWith(ext)) {
+            base = base.substring(0, base.length() - ext.length()).trim();
+        }
+
+        // Smart word-boundary truncation (max 90 chars before extension)
+        if (base.length() > 90) {
+            int cut = base.lastIndexOf(' ', 90);
+            base = (cut > 40) ? base.substring(0, cut).trim() : base.substring(0, 90).trim();
+        }
+        return base + ext;
     }
 
 
@@ -1348,7 +1402,14 @@ public class DowniDownloadService extends Service {
         if (activeJobs.isEmpty() && pausedJobs.isEmpty()) {
             live.clear();
             fgRowOwner = null; // N10: the foreground slot dies with the service
-            stopForeground(true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+            try {
+                NotificationManagerCompat.from(this).cancel(FG_NOTIFICATION_ID);
+            } catch (Exception ignored) {}
             stopSelf();
         }
     }

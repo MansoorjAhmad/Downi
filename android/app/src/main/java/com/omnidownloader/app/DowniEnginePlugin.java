@@ -44,6 +44,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -68,6 +69,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
     @Permission(alias = "mediaLegacy", strings = { Manifest.permission.READ_EXTERNAL_STORAGE })
 })
 public class DowniEnginePlugin extends Plugin {
+    private static volatile boolean isAppInForeground = true;
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        isAppInForeground = true;
+    }
+
+    @Override
+    protected void handleOnPause() {
+        super.handleOnPause();
+        isAppInForeground = false;
+    }
+
     private static final int MAX_ACTIVE = 3;
     private static final int MAX_QUEUED = 6;
 
@@ -549,7 +564,7 @@ public class DowniEnginePlugin extends Plugin {
                 job.cancelled.set(true);
                 Log.i("DOWNI", "job cancel all " + job.id); // (D) logcat breadcrumb
                 try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
-                DowniDownloadService.finishJob(getContext(), job.id, false);
+                DowniDownloadService.finishJob(getContext(), job.id, false, isAppInForeground);
             }
             jobs.clear();
         }
@@ -610,6 +625,9 @@ public class DowniEnginePlugin extends Plugin {
             // (which only adds on the complete event) stayed at 0 forever — a lie on the
             // Queue dashboard of a release called "The Truth Release".
             long finalBytes = 0;
+            boolean wantUnique = job.call.getBoolean("makeUnique", false)
+                || getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getBoolean("autoUnique", true);
+
             if (file.optBoolean("merge", false)) {
                 // True 1080p: separate video + audio streams muxed on-device.
                 DowniDownloadService.updateJob(getContext(), job.id, "Merging video + audio…", 96);
@@ -623,8 +641,27 @@ public class DowniEnginePlugin extends Plugin {
                 File audioPart = new File(file.getString("audio_path"));
                 File merged = new File(videoPart.getParentFile(), file.getString("title") + "-merged.mp4");
                 if (Mp4Merger.merge(videoPart, audioPart, merged)) {
-                    finalBytes = merged.length();
-                    destination = copyToGallery(merged, file.getString("title"), "mp4");
+                    File toSave = merged;
+                    if (wantUnique) {
+                        try {
+                            DowniDownloadService.updateJob(getContext(), job.id, "Making video unique…", 97);
+                            JSObject uProg = new JSObject();
+                            uProg.put("jobId", job.id);
+                            uProg.put("percent", 97);
+                            uProg.put("status", "Making video unique…");
+                            notifyListeners("onProgress", uProg);
+                            File uniqueOut = new File(videoPart.getParentFile(), file.getString("title") + "-unique.mp4");
+                            if (VideoUniquifier.process(merged, uniqueOut)) {
+                                try { merged.delete(); } catch (Exception ignored) {}
+                                toSave = uniqueOut;
+                            }
+                        } catch (Throwable t) {
+                            Log.w("DowniEngine", "Uniquifier error, using original: " + t.getMessage());
+                        }
+                    }
+                    finalBytes = toSave.length();
+                    destination = copyToGallery(toSave, file.getString("title"), "mp4");
+                    try { if (toSave != merged) toSave.delete(); } catch (Exception ignored) {}
                 } else {
                     try { videoPart.delete(); } catch (Exception ignored) {}
                     try { audioPart.delete(); } catch (Exception ignored) {}
@@ -634,8 +671,29 @@ public class DowniEnginePlugin extends Plugin {
                 try { audioPart.delete(); } catch (Exception ignored) {}
             } else {
                 File single = new File(file.getString("path"));
-                finalBytes = single.length();
-                destination = copyToGallery(single, file.getString("title"), file.getString("ext"));
+                File toSave = single;
+                String ext = file.getString("ext");
+                if (wantUnique && !"audio".equalsIgnoreCase(job.formatId) && !"mp3".equalsIgnoreCase(ext) && !"m4a".equalsIgnoreCase(ext)) {
+                    try {
+                        DowniDownloadService.updateJob(getContext(), job.id, "Making video unique…", 97);
+                        JSObject uProg = new JSObject();
+                        uProg.put("jobId", job.id);
+                        uProg.put("percent", 97);
+                        uProg.put("status", "Making video unique…");
+                        notifyListeners("onProgress", uProg);
+                        File uniqueOut = new File(single.getParentFile(), file.getString("title") + "-unique.mp4");
+                        if (VideoUniquifier.process(single, uniqueOut)) {
+                            try { single.delete(); } catch (Exception ignored) {}
+                            toSave = uniqueOut;
+                            ext = "mp4";
+                        }
+                    } catch (Throwable t) {
+                        Log.w("DowniEngine", "Uniquifier error, using original: " + t.getMessage());
+                    }
+                }
+                finalBytes = toSave.length();
+                destination = copyToGallery(toSave, file.getString("title"), ext);
+                try { if (toSave != single) toSave.delete(); } catch (Exception ignored) {}
             }
             if (job.cancelled.get()) return;
 
@@ -653,7 +711,7 @@ public class DowniEnginePlugin extends Plugin {
             progress.put("sizeFormatted", formatBytes(finalBytes));
             notifyListeners("onProgress", progress);
 
-            DowniDownloadService.finishJob(getContext(), job.id, true);
+            DowniDownloadService.finishJob(getContext(), job.id, true, isAppInForeground);
             try { job.call.resolve(progress); } catch (Exception ignored) {}
             Log.i("DOWNI", "job saved " + job.id + " -> " + destination); // (D) logcat breadcrumb
         } catch (Exception error) {
@@ -733,6 +791,71 @@ public class DowniEnginePlugin extends Plugin {
                 String cause = EngineError.cause(detail);
                 String raw = EngineError.raw(detail);
                 call.reject(raw.isEmpty() ? "DOWNI couldn't read that link." : raw, cause, error);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void setAutoUnique(PluginCall call) {
+        boolean enabled = call.getBoolean("enabled", false);
+        getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
+            .edit().putBoolean("autoUnique", enabled).apply();
+        JSObject res = new JSObject();
+        res.put("enabled", enabled);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void getAutoUnique(PluginCall call) {
+        boolean enabled = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
+            .getBoolean("autoUnique", true);
+        JSObject res = new JSObject();
+        res.put("enabled", enabled);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void makeVideoUnique(PluginCall call) {
+        String uriStr = call.getString("uri");
+        String title = call.getString("title", "Video");
+        if (uriStr == null || uriStr.trim().isEmpty()) {
+            call.reject("No video uri provided");
+            return;
+        }
+        miscExecutor.execute(() -> {
+            File tempInput = null;
+            File tempOutput = null;
+            try {
+                Uri uri = Uri.parse(uriStr);
+                tempInput = new File(getContext().getCacheDir(), "src_" + System.currentTimeMillis() + ".mp4");
+                tempOutput = new File(getContext().getCacheDir(), "uniq_" + System.currentTimeMillis() + ".mp4");
+
+                try (InputStream in = getContext().getContentResolver().openInputStream(uri);
+                     FileOutputStream out = new FileOutputStream(tempInput)) {
+                    if (in == null) throw new IllegalArgumentException("Cannot open video stream");
+                    byte[] buf = new byte[64 * 1024];
+                    int r;
+                    while ((r = in.read(buf)) != -1) {
+                        out.write(buf, 0, r);
+                    }
+                }
+
+                if (VideoUniquifier.process(tempInput, tempOutput)) {
+                    String cleanTitle = (title.endsWith("(Unique)") ? title : (title + " (Unique)")).trim();
+                    String dest = copyToGallery(tempOutput, cleanTitle, "mp4");
+                    JSObject res = new JSObject();
+                    res.put("success", true);
+                    res.put("destination", dest);
+                    res.put("title", cleanTitle);
+                    call.resolve(res);
+                } else {
+                    call.reject("Could not create unique video on this device.");
+                }
+            } catch (Exception e) {
+                call.reject("Uniquifier failed: " + e.getMessage());
+            } finally {
+                try { if (tempInput != null && tempInput.exists()) tempInput.delete(); } catch (Exception ignored) {}
+                try { if (tempOutput != null && tempOutput.exists()) tempOutput.delete(); } catch (Exception ignored) {}
             }
         });
     }
@@ -1108,12 +1231,29 @@ public class DowniEnginePlugin extends Plugin {
     }
 
     private String safeFileName(String requested, Uri uri) {
-        String base = requested.replaceAll("[^a-zA-Z0-9._ -]", " ").trim();
-        if (base.isEmpty()) base = "video";
-        String path = uri.getPath() == null ? "" : uri.getPath();
+        if (requested == null || requested.trim().isEmpty()) requested = "Video";
+        // Strip illegal filesystem characters: \ / : * ? " < > | and control chars
+        String base = requested.replaceAll("[\\/:*?\"<>|\r\n\t]+", " ");
+        // Collapse multiple spaces into one
+        base = base.replaceAll("\s+", " ").trim();
+        // Strip leading/trailing dots and dashes that cause issues on Android storage
+        base = base.replaceAll("^[.-]+|[.-]+$", "").trim();
+        if (base.isEmpty()) base = "Video";
+
+        String path = (uri != null && uri.getPath() != null) ? uri.getPath() : "";
         String ext = path.contains(".") ? path.substring(path.lastIndexOf('.')).toLowerCase(Locale.US) : ".mp4";
-        if (!base.toLowerCase(Locale.US).endsWith(ext)) base += ext;
-        return base.length() > 100 ? base.substring(0, 100 - ext.length()) + ext : base;
+        if (ext.isEmpty() || ext.equals(".")) ext = ".mp4";
+
+        if (base.toLowerCase(Locale.US).endsWith(ext)) {
+            base = base.substring(0, base.length() - ext.length()).trim();
+        }
+
+        // Smart word-boundary truncation (max 90 chars before extension)
+        if (base.length() > 90) {
+            int cut = base.lastIndexOf(' ', 90);
+            base = (cut > 40) ? base.substring(0, cut).trim() : base.substring(0, 90).trim();
+        }
+        return base + ext;
     }
 
     private String getAppVersionName() {

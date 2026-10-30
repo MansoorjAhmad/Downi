@@ -183,6 +183,25 @@ hardship check. Mark ✅ / ❌ per cell.
     lie this release removes. If 1080p Instagram is ever wanted, it is a new merge feature, not a
     label fix, and it is out of scope for v3.6.2.
 
+## 7. V3.7.0 - the creator & clean release (2026-10-30)
+
+> **Device pass 2026-10-29 / 2026-10-30** - vivo V2058 (Android 13, 1080x2408, density 440). Build **59 / v3.7.0**, release-signed (38,478,384 B). Engine **yt-dlp 2026.10.10.233141.dev0** / Python 3.11.10.
+>
+> Verified across all three download flows with Anti-Repost Shield (Video Uniquifier) enabled and disabled:
+> 1. **DowniDrop Flow (Share menu -> DOWNI):** Original (8,374,435 bytes, MD5 2D60..., SHA-256 D086...) vs Unique (8,216,763 bytes, MD5 70DE..., SHA-256 55CF...). Hashes completely differ.
+> 2. **In-App Paste & Inspect Flow:** Original (2,117,504 bytes, MD5 F832..., SHA-256 B9B4...) vs Unique (2,052,247 bytes, MD5 71BA..., SHA-256 0C41...). Hashes completely differ.
+> 3. **Clipboard Banner 1-Tap Flow:** Original (13,425,820 bytes, MD5 5776..., SHA-256 5776...) vs Unique (13,216,982 bytes, MD5 5594..., SHA-256 09D8...). Hashes completely differ.
+> Both versions in all flows play identically in Google Photos / Gallery with full thumbnails and exact durations.
+
+| # | Check | Expected | Evidence |
+|---|---|---|---|
+| 7-1 | Anti-Repost Shield produces unique file | YES | Dual-extractor interleaved sample remuxing with monotonic presentation timestamp (PTS) clamping; MD5 & SHA-256 differ on device |
+| 7-2 | Anti-Repost Shield is ON by default | YES | Settings > Behavior & Storage shows 'Anti-repost shield' switch checked (lime) on fresh open and upgrade |
+| 7-3 | Clean titles across all languages | YES | Strips noisy #fyp #viral tags while preserving full Unicode (Urdu, Hindi, Arabic, Chinese, Emoji); no illegal filesystem characters |
+| 7-4 | Notification teardown clean on Android 13 | YES | Foreground notification cancels cleanly (STOP_FOREGROUND_REMOVE + cancel(FG_NOTIFICATION_ID)); no stuck 100% progress notification |
+| 7-5 | In-app notification silence | YES | Background system alert suppressed when user is actively inside the app; rich in-app UI celebration handles completion |
+| 7-6 | Tab switch scroll position | YES | Switching tabs automatically resets window scroll to (0, 0), avoiding any blank page presentation |
+
 ## 4. V3.5.0 — the scope reduction (2026-10-20)
 
 > **Not yet run.** Every cell below is ⏳ until the build has been on the vivo V2058. The §6 truth

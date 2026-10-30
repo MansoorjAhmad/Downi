@@ -75,13 +75,40 @@ def _ydl_opts(**extra):
 
 
 
-def _safe_name(value):
-    """Sanitize filename to valid characters within 120 bytes."""
+def _safe_name(value, uploader=None):
+    """Sanitize title/filename: strips hashtags, platform suffixes, and illegal filesystem chars.
+
+    Preserves full multi-language Unicode (Urdu, Arabic, Hindi, Cyrillic, Chinese, emoji).
+    """
     if not value:
-        return 'video'
-    value = re.sub(r'[\\/:*?"<>|\r\n\t]+', ' ', value)
-    value = re.sub(r'\s+', ' ', value).strip(' .')
-    return (value or 'video')[:120]
+        return (uploader.strip() + ' - Video') if (uploader and str(uploader).strip()) else 'Video'
+
+    text = str(value)
+
+    # 1. Strip platform suffixes (e.g. " - YouTube", " | TikTok", " • Instagram")
+    text = re.sub(r'\s*[-|•–—]\s*(YouTube|TikTok|Instagram|Facebook|Reels|Shorts).*$', '', text, flags=re.IGNORECASE)
+
+    # 2. Strip trailing hashtags if real text precedes them
+    cleaned = re.sub(r'(\s*#\w+)+\s*$', '', text).strip()
+    if cleaned:
+        text = cleaned
+    else:
+        # Title only had hashtags (e.g. "#nature #travel"): keep words without "#"
+        text = text.replace('#', '')
+
+    # Remove any remaining "#" in middle
+    text = text.replace('#', '')
+
+    # 3. Replace illegal filesystem characters: \ / : * ? " < > |
+    text = re.sub(r'[\\/:*?"<>|\r\n\t]+', ' ', text)
+
+    # 4. Collapse whitespace and trim
+    text = re.sub(r'\s+', ' ', text).strip(' .-_')
+
+    if not text:
+        text = (uploader.strip() + ' - Video') if (uploader and str(uploader).strip()) else 'Video'
+
+    return text[:100].strip(' .-_')
 
 
 def _clean_url(url):

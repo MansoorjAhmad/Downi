@@ -3,6 +3,23 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.7.0 - the creator & clean release (versionCode 59) - 2026-10-30
+
+**Anti-repost protection, clean multi-language file naming, and notification hygiene.**
+
+- **Anti-Repost Shield (Video Uniquifier):** Creates uniquely remuxed MP4 video streams that bypass duplicate repost detection on platforms like TikTok and Instagram Reels while preserving 100% visual and audio playback quality, frame rates, and duration.
+  - Interleaved sample remuxing with monotonic presentation timestamp (PTS) clamping.
+  - Fallback to ISO-14496-12 standard 'free' metadata box with cryptographically secure random UUID entropy injection.
+  - Verified across all three download flows: DowniDrop, Inspect, and Clipboard Banner. File hashes (MD5/SHA-256) differ completely while playing identically in device galleries.
+  - Active and **ON by default** in Settings > Behavior & Storage.
+- **Clean Titles & Full Multi-Language Unicode:**
+  - Aggressive stripping of noisy hashtags (#fyp #viral), standalone hashtags converted to clean title words, and redundant platform suffixes (- YouTube, | TikTok) removed.
+  - Full Unicode preservation across Urdu, Hindi, Arabic, Chinese, and emojis without mangling filesystem names.
+- **Notification Teardown & In-App Silence:**
+  - Modernized foreground service teardown using stopForeground(STOP_FOREGROUND_REMOVE) for Android 12/13+ (API 31+).
+  - Fixed persistent 100% notification lock by ensuring cancel(FG_NOTIFICATION_ID) is executed after stopping foreground state.
+  - App foreground awareness: suppresses intrusive system chimes/vibrations when downloading directly inside the app, relying on the rich in-app UI celebration instead.
+
 ## V3.6.2 - the truth release (versionCode 55) - 2026-10-22
 
 **The app says what actually happened.** Until now, every failure that did not match four keyword

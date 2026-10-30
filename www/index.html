@@ -230,13 +230,13 @@
               </div>
               <div class="srow__main">
                 <p class="srow__title">DOWNI</p>
-                <p class="srow__sub mono" id="appVersionDisplay" style="color:var(--lime)">v3.6.2</p>
+                <p class="srow__sub mono" id="appVersionDisplay" style="color:var(--lime)">v3.7.0</p>
               </div>
               <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn btn--sm btn--accent">Updates</button>
             </div>
             <button class="srow srow--tap" onclick="copyAppVersion()" title="Tap to copy the version">
               <div class="srow__main"><p class="srow__title">Version</p></div>
-              <span class="srow__value">DOWNI <span id="aboutVersion">v3.6.2</span></span>
+              <span class="srow__value">DOWNI <span id="aboutVersion">v3.7.0</span></span>
             </button>
             <div class="srow">
               <div class="srow__main"><p class="srow__title">Engine</p></div>
@@ -298,6 +298,13 @@
                 <p class="srow__sub">Banner when a video link is copied</p>
               </div>
               <input type="checkbox" id="chkClipboard" class="switch" checked onchange="toggleClipboardDetect(this.checked)">
+            </label>
+            <label class="srow" for="chkAutoUnique">
+              <div class="srow__main">
+                <p class="srow__title">Anti-repost shield</p>
+                <p class="srow__sub">Make downloaded videos unique for TikTok / Reels</p>
+              </div>
+              <input type="checkbox" id="chkAutoUnique" class="switch" checked onchange="toggleAutoUnique(this.checked)">
             </label>
             <div class="srow" style="display:block">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -507,8 +514,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.6.2';
-    let installedVersionCode = 55;
+    let installedVersion = '3.7.0';
+    let installedVersionCode = 59;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -588,6 +595,7 @@
     function switchTab(tab) {
       triggerHaptic('light');
       currentTab = tab;
+      try { window.scrollTo(0, 0); } catch (e) {}
       const view = { grab: 'viewGrab', queue: 'viewQueue', settings: 'viewSettings' }[tab];
       const nav = { grab: 'navGrab', queue: 'navQueue', settings: 'navSettings' }[tab];
       // Every view and every nav item carries its own state, so the ones we are
@@ -1020,7 +1028,12 @@
         if (t && info.thumbnail && detectedClipboardUrl === url) t.classList.remove('hidden'), t.src = info.thumbnail;
         // The prefetch knows everything the one-tap needs - tell the banner.
         updateClipboardBanner(info, url);
-      }).catch(() => {});
+      }).catch(err => {
+        if (detectedClipboardUrl === url) {
+          const metaEl = document.getElementById('clipboardMeta');
+          if (metaEl) metaEl.textContent = 'Tap to inspect link';
+        }
+      });
     }
 
     function updateLastGrabChip() {
@@ -2164,6 +2177,18 @@
         if (res && res.label) document.getElementById('folderText').innerText = res.label;
       } catch (e) {}
     }
+    async function toggleAutoUnique(enabled) {
+      storeSet('auto_unique', enabled ? '1' : '0');
+      try {
+        const engine = getEngine();
+        if (engine?.setAutoUnique) {
+          await engine.setAutoUnique({ enabled: !!enabled });
+        }
+      } catch (e) {
+        console.warn('setAutoUnique error:', e);
+      }
+    }
+
     function toggleClipboardDetect(enabled) {
       storeSet('clipboard_detect', enabled ? '1' : '0');
       if (!enabled) {
@@ -2334,6 +2359,16 @@
       // checked regardless of the saved setting (B6).
       const chkClip = document.getElementById('chkClipboard');
       if (chkClip) chkClip.checked = storeGet('clipboard_detect') !== '0';
+      const chkUnique = document.getElementById('chkAutoUnique');
+      if (chkUnique) {
+        chkUnique.checked = storeGet('auto_unique') !== '0';
+        try {
+          const engine = getEngine();
+          if (engine?.setAutoUnique) {
+            engine.setAutoUnique({ enabled: chkUnique.checked });
+          }
+        } catch (ignored) {}
+      }
       paintOneTapQuality();
 
       // DowniDrop 2.0: mirror the per-platform quality memory to the native side

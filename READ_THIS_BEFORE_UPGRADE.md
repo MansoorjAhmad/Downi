@@ -1,6 +1,6 @@
 # READ THIS BEFORE UPGRADE
 
-> **Last reviewed: 2026-10-22 (v3.6.2 / versionCode 55).** This is a living document, not an
+> **Last reviewed: 2026-10-30 (v3.7.0 / versionCode 59).** This is a living document, not an
 > archive. Every feature, fix, engine constraint or newly found truth defect must update it **in
 > the same commit** as the change (§9). If this file and the app disagree, the app is the fact and
 > this file is the defect.
@@ -271,6 +271,11 @@ Ten lessons from this release. Each one is a line of code that looks harmless an
     guard for WebViews that ignore `clip`. Verified on-device 2026-10-22: long-press opened the
     real selection menu with the URL highlighted, the card stayed aligned, and **Copy** still
     updated the clipboard banner. See `DEVICE_TEST.md` 6-17.
+
+11. **The Video Uniquifier: Interleaving and PTS Clamping over Re-Encoding.**
+    Re-encoding a video on a mobile device is CPU-intensive, drains battery, degrades visual fidelity, and easily causes AV desync. The Anti-Repost Shield (VideoUniquifier.java) uses lightweight sample remuxing via dual MediaExtractor and MediaMuxer with strict monotonic timestamp clamping (if (sampleTime <= lastTime) sampleTime = lastTime + 1000;). If remuxing fails or media is non-standard, it falls back to ISO-14496-12 standard ree metadata box with cryptographically secure UUID entropy injection. File hashes (MD5 and SHA-256) differ completely, bypassing automated platform duplicate detection while preserving 100% video/audio bitstreams.
+12. **Android 13 Foreground Service Notification Cancellation Lock.**
+    On Android 12 & 13 (API 31+ / vivo FuntouchOS), calling NotificationManagerCompat.cancel(FG_NOTIFICATION_ID) while the service is actively running as a Foreground Service (startForeground) is silently ignored by the Android framework. Calling deprecated stopForeground(true) without specifying STOP_FOREGROUND_REMOVE and without cancelling after stopping the foreground state causes the progress notification ('DOWNI is grabbing... 100%') to stay stuck indefinitely in the notification shade. The service teardown must use stopForeground(STOP_FOREGROUND_REMOVE) and explicitly invoke cancel(FG_NOTIFICATION_ID) post-teardown.
 
 **Release status at the time of writing (2026-10-22, after the fixed-build retest):** build 55 is
 device‑verified for the three reported faults, the YouTube 1080p path, and all six TikTok /
