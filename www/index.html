@@ -42,7 +42,7 @@
         <div>
           <div class="brand__name">
             <img src="assets/brand/downi-wordmark.svg" alt="DOWNI">
-            <span id="headerVersionBadge" class="ver">v3.6</span>
+            <span id="headerVersionBadge" class="ver">—</span>
           </div>
           <div class="brand__meta">
             <span id="engineDot" class="dot"></span>
@@ -230,13 +230,13 @@
               </div>
               <div class="srow__main">
                 <p class="srow__title">DOWNI</p>
-                <p class="srow__sub mono" id="appVersionDisplay" style="color:var(--lime)">v3.7.0</p>
+                <p class="srow__sub mono" id="appVersionDisplay" style="color:var(--lime)">—</p>
               </div>
               <button id="btnCheckUpdates" onclick="checkAppUpdates()" class="btn btn--sm btn--accent">Updates</button>
             </div>
             <button class="srow srow--tap" onclick="copyAppVersion()" title="Tap to copy the version">
               <div class="srow__main"><p class="srow__title">Version</p></div>
-              <span class="srow__value">DOWNI <span id="aboutVersion">v3.7.0</span></span>
+              <span class="srow__value">DOWNI <span id="aboutVersion">—</span></span>
             </button>
             <div class="srow">
               <div class="srow__main"><p class="srow__title">Engine</p></div>
@@ -258,32 +258,25 @@
           </div>
         </section>
 
-        <!-- Engine -->
+        <!-- Network diagnostics -->
         <section class="group">
-          <h2 class="group__title">Engine</h2>
+          <h2 class="group__title">Network diagnostics</h2>
           <div class="card group__card">
-            <div class="srow">
-              <div class="hint__icon" style="color:var(--lime);background:var(--lime-dim);border-color:var(--lime-line)" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
-              </div>
-              <div class="srow__main">
-                <p class="srow__title">yt-dlp engine</p>
-                <p class="srow__sub" id="engineVersionText">Checking…</p>
-              </div>
-              <span id="engineHealthBadge" class="chip">…</span>
-            </div>
-            <div class="srow" style="padding-top:4px">
-              <button onclick="syncEngineRules()" class="btn btn--sm" style="width:100%">Verify engine health</button>
-            </div>
             <div class="srow" style="display:block">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
                 <div class="srow__main">
-                  <p class="srow__title">Network diagnostics</p>
-                  <p class="srow__sub">Finds exactly what your network blocks</p>
+                  <p class="srow__title">Connection &amp; platform checks</p>
+                  <p class="srow__sub">Tests DNS, TLS, and reachability for supported platforms</p>
                 </div>
                 <button id="btnDiagnose" onclick="runDiagnostics()" class="btn btn--sm">Run</button>
               </div>
               <div id="diagnosticsResults" class="hidden" style="margin-top:11px"></div>
+              <div id="diagnosticsActions" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+                <button id="btnCopyDiagnostics" onclick="copyDiagnostics()" class="btn btn--sm" style="width:100%">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" style="margin-right:6px"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  Copy diagnostics
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -302,9 +295,9 @@
             <label class="srow" for="chkAutoUnique">
               <div class="srow__main">
                 <p class="srow__title">Anti-repost shield</p>
-                <p class="srow__sub">Make downloaded videos unique for TikTok / Reels</p>
+                <p class="srow__sub">Remux or append entropy to produce a unique file hash (platform effect untested)</p>
               </div>
-              <input type="checkbox" id="chkAutoUnique" class="switch" checked onchange="toggleAutoUnique(this.checked)">
+              <input type="checkbox" id="chkAutoUnique" class="switch" checked onchange="handleAutoUniqueChange(event)">
             </label>
             <div class="srow" style="display:block">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -501,6 +494,32 @@
     </div>
   </div>
 
+  <!-- SHIELD DISABLE CONFIRMATION MODAL -->
+  <div id="shieldConfirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shieldConfirmTitle">
+    <div class="modal__scrim" onclick="closeShieldConfirmModal()"></div>
+    <div id="shieldConfirmSheet" class="sheet">
+      <div class="grabber" data-drag-dismiss="shieldConfirmSheet"></div>
+      <div class="sheet__head" style="margin:10px 0 8px">
+        <span class="chip chip--on" style="background:rgba(255,180,0,0.15);color:#ffb400;border-color:rgba(255,180,0,0.3)">WARNING</span>
+        <button onclick="closeShieldConfirmModal()" class="btn btn--icon btn--ghost" aria-label="Close">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <h2 id="shieldConfirmTitle" class="sheet__title">Turn off Anti-repost shield?</h2>
+      <p class="sheet__note" style="font-size:12px;color:var(--ti);margin-top:8px;line-height:1.5">
+        Downloaded videos will not be made unique and will retain the exact platform file hash. Re-uploading raw files to TikTok, Reels, or Shorts may be flagged as reposts or duplicates.
+      </p>
+      <div class="action-bar" style="margin-top:16px">
+        <button onclick="closeShieldConfirmModal()" class="btn btn--primary" style="margin-bottom:6px">
+          Keep Shield On
+        </button>
+        <button onclick="confirmDisableShield()" class="btn btn--ghost" style="color:var(--bad, #ff4d4f);width:100%">
+          Turn Off
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
 
     // ================= State =================
@@ -514,8 +533,8 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
-    let installedVersion = '3.7.0';
-    let installedVersionCode = 59;
+    let installedVersion = '';
+    let installedVersionCode = 0;
     let latestPendingDownloadUrl = '';
     let updateListenerAttached = false;
     let lastFailedUrl = '';
@@ -1208,7 +1227,7 @@
           .then(res => {
             const jobId = (res && res.jobId) || tempId;
             activeJobs.delete(activeJobs.has(tempId) ? tempId : jobId);
-            onJobComplete(jobId, (res && res.title) || 'Video', (res && res.destination) || 'Gallery', url);
+            onJobComplete(jobId, (res && res.title) || 'Video', (res && res.destination) || 'Gallery', url, res && res.shieldMode, res && res.shieldReason);
           })
           .catch(err => {
             if (activeJobs.has(tempId)) activeJobs.delete(tempId);
@@ -1270,6 +1289,9 @@
           return;
         }
       }
+      if (p.shieldMode) job.shieldMode = p.shieldMode;
+      if (p.shieldReason) job.shieldReason = p.shieldReason;
+      if (p.shieldSha) job.shieldSha = p.shieldSha;
       if (p.queued) {
         job.status = 'In queue…';
       } else if (p.complete) {
@@ -1305,15 +1327,20 @@
       }
     }
 
-    function onJobComplete(jobId, title, destination, url) {
+    function onJobComplete(jobId, title, destination, url, shieldMode, shieldReason) {
       triggerHaptic('medium');
       confettiBurst();
+      const job = activeJobs.get(jobId);
+      const sMode = shieldMode || (job && job.shieldMode) || '';
+      const sReason = shieldReason || (job && job.shieldReason) || '';
       activeJobs.delete(jobId);
       completedCount++;
       renderJobCards();
       renderQueueTab();
       updateQueueBadge();
-      showToast('Saved ✓', title + (destination ? ' · ' + destination : ''), 'success');
+      let toastSub = title + (destination ? ' · ' + destination : '');
+      if (sMode === 'skipped') toastSub += ' (Shield skipped)';
+      showToast('Saved ✓', toastSub, 'success');
       downloadsHistory.unshift({
         id: Date.now().toString(),
         title: title,
@@ -1321,7 +1348,9 @@
         date: new Date().toLocaleDateString(),
         ts: Date.now(),
         // The job's own URL, not whatever happens to be in the input box (B4)
-        url: url || currentInspectedUrl || document.getElementById('inputManualUrl').value.trim()
+        url: url || currentInspectedUrl || document.getElementById('inputManualUrl').value.trim(),
+        shieldMode: sMode,
+        shieldReason: sReason
       });
       saveHistory();
       renderQueueTab();
@@ -1475,6 +1504,14 @@
         ['Lane', laneLabel(job.formatId)],
         ['Link', job.url || '-']
       ];
+      if (job.shieldMode) {
+        let sTxt = '';
+        if (job.shieldMode === 'remux') sTxt = 'Verified remux (Unique MP4)';
+        else if (job.shieldMode === 'identity') sTxt = 'Safe identity (Container preserved)';
+        else if (job.shieldMode === 'skipped') sTxt = 'Skipped — ' + (job.shieldReason || 'format not upload-safe');
+        else sTxt = job.shieldMode;
+        rows.push(['Shield', sTxt]);
+      }
       if (job.failed) {
         const reason = job.reason || job.size || '';
         if (reason) rows.push(['Reason', reason]);
@@ -1522,7 +1559,6 @@
               <span class="jspark job__spark">${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}</span>
               <span class="jspeed job__speed">${job.speedText ? escapeHtml(job.speedText) : ''}</span>
               <span class="jeta job__eta">${job.etaText ? escapeHtml(job.etaText) : ''}</span>
-              ${job.paused ? `<button onclick="resumeOneDownload('${id}')" class="job__resume">▶ Resume</button>` : ''}
               ${(job.done || job.failed) ? '' : `<button onclick="cancelOneDownload('${id}')" class="job__cancel" aria-label="Cancel download"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
             </div>
           </div>
@@ -1646,7 +1682,7 @@
           </div>
           <div class="hist__body">
             <p class="hist__title">${escapeHtml(item.title)}</p>
-            <p class="hist__meta">${escapeHtml(item.destination)} · ${escapeHtml(item.date)}</p>
+            <p class="hist__meta">${escapeHtml(item.destination)} · ${escapeHtml(item.date)}${item.shieldMode === 'skipped' ? ' · <span style="opacity:0.7">Shield skipped</span>' : (item.shieldMode ? ' · <span style="opacity:0.7">Shield verified</span>' : '')}</p>
           </div>
         </div>
       `).join('');
@@ -1670,14 +1706,6 @@
       updateQueueBadge();
       engine?.cancelDownload?.({ jobId: jobId });
       if (job) showToast('Cancelled', job.label, 'info', 'Undo', () => { if (job.url) initiateDownload(job.url, job.formatId || 'best'); });
-    }
-
-    // Wave 3: resume a PAUSED background grab from the Queue — the transfer continues from
-    // the bytes on disk (D3). The card flips back to live on the next snapshot read.
-    function resumeOneDownload(jobId) {
-      const nativeId = jobId.startsWith('bg_') ? bgNativeId(jobId) : jobId;
-      getEngine()?.resumeDropJob?.({ jobId: nativeId });
-      showToast('Resuming', 'Continuing your grab.', 'info');
     }
 
     function cancelAllDownloads() {
@@ -1773,9 +1801,7 @@
         job.percent = pct;
         job.done = state === 'done';
         job.failed = state === 'failed';
-        job.paused = state === 'paused';
-        job.status = job.paused ? 'Paused — tap ▶ to continue from here'
-            : (job.failed ? 'Failed' : (job.done ? 'Saved to your gallery' : 'Grabbing…'));
+        job.status = job.failed ? 'Failed' : (job.done ? 'Saved to your gallery' : 'Grabbing…');
         // N8: a finished card must never keep the last phase sentence ("Merging video + audio…")
         // as its sub-line — show real byte totals when known, else the state copy. Phase text
         // is only meaningful while the grab is still running.
@@ -1786,6 +1812,9 @@
           job.reason = lastError.raw || '';
           job.cause = lastError.cause || '';
         }
+        if (j.shield_mode) job.shieldMode = j.shield_mode;
+        if (j.shield_reason) job.shieldReason = j.shield_reason;
+        if (j.shield_sha) job.shieldSha = j.shield_sha;
         job.speed = state === 'running' ? fmtBgSpeed(j.speed) : '';
         if (j.speed > 0 && state === 'running') job.speedSeries = (job.speedSeries || []).concat(j.speed).slice(-24);
         bgJobs.set(j.id, job);
@@ -1796,9 +1825,11 @@
           // N9: no byte bookkeeping here. The service keeps its own ledger for headless grabs
           // (including the ones that finish while the app is shut) and syncGrabLedger() folds it
           // in — adding here too would double-book the grab.
-          downloadsHistory.unshift({ id: 'drop_' + j.id, title: j.title || 'Shared video', destination: j.dest || 'Gallery', date: new Date().toLocaleDateString(), url: j.url || '', ts: Date.now() });
+          downloadsHistory.unshift({ id: 'drop_' + j.id, title: j.title || 'Shared video', destination: j.dest || 'Gallery', date: new Date().toLocaleDateString(), url: j.url || '', ts: Date.now(), shieldMode: j.shield_mode || '', shieldReason: j.shield_reason || '' });
           saveHistory();
-          showToast('Saved ✓', (j.title || 'Shared video') + (j.dest ? ' · ' + j.dest : ''), 'success');
+          let dropSub = (j.title || 'Shared video') + (j.dest ? ' · ' + j.dest : '');
+          if (j.shield_mode === 'skipped') dropSub += ' (Shield skipped)';
+          showToast('Saved ✓', dropSub, 'success');
           renderQueueTab();
           // v3.1.1 (defect N13): read the service's ledger NOW, not at the next resume. The bytes
           // of this grab are already in it, but the dashboard only re-read the ledger on boot /
@@ -1886,58 +1917,125 @@
     }
 
     // ================= Diagnostics =================
+    let lastDiagnosticsData = null;
+    let diagnosticsRunning = false;
+
     function runDiagnostics() {
+      if (diagnosticsRunning) return;
       const engine = getEngine();
       const btn = document.getElementById('btnDiagnose');
       const box = document.getElementById('diagnosticsResults');
+      const actions = document.getElementById('diagnosticsActions');
       if (!engine?.diagnose) {
-        showToast('Not available', 'Update the app first.', 'info');
+        showToast('Not available', 'Diagnostics unavailable in this build.', 'info');
         return;
       }
-      btn.disabled = true; btn.innerText = '…';
+      diagnosticsRunning = true;
+      if (btn) { btn.disabled = true; btn.innerText = '…'; }
       box.classList.remove('hidden');
+      if (actions) actions.classList.add('hidden');
       box.innerHTML = '<div class="skel h-8" style="margin-bottom:6px"></div><div class="skel h-8" style="margin-bottom:6px"></div><div class="skel h-8"></div>';
       engine.diagnose().then(res => {
+        lastDiagnosticsData = res;
         const checks = Array.isArray(res.results) ? res.results : [];
         if (checks.length === 0) {
-          // Never say "all clear" when no check actually ran. An empty list is
-          // a bridge/engine problem, not a healthy network.
           box.innerHTML = '<p style="font-size:11px;color:var(--bad)">The engine returned no checks. Run it again.</p>';
           showToast('No results', 'The engine returned no checks.', 'error');
           return;
         }
         const rows = checks.map(r => `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(244,247,248,.03)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(244,247,248,.03);margin-bottom:5px">
             <div style="display:flex;align-items:center;gap:8px;min-width:0">
               <span style="display:grid;place-items:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:900;flex:0 0 auto;${r.ok ? 'background:rgba(198,255,61,.15);color:var(--lime)' : 'background:rgba(255,122,122,.15);color:var(--bad)'}">${r.ok ? '✓' : '✕'}</span>
-              <span style="font-size:10.5px;font-weight:600;color:var(--ice);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.check)}</span>
+              <div style="min-width:0">
+                <span style="font-size:10.5px;font-weight:600;color:var(--ice);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block">${escapeHtml(r.check)}</span>
+                ${r.detail ? `<span style="font-size:9px;color:var(--sub);display:block">${escapeHtml(r.detail)}</span>` : ''}
+              </div>
             </div>
-            <span class="mono" style="font-size:9.5px;flex:0 0 auto;color:${r.ok ? 'var(--lime)' : 'var(--bad)'}">${r.ok ? r.ms + 'ms' : 'blocked'}</span>
+            <span class="mono" style="font-size:9.5px;flex:0 0 auto;color:${r.ok ? 'var(--lime)' : 'var(--bad)'}">${r.ok ? r.ms + 'ms' : (r.error ? escapeHtml(r.error.slice(0, 30)) : 'failed')}</span>
           </div>
         `).join('');
         box.innerHTML = rows;
+        if (actions) actions.classList.remove('hidden');
         const fails = checks.filter(r => !r.ok);
         if (fails.length === 0) {
-          showToast('All clear ✓', 'Every check passed on this network.', 'success');
+          showToast('All clear ✓', 'Every network check passed.', 'success');
         } else {
-          showToast(fails.length + ' blocked', 'This network is limiting those platforms.', 'error');
-        }
-        // The engine's own note: a newer extraction layer may exist. The engine
-        // ships inside the APK, so only a newer DOWNI can carry a site fix - and
-        // the user should be told that plainly instead of guessing why a grab
-        // died. This is a note, not a verdict.
-        const note = (res && res.engineNote) ? res.engineNote : '';
-        if (note) {
-          const el = document.createElement('p');
-          el.style.cssText = 'margin:8px 0 0;font-size:10.5px;line-height:1.5;color:var(--ti)';
-          el.textContent = note;
-          box.appendChild(el);
+          showToast(fails.length + ' check(s) limited', 'Network issues detected.', 'error');
         }
       }).catch(err => {
         box.innerHTML = `<p style="font-size:11px;color:var(--bad)">${escapeHtml(err?.message || 'Diagnostics failed')}</p>`;
       }).finally(() => {
-        btn.disabled = false; btn.innerText = 'Run';
+        diagnosticsRunning = false;
+        if (btn) { btn.disabled = false; btn.innerText = 'Run'; }
       });
+    }
+
+    async function writeToClipboard(text) {
+      // 1. Native Capacitor Clipboard plugin
+      try {
+        if (window.Capacitor?.Plugins?.Clipboard?.write) {
+          await window.Capacitor.Plugins.Clipboard.write({ string: text });
+          return true;
+        }
+      } catch (e) {}
+
+      // 2. Browser navigator.clipboard API
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (e) {}
+
+      // 3. Fallback: temporary textarea + execCommand
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) return true;
+      } catch (e) {}
+
+      return false;
+    }
+
+    async function copyDiagnostics() {
+      if (!lastDiagnosticsData || !Array.isArray(lastDiagnosticsData.results)) {
+        showToast('No diagnostics', 'Run diagnostics first.', 'info');
+        return;
+      }
+      const checks = lastDiagnosticsData.results;
+      const passCount = checks.filter(c => c.ok).length;
+      const lines = [
+        'DOWNI Network Diagnostics',
+        '=========================',
+        `Engine: yt-dlp ${lastDiagnosticsData.ytDlp || 'pinned'} (Python ${lastDiagnosticsData.python || '3.11'})`,
+        `Timestamp: ${new Date().toISOString()}`,
+        '',
+        'Checks:'
+      ];
+      for (const c of checks) {
+        const status = c.ok ? 'OK' : 'FAIL';
+        const detail = c.detail ? ` [${c.detail}]` : (c.error ? ` [Error: ${c.error}]` : '');
+        lines.push(`- ${c.check}: ${status} (${c.ms} ms)${detail}`);
+      }
+      lines.push('');
+      lines.push(`Summary: ${passCount}/${checks.length} passed.`);
+      lines.push('(Sanitized: no user URLs or personal data included)');
+      const text = lines.join('\n');
+      const copied = await writeToClipboard(text);
+      if (copied) {
+        showToast('Copied ✓', 'Diagnostics copied to clipboard.', 'success');
+      } else {
+        showToast('Copy failed', 'Clipboard access denied or unavailable.', 'error');
+      }
     }
 
     // ================= Queue tab =================
@@ -1971,7 +2069,7 @@
           </div>
           <div class="hist__body">
             <p class="hist__title">${escapeHtml(item.title)}</p>
-            <p class="hist__meta">${escapeHtml(item.destination)} · ${escapeHtml(item.date)}</p>
+            <p class="hist__meta">${escapeHtml(item.destination)} · ${escapeHtml(item.date)}${item.shieldMode === 'skipped' ? ' · <span style="opacity:0.7">Shield skipped</span>' : (item.shieldMode ? ' · <span style="opacity:0.7">Shield verified</span>' : '')}</p>
           </div>
           <span class="hist__tag">SAVED</span>
         </div>
@@ -1996,17 +2094,34 @@
       const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
       return m + ':' + (s < 10 ? '0' : '') + s;
     }
-    // ================= Updater =================
+    // ================= Updater & Version =================
     async function getInstalledVersionInfo() {
       const engine = getEngine();
       if (engine?.getAppInfo) {
         try {
           const info = await engine.getAppInfo();
-          installedVersion = info.versionName || installedVersion;
-          installedVersionCode = info.versionCode || installedVersionCode;
+          if (info?.versionName) installedVersion = info.versionName;
+          if (info?.versionCode != null) installedVersionCode = Number(info.versionCode);
+        } catch (e) {}
+      } else if (window.Capacitor?.Plugins?.App?.getInfo) {
+        try {
+          const info = await window.Capacitor.Plugins.App.getInfo();
+          if (info?.version) installedVersion = info.version;
+          if (info?.build != null) installedVersionCode = Number(info.build);
         } catch (e) {}
       }
       return { versionName: installedVersion, versionCode: installedVersionCode };
+    }
+
+    function applyVersionToUI(local) {
+      if (!local || !local.versionName) return;
+      const shortVer = 'v' + String(local.versionName).replace(/^v/i, '').split('.').slice(0, 2).join('.');
+      const elBadge = document.getElementById('headerVersionBadge');
+      if (elBadge) elBadge.innerText = shortVer;
+      const elDisplay = document.getElementById('appVersionDisplay');
+      if (elDisplay) elDisplay.innerText = local.versionCode ? `v${local.versionName} (${local.versionCode})` : `v${local.versionName}`;
+      const elAbout = document.getElementById('aboutVersion');
+      if (elAbout) elAbout.innerText = 'v' + local.versionName;
     }
 
     function parseVersion(v) {
@@ -2135,24 +2250,16 @@
     }
     function cancelUpdateDownload() { getEngine()?.cancelUpdateDownload?.(); }
 
-    // ================= Engine / settings =================
-    function syncEngineRules() {
+    // ================= Engine info =================
+    function loadEngineInfo() {
       const engine = getEngine();
-      const badge = document.getElementById('engineHealthBadge');
-      const dot = document.getElementById('engineDot');
-      const versionText = document.getElementById('engineVersionText');
       if (engine?.engineInfo) {
         engine.engineInfo().then(info => {
-          badge.innerText = 'HEALTHY';
-          badge.className = 'chip chip--on';
-          if (dot) dot.style.background = 'var(--ok)';
-          versionText.innerText = `yt-dlp ${info.ytDlpVersion} · Python ${info.pythonVersion}`;
-          document.getElementById('aboutEngine').innerText = `yt-dlp ${info.ytDlpVersion}`;
-        }).catch(() => {
-          badge.innerText = 'ERROR';
-          badge.className = 'chip chip--bad';
-          if (dot) dot.style.background = 'var(--bad)';
-        });
+          if (info?.ytDlpVersion) {
+            const el = document.getElementById('aboutEngine');
+            if (el) el.innerText = `yt-dlp ${info.ytDlpVersion}`;
+          }
+        }).catch(() => {});
       }
     }
 
@@ -2177,6 +2284,36 @@
         if (res && res.label) document.getElementById('folderText').innerText = res.label;
       } catch (e) {}
     }
+
+    function handleAutoUniqueChange(e) {
+      const chk = document.getElementById('chkAutoUnique');
+      if (!chk) return;
+      if (!chk.checked) {
+        // User tapped to turn OFF -> revert visually to checked and require confirmation
+        chk.checked = true;
+        openShieldConfirmModal();
+      } else {
+        // User turned ON -> directly apply
+        toggleAutoUnique(true);
+      }
+    }
+
+    function openShieldConfirmModal() {
+      document.getElementById('shieldConfirmModal')?.classList.remove('hidden');
+    }
+
+    function closeShieldConfirmModal() {
+      document.getElementById('shieldConfirmModal')?.classList.add('hidden');
+    }
+
+    function confirmDisableShield() {
+      closeShieldConfirmModal();
+      const chk = document.getElementById('chkAutoUnique');
+      if (chk) chk.checked = false;
+      toggleAutoUnique(false);
+      showToast('Anti-repost shield', 'Turned off. Videos will keep original platform files.', 'info');
+    }
+
     async function toggleAutoUnique(enabled) {
       storeSet('auto_unique', enabled ? '1' : '0');
       try {
@@ -2295,7 +2432,7 @@
           sheet.style.transition = '';
           if (curY > 110) {
             sheet.style.transform = '';
-            sheet.closest('.fixed')?.classList.add('hidden');
+            sheet.closest('.modal, .fixed')?.classList.add('hidden');
           } else {
             sheet.style.transform = '';
           }
@@ -2329,10 +2466,10 @@
         .catch(() => showToast('Cannot clear', 'Cache is busy right now.', 'error'));
     }
     function copyAppVersion() {
-      const text = 'DOWNI v' + installedVersion + ' (' + installedVersionCode + ')';
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(text).then(() => showToast('Copied', text, 'success')).catch(() => {});
-      }
+      const verText = installedVersion ? `DOWNI v${installedVersion} (${installedVersionCode})` : 'DOWNI';
+      writeToClipboard(verText).then(ok => {
+        if (ok) showToast('Copied', verText, 'success');
+      });
     }
 
     // ================= Boot =================
@@ -2377,14 +2514,9 @@
       storeDel('drop_mode');
       syncDropSettings();
 
-      getInstalledVersionInfo().then(local => {
-        const shortVer = 'v' + String(local.versionName).replace(/^v/i, '').split('.').slice(0, 2).join('.');
-        document.getElementById('headerVersionBadge').innerText = shortVer;
-        document.getElementById('appVersionDisplay').innerText = `v${local.versionName} (${local.versionCode})`;
-        document.getElementById('aboutVersion').innerText = 'v' + local.versionName;
-      });
+      getInstalledVersionInfo().then(applyVersionToUI);
 
-      syncEngineRules();
+      loadEngineInfo();
       setTimeout(checkClipboard, 600);
       setTimeout(() => checkAppUpdates(true), 4000);
 

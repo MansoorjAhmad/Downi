@@ -14,13 +14,17 @@ chaquopy {
             // v3.6.2: moved to the newest NIGHTLY build. A site that changes
             // breaks every app on the same stable version at the same moment,
             // and the nightlies are where yt-dlp ships the fix first. The pin
-            // below is the newest nightly as of 2026-10-10; the diagnostics
+            // below is the newest nightly as of 2026-10-29; the diagnostics
             // report the newest stable so a user can see when they are behind.
             // Do NOT re-introduce the player_client cascade or a forced mobile
             // User-Agent here: both caused 403s and Instagram breakage
             // (READ_THIS_BEFORE_UPGRADE.md §2).
-            install("yt-dlp==2026.10.10.233141.dev0")
-            install("certifi")
+            //
+            // Wheel artifact SHA-256: 237544af0b1f1c2119e278b36c91f8dd4ff8e9d358443c51602bf467d6ba489b
+            // Rollback pin: install("yt-dlp==2026.10.10.233141.dev0")
+            install("yt-dlp==2026.10.29.232701.dev0")
+            // Wheel artifact SHA-256: e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
+            install("certifi==2026.10.23")
         }
     }
 }
@@ -52,8 +56,8 @@ android {
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
-        versionCode 59
-        versionName "3.7.0"
+        versionCode 60
+        versionName "3.8.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

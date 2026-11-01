@@ -25,14 +25,23 @@ Shipped in v3.3.2 ("the finish pass" — versionCode 50):
 - Core states: an explicit `Kind` (REST/TRANSIENT/HOLD/TOUCH) plus a settle/legality table — the state machine's rules are data now, the wire names are pinned byte-identical, and 18 suites / 123 tests hold them
 - Verified end to end on the shipped artefact: a real link → a byte-identical file → a Vault row, no crash, and the installed binary hashed on the device to the local APK's own sha256
 
+Shipped in v3.8.0 ("The Anti-Repost Shield & Engine Integrity Release" — versionCode 60):
+- Pause / Resume permanently removed across notifications, Queue UI, Android bridge, background service, Python engine, and progress listener contracts. Interrupted grabs discard honestly and restart from zero.
+- Anti-Repost Shield S2: software MP4/H.264/AAC remux with orientation hint retention (MediaMuxer), ISO-BMFF free box injection with random entropy, and MediaExtractor-based track/sync-sample validation (platform effect untested).
+- Title & Filename Sanitizer: robust TitleSanitizer preserving international scripts (Urdu, Arabic, Chinese, Emoji) while keeping filenames within filesystem limits.
+- Engine Pin & Parity: pinned `yt-dlp==2026.10.29.232701.dev0` and `certifi==2026.10.23` with PyPI wheel SHA-256 drift verification in CI.
+- Engine Settings Option B: removed misleading mock health badges, fake version checks, and dead notification spam.
+- Real Network Diagnostics: DNS, TLS, and reachability checks across YouTube, TikTok (official + helper), and Instagram with hard worker-thread timeouts and sanitized native clipboard export.
+- Single Source of Truth for App Version: `build.gradle` is the sole source for version; web UI reads from native app info dynamically.
+
 Deferred / next candidates:
 - The vivo ABE vendor-kill recount (§0h): how often the process is taken, over a longer window than any pass has had yet
 - Vault Phase 2 polish (content-visibility, press-scale) — the shimmer skeletons shipped and are bounded now
-- Pause + resume (needs .part support - a deep change to the proven core; requires the full matrix)
 - TikTok photo-post saving (needs a multi-file save contract)
 - Web: direct-to-CDN downloads where CORS allows (skip the proxy)
 - Play Store track: AAB, targetSdk 35+, ProGuard rules
 
 Law of the land (READ_THIS_BEFORE_UPGRADE.md):
 - No client spoofing, no forced UAs, no Instagram sessions, no segmented-socket hacks.
+- No pause/resume, no `.part` continuation, no resumable job state. Removed in 3.8.0 and permanently banned (`DECISIONS.md`).
 - Every extraction-layer change passes the full 3-platform x 3-entry-point matrix on a real device before it ships.

@@ -202,6 +202,117 @@ hardship check. Mark ✅ / ❌ per cell.
 | 7-5 | In-app notification silence | YES | Background system alert suppressed when user is actively inside the app; rich in-app UI celebration handles completion |
 | 7-6 | Tab switch scroll position | YES | Switching tabs automatically resets window scroll to (0, 0), avoiding any blank page presentation |
 
+## 8. V3.8.0 — The Anti-Repost Shield & Engine Parity Release (2026-11-01, versionCode 60) — Stage G Matrix
+
+> **Stage G on-device test protocol for v3.8.0 (versionCode 60).**
+> **Test Hardware:** Primary: vivo V2058 (Android 13, ARM64) / Secondary: Android 15 16 KB device (e.g. Pixel 8/9 with 16 KB page mode) or Android 15 ARM64 16 KB emulator.
+> **Build Under Test:** `app-debug.apk` (unsigned debug) and `app-release-signed.apk` (release-signed with key `CN=Manso, O=OmniDownloader`, SHA-256 `431131731d7b26dadd6dc6ffa3ef337853f30a63decbb863bcec2a61bb0785e5`).
+> **Rules:**
+> 1. Pause/Resume is permanently removed (D-001); no test row may attempt to pause/resume or expect a paused state.
+> 2. Every test row must be filled in with real evidence (timestamps, file sizes, SHA-256 hashes, log lines) during Stage G device execution.
+> 3. Rows marked **Release-Signed Only** apply strictly to the signed production APK.
+
+### 8.1 Results Table
+
+| # | Test / Check | Scope / Target APK | Result | Link or Title Used | Notes / Evidence |
+|---|---|---|---|---|---|
+| **8-1** | **Cancel active download:** cancel mid-stream | Debug or Release | ✅ | `https://youtu.be/dQw4w9WgXcQ` (84 MB) | Verified on vivo V2058. Active grab exposes Cancel action (`X`); process abortion cleanly halts transfer and deletes partial files; Queue updates without stale resume state; zero resume buttons in app. |
+| **8-2** | **Interrupted download / Process death:** force-stop mid-stream | Debug or Release | ✅ | `https://youtu.be/dQw4w9WgXcQ` | Killed app via `am force-stop` at 56% download; verified `/sdcard/Movies/` has 0 `.part` or `.tmp` files; relaunched: Queue shows `ACTIVE: 0`, 0 stuck cards, 0 phantom progress bars; next grab restarts cleanly from 0%. |
+| **8-3** | **Airplane mode interruption:** network dropped | Debug or Release | ⏳ | Public video (e.g. YouTube ~30 MB) | Toggle Airplane mode mid-grab; engine fails honestly (`network` classified), notification tears down, no hung retry loop. |
+| **8-4** | **Background download integrity:** screen off / app switched | Debug or Release | ✅ | `https://youtu.be/dQw4w9WgXcQ` (1080p, 84.4 MB) | Grabbed in background via DowniDrop intent while launcher was active; notification updated progress (`⚡ DowniDrop · 50% done · 55.2 MB / 77.2 MB · 761 KB/s`); completed directly to `/sdcard/Movies/` root; posted "Saved to your gallery". |
+| **8-5** | **Queue integrity & terminal cards:** state accuracy | Debug or Release | ✅ | Public YouTube link | Active counter tracks accurately (0 → 1 during active grab → 0 upon completion); completed counter increments honestly; data grabbed moves accurately (80 MB → 161 MB → 241 MB). |
+| **8-6** | **Simultaneous downloads:** 2–3 concurrent transfers | Debug or Release | ⏳ | 2–3 public links (YT, TikTok, IG) | Start 3 downloads in rapid succession; verify all 3 download concurrently, progress bars track independently, all 3 save to gallery without cross-talk. |
+| **8-7** | **Cancelling a queued grab:** cancel before start | Debug or Release | ⏳ | Any link while queue is full or starting | Tap Cancel on a queued/initializing card; job aborts immediately before media extraction begins; card leaves queue cleanly. |
+| **8-8** | **Urdu title preservation:** Unicode RTL script | Debug or Release | ✅ | `اردو ویڈیو ٹیسٹ ڈاؤن لوڈ` | Verified via tools/test_titles.py (T1) and TitleSanitizer.java: Unicode NFC normalization applied, BiDi controls stripped, Urdu text preserved intact in filename. |
+| **8-9** | **Arabic title preservation:** Unicode Arabic | Debug or Release | ✅ | `فيديو تجريبي جديد للتحميل` | Verified via tools/test_titles.py (T1/T2) and TitleSanitizer.java: Arabic script preserved in NFC, no filesystem character corruption. |
+| **8-10** | **Complex Emoji preservation:** flags & family sequences | Debug or Release | ✅ | `Video 🇵🇰 🔥 👨‍👩‍👧‍👦 Test` | Verified via tools/test_titles.py (T3): emoji preserved, surrogate pair boundary checks prevent truncation midway through surrogate pairs. |
+| **8-11** | **Very long title truncation:** > 200 characters | Debug or Release | ✅ | Title with 220+ characters | Verified via tools/test_titles.py (T7): byte-bounded truncation (<= 180 UTF-8 bytes / 80 characters) trims cleanly at word boundary without dangling surrogates. |
+| **8-12** | **Reserved Windows/Android names:** `CON`, `PRN`, `AUX` | Debug or Release | ✅ | `CON.mp4`, `PRN.mp4`, `AUX.mp4` | Verified via tools/test_titles.py (T5): reserved device names disambiguated with `Video_` prefix (`Video_CON.mp4`) so file can be browsed over MTP/USB on Windows. |
+| **8-13** | **Duplicate title collisions:** duplicate grabs | Debug or Release | ✅ | `https://youtu.be/jNQXAC9IVRw` & `dQw4w9WgXcQ` | Verified on vivo V2058. First grab was `Rick Astley...mp4`; second grab saved as `Rick Astley... (1).mp4` (84,396,199 B) at gallery root without collision, corruption, or data loss. |
+| **8-14** | **Notification teardown:** no stuck progress notification | Debug or Release | ✅ | `https://youtu.be/dQw4w9WgXcQ` | Verified on vivo V2058. Dumpsys confirmed foreground progress notification (`FG_NOTIFICATION_ID`) cancelled cleanly upon completion (`STOP_FOREGROUND_REMOVE`); 0 stuck progress bars in shade. |
+| **8-15** | **Finished notification:** rich completion alert | Debug or Release | ✅ | `https://youtu.be/dQw4w9WgXcQ` | Verified on vivo V2058. Posted rich completion alert to `downi_alerts` (`id=5812`, title "Saved to your gallery"); clean dismissal. |
+| **8-16** | **Shield playback verification:** plays in two players & upload OK | Debug or Release | ✅ | `Rick Astley...mp4` (1080p) & TikTok Frog (1080x1920 HEVC) | Pulled from vivo V2058 & owner-verified: Rick Astley (H.264/AAC, 84.4 MB) and TikTok Frog (HEVC/AAC, 3.36 MB, SHA-256 `2DB5DC9C...`) decode with zero errors via ffprobe/ffmpeg; owner personally tested upload to TikTok and confirmed the previous version's upload error is 100% resolved. |
+| **8-17** | **Shield container extension preservation:** legal extensions | Debug or Release | ✅ | MP4 source (`Rick Astley 1080p`) | File saved strictly as `.mp4` (MIME `video/mp4`) in gallery root. Container brand `mp42`, compatible `isommp42`. |
+| **8-18** | **Shield honest Details status:** accurate mode reporting | Debug or Release | ✅ | Queue History cards | History item meta row displays honest verification badge: `Shield verified` for verified S2 MediaMuxer remuxed MP4. |
+| **8-19** | **Shield original kept on failure:** safe failure fallback | Debug or Release | ⏳ | Artificially malformed/truncated MP4 | When remux/validation fails, original downloaded file is preserved untouched; no corrupted file saved; honest error returned. |
+| **8-20** | **Shield WebM identity lane:** non-remuxable container | Debug or Release | ⏳ | WebM/VP9 source link | S2 routes to identity lane; appends 64-byte EBML `Void` element; output hashes differ (`inSha != outSha`); plays identically in gallery. |
+| **8-21** | **Shield metadata inspection with GPS clip:** ffprobe check | Debug or Release | ✅ | `Rick Astley...mp4` & `Me at the zoo` | ffprobe `format_tags` audit confirms container user-data and location metadata atoms are omitted in output container; only `major_brand=mp42`, `creation_time`, and `com.android.version=13` remain. |
+| **8-22** | **Diagnostics execution & button lockout:** 13 checks | Debug or Release | ✅ | Settings > Connection & platform checks | Tapped "Run" on vivo V2058: button immediately disabled and changed to `…` (captured on screen); worker thread completed 13 DNS/TLS/reachability checks without UI freeze; button re-enabled ("Run"). |
+| **8-23** | **Diagnostics truthful reporting:** 403/429/3xx handling | Debug or Release | ✅ | Settings > Diagnostics results | Captured on device: Internet reachability (204, 496ms), YouTube DNS (26ms), YouTube TLS (349ms), YouTube reachability (204, 505ms), TikTok DNS (14ms), TikTok TLS (330ms), TikTok reachability (200, 1617ms), Tikwm helper (200, 1292ms), Instagram DNS (14ms), Instagram TLS (223ms), Instagram reachability (200, 657ms). All green checkmarks. |
+| **8-24** | **Copy diagnostics native clipboard:** sanitized export | Debug or Release | ✅ | Settings > Diagnostics > Copy | Tapped "Copy diagnostics" on vivo V2058; white pill toast "Copied" appeared; clipboard export contains formatted platform check summary with zero user URLs or personal data. |
+| **8-25** | **Engine settings removal:** Option B clean UI | Debug or Release | ✅ | Settings view | Verified on physical device: obsolete engine health badge, "Verify engine health" button, and fake "newer engine" alerts are completely absent from the Settings screen. |
+| **8-26** | **App → Updates updater check:** GitHub API comparison | Debug or Release | ✅ | Settings > App > Updates | Pinned engine `yt-dlp 2026.10.29.232701` and `DOWNI v3.8.0 (60)` displayed; updater compares against GitHub Releases API cleanly. |
+| **8-27** | **Version display single source of truth:** 3.8.0 / 60 | Debug or Release | ✅ | Header badge & Settings | Verified on physical device: Header shows `v3.8`; Settings App card shows `DOWNI v3.8.0 (60)` in lime mono; Version row shows `DOWNI v3.8.0`; tapping Version row displays "Copied" toast and copies `DOWNI v3.8.0 (60)`. |
+| **8-28** | **16 KB page-size device compatibility:** kernel execution | Debug or Release | ⚠️ | vivo V2058 (PAGE_SIZE 4096) / Android 15 | Static ELF audit: 20/20 arm64-v8a native libraries have `p_align = 0x4000` (16 KB aligned). Hardware execution verified on 4 KB kernel; execution on real 16 KB hardware requires Android 15 device (e.g. Pixel 8/9 16 KB mode) or emulator. |
+| **8-29** | **Signing continuity & in-place update:** over v3.7.0 / v3.6.2 | **Release-Signed Only** | ✅ | Device with installed v3.7.0 | Built release APK (SHA-256 `4AF9534B...`); installed over v3.7.0 (59) via `adb install -r` -> Success; dumpsys confirms `versionCode=60`, `versionName=3.8.0`, cert `4311317...` intact; settings and download history preserved. |
+
+### 8.2 Exact `adb` Commands for Stage G
+
+#### 1. Installing the APK on Device
+- **Debug APK (unsigned debug build):**
+  ```powershell
+  adb install -r C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app\android\app\build\outputs\apk\debug\app-debug.apk
+  ```
+- **Release-Signed APK (for row 8-29 in-place update):**
+  ```powershell
+  adb install -r C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app\android\app\build\outputs\apk\release\app-release-signed.apk
+  ```
+
+#### 2. Granting Notification Permission (API 33+)
+```powershell
+adb shell pm grant com.omnidownloader.app android.permission.POST_NOTIFICATIONS
+```
+
+#### 3. Simulating Process Interruption / Death (for Row 8-2)
+```powershell
+# While download progress is actively running:
+adb shell am force-stop com.omnidownloader.app
+
+# Re-open the app:
+adb shell monkey -p com.omnidownloader.app -c android.intent.category.LAUNCHER 1
+```
+
+#### 4. Pulling Downloaded Files for Local Inspection
+```powershell
+# List downloaded files on device:
+adb shell ls -la /sdcard/Movies/
+
+# Pull downloaded video to local machine:
+adb pull "/sdcard/Movies/<filename>.mp4" ./downloaded_test.mp4
+```
+
+#### 5. Inspecting Output Files with `ffprobe` (for Rows 8-16, 8-17, 8-21)
+```powershell
+# Inspect stream codecs, profile, dimensions, and duration:
+ffprobe -v error -show_entries stream=codec_name,profile,width,height,duration -show_entries format=duration,size -of default=noprint_wrappers=1 ./downloaded_test.mp4
+
+# Inspect container format tags (verify GPS/author metadata omission):
+ffprobe -v error -show_entries format_tags -of default=noprint_wrappers=1 ./downloaded_test.mp4
+
+# Check SHA-256 hash of output file:
+Get-FileHash ./downloaded_test.mp4 -Algorithm SHA256
+```
+
+#### 6. Capturing Filtered `logcat` After a Failure
+If any test row fails, immediately capture a filtered log buffer:
+```powershell
+# Capture recent logs filtered to DOWNI core components and crashes:
+adb logcat -d -b main,crash -T "1000" | Select-String "VideoUniquifier|IsoBmff|DowniEngine|DowniDownloadService|Chaquopy|TitleSanitizer|AndroidRuntime|FATAL" > test_failure_logcat.txt
+
+# Or full process logcat dump:
+adb logcat -d --pid=$(adb shell pidof -s com.omnidownloader.app) > downi_process_dump.txt
+```
+
+#### 7. Checking 16 KB Page Size on Device (for Row 8-28)
+```powershell
+# Query device kernel page size (must return 16384 on 16 KB target):
+adb shell getconf PAGE_SIZE
+
+# Verify native library load messages:
+adb logcat -d | Select-String "16kb|alignment|chaquopy|p_align"
+```
+
+
 ## 4. V3.5.0 — the scope reduction (2026-10-20)
 
 > **Not yet run.** Every cell below is ⏳ until the build has been on the vivo V2058. The §6 truth

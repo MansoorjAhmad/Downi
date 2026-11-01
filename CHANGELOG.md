@@ -3,11 +3,66 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.8.0 - the Anti-Repost Shield & Engine Integrity release (versionCode 60) - 2026-11-01
+
+**Verified Anti-Repost Shield S2, permanent removal of Pause/Resume, engine & version parity guards, and real network diagnostics.**
+
+### What Changed
+- **Anti-Repost Shield S2 (`VideoUniquifier.java` & `IsoBmff.java`):**
+  - Software sample-by-sample remuxing via `MediaExtractor` and `MediaMuxer` (no hardware encoding/decoding) strictly for MP4 containers with 1 H.264 video track (profile <= High) and 0 or 1 AAC audio track (`VideoUniquifier.java` lines 158–190, 202–307). Preserves orientation hints (`KEY_ROTATION`, lines 227–235) and presentation timestamps without artificial clamping.
+  - Appends an ISO-14496-12 `free` box with 48 bytes of random entropy from `SecureRandom` (`VideoUniquifier.java` line 297, `IsoBmff.java` lines 85–98).
+  - Identity lane fallback: for non-remuxable containers/codecs or upon remux failure, copies input bytes unchanged and appends an ISO `free` box (MP4) or EBML `Void` element (WebM) (`IsoBmff.java` lines 175–222). For MP4 files, overwrites `creation_time` and `modification_time` fields in the `moov.mvhd` atom (`IsoBmff.java` lines 229–296). It does not parse or strip individual metadata tags.
+  - Output validation: uses `android.media.MediaExtractor` (`VideoUniquifier.java` lines 328–330) to verify track count match (line 331), dimensions match (lines 345–349), duration tolerance within ±150ms (lines 352–356), and checks that the first video sample has `MediaExtractor.SAMPLE_FLAG_SYNC` set (lines 359–365). Does NOT use `MediaMetadataRetriever` and does not decode video frames.
+  - Safe failure handling: on validation failure or if Shield is skipped, preserves original files untouched and reports an honest error without generating duplicate files (`VideoUniquifier.java` lines 146–149, `DowniEnginePlugin.java` lines 242–245).
+  - Settings protection: Added an explanatory confirmation bottom sheet modal when toggling the Shield off to prevent accidental disabling, while keeping the turn-on toggle instantaneous. Fixed sheet drag-to-dismiss selector in web layer.
+- **Engine Pinning & Parity Guards:**
+  - Pinned `yt-dlp==2026.10.29.232701.dev0` (Wheel SHA-256: `237544af0b1f1c2119e278b36c91f8dd4ff8e9d358443c51602bf467d6ba489b`).
+  - Pinned `certifi==2026.10.23` (Wheel SHA-256: `e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1`), mitigating security advisory GHSA-6q48-6c7w-9gw2.
+  - CI drift check (`ci/verify_pin_parity.py`) verifies wheel SHA-256 hashes against PyPI on every build.
+- **Engine Settings Option B & Real Network Diagnostics:**
+  - Removed misleading mock engine health badges, mock version checks, and fake "newer engine" notifications.
+  - Real diagnostic tests (DNS, TLS, TCP reachability) for YouTube, TikTok (official + helper), and Instagram with hard timeouts running in dedicated daemon worker threads.
+  - Truthful status reporting (e.g. HTTP 403/429/3xx reported as "Reachable but restricted").
+  - Privacy-preserving native clipboard export via `@capacitor/clipboard` (sanitized of all personal data and user URLs) with active-run button lockout.
+- **Single Source of Truth for App Version:**
+  - `android/app/build.gradle` is the sole source of truth for `versionName` and `versionCode`.
+  - `DowniEnginePlugin` reads dynamically from `BuildConfig` generated from `build.gradle`, eliminating stale hardcoded fallbacks (e.g. `3.6.2`/`55L`).
+  - Web UI resolves version info dynamically from native app info at runtime.
+  - CI drift check (`ci/verify_version_parity.py`) ensures complete consistency across Gradle, package.json, Java plugins, and HTML.
+
+### What Was Removed
+- **Pause / Resume Permanently Removed & Banned (D-001):**
+  - Removed all notification actions (**Pause**, **Resume**).
+  - Removed Queue UI resume controls and handlers.
+  - Removed Java service maps and storage (`pausedJobs`, `pausedGrabs`, `PAUSED_KEY`).
+  - Removed `DownloadProgressListener.isPaused()` and `supportsPause()` contracts.
+  - Removed Python `PausedError`, polling loops, and `.part` continuation logic.
+  - Interrupted downloads discard partial files cleanly and restart from 0% on subsequent attempts (`nopart=True`, `continuedl=False`).
+
+### What the Anti-Repost Shield Does and Does Not Do
+- **What it DOES:**
+  - Produces an output file whose SHA-256 hash differs from the input file (`VideoUniquifier.java` line 320).
+  - Copies sample data into a new MP4 container via `MediaMuxer` for H.264/AAC MP4s, or appends a 64-byte `free` box / `Void` element containing random entropy (`IsoBmff.java` lines 85–114).
+  - Rewrites `creation_time` and `modification_time` timestamps in `moov.mvhd` for MP4 identity copies (`IsoBmff.java` lines 276–283).
+- **What it DOES NOT do:**
+  - Does NOT transcode or re-encode video frames or audio waveforms (`MediaCodec` is not used).
+  - Does NOT alter visual appearance (no crop, zoom, speed change, or noise injection).
+  - Does NOT parse, identify, or selectively strip individual user-data metadata tags.
+  - Does NOT decode video keyframes (it inspects `SAMPLE_FLAG_SYNC` via `MediaExtractor`).
+- **Platform Effect:**
+  - The effect of container remuxing, timestamp rewriting, or entropy injection on any platform's ingest, processing, duplicate detection, or account standing is completely untested.
+  - The code makes no claim to defeat, bypass, or evade detection on TikTok, Instagram, YouTube, or any other platform.
+
+### What Is Not Yet Verified on Real Hardware
+- **16 KB Page-Size Dynamic Loading:** All 20 `arm64-v8a` ELF LOAD segments are verified 16 KB aligned (`p_align = 0x4000`), but APK zip offset handling by Android 15's dynamic linker without extraction requires real hardware/emulator verification.
+- **Live Cell / WiFi Edge Cases:** Real carrier firewall and captive portal behavior for network diagnostics.
+- **Platform Ingest Testing:** The effect of remuxed files on any third-party platform's upload, processing, or distribution is completely untested.
+
 ## V3.7.0 - the creator & clean release (versionCode 59) - 2026-10-30
 
 **Anti-repost protection, clean multi-language file naming, and notification hygiene.**
 
-- **Anti-Repost Shield (Video Uniquifier):** Creates uniquely remuxed MP4 video streams that bypass duplicate repost detection on platforms like TikTok and Instagram Reels while preserving 100% visual and audio playback quality, frame rates, and duration.
+- **Anti-Repost Shield (Video Uniquifier):** Remuxes MP4 video streams and generates unique file hashes (superseded in v3.8.0 by S2; platform duplicate detection effects are untested).
   - Interleaved sample remuxing with monotonic presentation timestamp (PTS) clamping.
   - Fallback to ISO-14496-12 standard 'free' metadata box with cryptographically secure random UUID entropy injection.
   - Verified across all three download flows: DowniDrop, Inspect, and Clipboard Banner. File hashes (MD5/SHA-256) differ completely while playing identically in device galleries.

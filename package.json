@@ -1,6 +1,6 @@
 {
   "name": "downi-mobile",
-  "version": "1.0.0",
+  "version": "3.8.0",
   "description": "DOWNI - Ultra-Luxury 1-Tap Video Downloader for Android",
   "scripts": {
     "build": "echo Built www folder",

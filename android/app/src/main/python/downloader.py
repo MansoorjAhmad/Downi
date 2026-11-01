@@ -6,22 +6,16 @@ No cloud relays, no external servers, no account login required.
 
 import json
 import os
+import concurrent.futures
+import socket
+import urllib.error
+import ssl
 import re
 import time
 import urllib.parse
 import urllib.request
 import certifi
 from yt_dlp import YoutubeDL
-
-
-class PausedError(Exception):
-    """Raised when the Java layer asks the transfer to pause.
-
-    Distinct from cancellation: a pause KEEPS the partial file (and its .part for yt-dlp
-    lanes) so a later resume call continues from bytes on disk. Java detects this class
-    name in the raised exception and records the job as paused instead of failed.
-    """
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +77,13 @@ def _safe_name(value, uploader=None):
     if not value:
         return (uploader.strip() + ' - Video') if (uploader and str(uploader).strip()) else 'Video'
 
-    text = str(value)
+    import unicodedata
+
+    # T1: Unicode normalization (NFC)
+    text = unicodedata.normalize('NFC', str(value))
+
+    # T2: Strip BiDi control characters, directional overrides, and zero-width markers
+    text = re.sub(r'[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff\u200b]+', '', text)
 
     # 1. Strip platform suffixes (e.g. " - YouTube", " | TikTok", " • Instagram")
     text = re.sub(r'\s*[-|•–—]\s*(YouTube|TikTok|Instagram|Facebook|Reels|Shorts).*$', '', text, flags=re.IGNORECASE)
@@ -99,16 +99,33 @@ def _safe_name(value, uploader=None):
     # Remove any remaining "#" in middle
     text = text.replace('#', '')
 
-    # 3. Replace illegal filesystem characters: \ / : * ? " < > |
-    text = re.sub(r'[\\/:*?"<>|\r\n\t]+', ' ', text)
+    # T4: Replace illegal filesystem characters (\ / : * ? " < > |) and control chars
+    text = re.sub(r'[\\/:*?"<>|\r\n\t\x00-\x1f\x7f-\x9f]+', ' ', text)
 
-    # 4. Collapse whitespace and trim
+    # T5: Collapse whitespace and trim leading/trailing dots/spaces/dashes
     text = re.sub(r'\s+', ' ', text).strip(' .-_')
 
+    # T8: Fallback if empty after stripping
     if not text:
         text = (uploader.strip() + ' - Video') if (uploader and str(uploader).strip()) else 'Video'
 
-    return text[:100].strip(' .-_')
+    # T5: Disambiguate Windows reserved device names
+    if text.upper() in {'CON', 'PRN', 'AUX', 'NUL',
+                        'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+                        'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'}:
+        text = f"Video_{text}"
+
+    # T3/T7: Length truncation (max 80 chars, max 180 UTF-8 bytes)
+    if len(text) > 80:
+        cut = text.rfind(' ', 0, 80)
+        text = text[:cut].strip(' .-_') if cut > 40 else text[:80].strip(' .-_')
+
+    # Bound by 180 UTF-8 bytes
+    encoded = text.encode('utf-8', errors='ignore')
+    if len(encoded) > 180:
+        text = encoded[:180].decode('utf-8', errors='ignore').strip(' .-_')
+
+    return text.strip(' .-_') or "Video"
 
 
 def _clean_url(url):
@@ -185,8 +202,6 @@ def _scaled_hook(progress_listener, lo, hi):
         if status == 'downloading':
             if hasattr(progress_listener, 'isCancelled') and progress_listener.isCancelled():
                 raise RuntimeError("Download cancelled.")
-            if hasattr(progress_listener, 'isPaused') and progress_listener.isPaused():
-                raise PausedError("Download paused.")
             now = time.time()
             if now - last[0] < 0.25:
                 return
@@ -222,7 +237,6 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
     has no separate streams (the caller then falls back / reports honestly).
     """
     os.makedirs(target_dir, exist_ok=True)
-    supports_pause = bool(progress_listener) and hasattr(progress_listener, 'isPaused')
     base = {
         'quiet': True,
         'no_warnings': True,
@@ -233,11 +247,9 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
         'outtmpl': os.path.join(target_dir, '%(title).120B-%(id)s.%(ext)s'),
         'windowsfilenames': True,
         'overwrites': True,
-        # Pause/resume (D3): headless jobs (Fetcher/Drop) download into .part files so a
-        # pause keeps the bytes and a later call continues them. In-app lanes keep the
-        # original behaviour — the engine change is gated, never global.
-        'nopart': not supports_pause,
-        'continuedl': supports_pause,
+        # DOWNI has no pause/resume: download straight to the final name, never a .part file.
+        'nopart': True,
+        'continuedl': False,
         'socket_timeout': 30,
         'retries': 3,
         'concurrent_fragment_downloads': 3,
@@ -270,10 +282,6 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None):
             except OSError:
                 pass
             return None
-    except PausedError:
-        # A pause must keep BOTH partials (video + audio) for the resume pass — fall through
-        # to nothing only for genuine failures.
-        raise
     except Exception as exc:
         for leftover in (video_path, audio_path):
             if leftover:
@@ -323,38 +331,22 @@ def _fetch_tiktok_data(url):
 
 
 def _download_stream_direct(stream_url, target_path, referer='', progress_listener=None):
-    # D3: byte-continuation. A partial file left by a pause becomes the resume offset — the
-    # request carries a Range header, the file opens in append mode, and progress reflects
-    # offset+transfer. A server that ignores Range (plain 200) restarts clean, transparently.
-    offset = 0
-    if os.path.exists(target_path):
-        try:
-            offset = os.path.getsize(target_path)
-        except OSError:
-            offset = 0
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': '*/*',
     }
-    if offset > 0:
-        headers['Range'] = 'bytes=%d-' % offset
     if referer:
         headers['Referer'] = referer
     req = urllib.request.Request(stream_url, headers=headers)
     with urllib.request.urlopen(req, timeout=35) as resp:
-        status = getattr(resp, 'status', 200) or 200
-        if offset > 0 and status != 206:
-            offset = 0                       # Range unsupported - restart clean, honestly
-        total = (int(resp.headers.get('Content-Length') or 0) + offset) if offset > 0 else int(resp.headers.get('Content-Length') or 0)
-        downloaded = offset
+        total = int(resp.headers.get('Content-Length') or 0)
+        downloaded = 0
         last_cb = 0.0
         start = time.time()
-        with open(target_path, 'ab' if offset > 0 else 'wb') as f:
+        with open(target_path, 'wb') as f:
             while True:
                 if progress_listener and hasattr(progress_listener, 'isCancelled') and progress_listener.isCancelled():
                     raise RuntimeError("Download cancelled.")
-                if progress_listener and hasattr(progress_listener, 'isPaused') and progress_listener.isPaused():
-                    raise PausedError("Download paused.")
                 chunk = resp.read(128 * 1024)
                 if not chunk:
                     break
@@ -364,7 +356,7 @@ def _download_stream_direct(stream_url, target_path, referer='', progress_listen
                 if progress_listener and (now - last_cb > 0.25):
                     last_cb = now
                     elapsed = max(0.001, now - start)
-                    speed = (downloaded - offset) / elapsed if downloaded > offset else 0.0
+                    speed = downloaded / elapsed if downloaded > 0 else 0.0
                     eta = int((total - downloaded) / speed) if (total > downloaded and speed > 0) else 0
                     pct = (downloaded / total * 100.0) if total > 0 else 50.0
                     try:
@@ -534,8 +526,6 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
         try:
             res = _download_tiktok_direct(clean, target_dir, is_audio, progress_listener)
             return json.dumps(res)
-        except PausedError:
-            raise                                  # a pause is never a "try the next way"
         except RuntimeError:
             raise                                  # the reason is classified - keep it
         except Exception:
@@ -571,8 +561,6 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
         if status == 'downloading':
             if hasattr(progress_listener, 'isCancelled') and progress_listener.isCancelled():
                 raise RuntimeError("Download cancelled.")
-            if hasattr(progress_listener, 'isPaused') and progress_listener.isPaused():
-                raise PausedError("Download paused.")
             now = time.time()
             if now - last_callback_time[0] < 0.25:
                 return
@@ -592,7 +580,6 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
             except Exception:
                 pass
 
-    supports_pause = bool(progress_listener) and hasattr(progress_listener, 'isPaused')
     options = {
         'quiet': True,
         'no_warnings': True,
@@ -605,9 +592,9 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None):
         'restrictfilenames': False,
         'windowsfilenames': True,
         'overwrites': True,
-        # D3: headless jobs download into .part and resume from them; in-app lanes unchanged.
-        'nopart': not supports_pause,
-        'continuedl': supports_pause,
+        # DOWNI has no pause/resume: download straight to the final name, never a .part file.
+        'nopart': True,
+        'continuedl': False,
         'socket_timeout': 30,
         'retries': 3,
         'concurrent_fragment_downloads': 3,
@@ -661,8 +648,6 @@ def download(url, target_dir, format_id='best', progress_listener=None):
     """
     try:
         return _download_lanes(url, target_dir, format_id, progress_listener)
-    except PausedError:
-        raise                                  # a pause must never trigger a lane fallback
     except Exception as exc:
         if str(format_id).lower() in ('audio', 'mp3', 'm4a'):
             _fail(exc)
@@ -673,8 +658,6 @@ def download(url, target_dir, format_id='best', progress_listener=None):
             _fail(exc)
         try:
             split = _download_split(clean, target_dir, _lane_height(format_id), progress_listener)
-        except PausedError:
-            raise
         except Exception as split_exc:
             # The split failed for its OWN reason (a refused request, a
             # timeout). That reason is the truth - not the stale "format"
@@ -694,37 +677,6 @@ def engine_info():
         'yt_dlp_version': yt_dlp.version.__version__,
         'python': platform.python_version(),
     })
-
-
-def _version_tuple(value):
-    """The numeric part of a version, so two versions can be compared honestly."""
-    parts = []
-    for chunk in re.split(r'[.\-+]', str(value or '')):
-        m = re.match(r'^(\d+)', chunk)
-        if not m:
-            break
-        parts.append(int(m.group(1)))
-    return tuple(parts)
-
-
-def _latest_ytdlp_version():
-    """The newest yt-dlp on PyPI, or '' when we cannot ask.
-
-    A lookup, never a check: no network means "couldn't check", never "the
-    engine is broken". The extraction layer ships inside the APK, so a site
-    that changed can only be fixed by a newer DOWNI - and the newest yt-dlp is
-    what carries the fix.
-    """
-    try:
-        import yt_dlp
-        req = urllib.request.Request(
-            'https://pypi.org/pypi/yt-dlp/json',
-            headers={'User-Agent': 'DOWNI-Android/' + yt_dlp.version.__version__})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode('utf-8', 'replace'))
-        return str(data.get('info', {}).get('version') or '')
-    except Exception:
-        return ''
 
 
 def playlist_inspect(url, max_items=25):
@@ -773,135 +725,114 @@ def playlist_inspect(url, max_items=25):
     return {'count': len(items), 'items': items}
 
 
+def _diag_dns(host, timeout=4.0):
+    t0 = time.time()
+    try:
+        res = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+        ms = int((time.time() - t0) * 1000)
+        ip = res[0][4][0] if res else host
+        return True, ms, '', f"Resolved {ip}"
+    except Exception as e:
+        ms = int((time.time() - t0) * 1000)
+        return False, ms, f"DNS failed: {e}", ''
+
+
+def _diag_tls(host, timeout=5.0):
+    t0 = time.time()
+    try:
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        with socket.create_connection((host, 443), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                ver = ssock.version()
+                ms = int((time.time() - t0) * 1000)
+                return True, ms, '', f"TLS OK ({ver})"
+    except Exception as e:
+        ms = int((time.time() - t0) * 1000)
+        return False, ms, f"TLS failed: {e}", ''
+
+
+def _diag_http(url, timeout=6.0, method='GET', headers=None):
+    t0 = time.time()
+    try:
+        h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
+        if headers:
+            h.update(headers)
+        req = urllib.request.Request(url, headers=h, method=method)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            code = resp.getcode()
+            ms = int((time.time() - t0) * 1000)
+            if 300 <= code < 400:
+                return True, ms, '', f"Reachable but restricted (HTTP {code})"
+            return True, ms, '', f"HTTP {code}"
+    except urllib.error.HTTPError as e:
+        ms = int((time.time() - t0) * 1000)
+        # 403 (Forbidden), 429 (Rate-limited), 3xx (Redirect) prove DNS, TLS, and TCP are healthy
+        if e.code in (403, 429) or (300 <= e.code < 400):
+            return True, ms, '', f"Reachable but restricted (HTTP {e.code})"
+        return False, ms, f"HTTP Error {e.code}", f"HTTP {e.code}"
+    except Exception as e:
+        ms = int((time.time() - t0) * 1000)
+        return False, ms, f"Connection failed: {e}", ''
+
+
+def _run_with_hard_timeout(fn, hard_timeout_seconds=7.0):
+    """Execute check in an isolated worker thread with a hard wall-clock timeout."""
+    t0 = time.time()
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(fn)
+    try:
+        return future.result(timeout=hard_timeout_seconds)
+    except concurrent.futures.TimeoutError:
+        ms = int((time.time() - t0) * 1000)
+        return False, ms, f"Timed out after {hard_timeout_seconds:.1f}s", ''
+    except Exception as exc:
+        ms = int((time.time() - t0) * 1000)
+        return False, ms, str(exc), ''
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 def diagnose():
-    """Per-platform network diagnostics to check device connectivity."""
+    """Real and robust per-platform network diagnostics (DNS, TLS, reachability)."""
     import yt_dlp
     import platform
     results = []
 
-    def check(name, fn):
-        t0 = time.time()
-        try:
-            fn()
-            results.append({'check': name, 'ok': True, 'ms': int((time.time() - t0) * 1000), 'error': ''})
-        except Exception as e:
-            results.append({'check': name, 'ok': False, 'ms': int((time.time() - t0) * 1000), 'error': str(e)[:220]})
+    def check(name, fn, hard_timeout=7.0):
+        ok, ms, err, detail = _run_with_hard_timeout(fn, hard_timeout_seconds=hard_timeout)
+        results.append({
+            'check': name,
+            'ok': ok,
+            'ms': ms,
+            'error': err,
+            'detail': detail
+        })
 
-    def _head(u):
-        req = urllib.request.Request(u, method='HEAD', headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
-        urllib.request.urlopen(req, timeout=10).read(0)
+    # 1. Internet reachability (general connectivity test)
+    check('Internet reachability', lambda: _diag_http('https://connectivitycheck.gstatic.com/generate_204', timeout=5.0), hard_timeout=6.0)
 
-    def _extract(u):
-        opts = _ydl_opts(skip_download=True)
-        with YoutubeDL(opts) as ydl:
-            ydl.extract_info(u, download=False)
+    # 2. YouTube
+    check('YouTube DNS', lambda: _diag_dns('www.youtube.com', timeout=4.0), hard_timeout=5.0)
+    check('YouTube TLS', lambda: _diag_tls('www.youtube.com', timeout=4.0), hard_timeout=5.0)
+    check('YouTube reachability', lambda: _diag_http('https://www.youtube.com/generate_204', timeout=5.0), hard_timeout=6.0)
 
-    def _fetch_media_range(u):
-        """Pull the first 64 KB of the real video, and 16 KB of the audio.
+    # 3. TikTok (official platform & direct domain)
+    check('TikTok (tiktok.com) DNS', lambda: _diag_dns('www.tiktok.com', timeout=4.0), hard_timeout=5.0)
+    check('TikTok (tiktok.com) TLS', lambda: _diag_tls('www.tiktok.com', timeout=4.0), hard_timeout=5.0)
+    check('TikTok reachability (tiktok.com)', lambda: _diag_http('https://www.tiktok.com/', timeout=5.0, method='HEAD'), hard_timeout=6.0)
 
-        Resolving a format proves the page was readable, not that the media
-        request is allowed. A block shows up here and nowhere earlier.
+    # 4. TikTok helper service (tikwm.com API used for fast downloads)
+    check('TikTok helper service DNS (tikwm.com)', lambda: _diag_dns('www.tikwm.com', timeout=4.0), hard_timeout=5.0)
+    check('TikTok helper service TLS (tikwm.com)', lambda: _diag_tls('www.tikwm.com', timeout=4.0), hard_timeout=5.0)
+    check('TikTok helper service (tikwm.com)', lambda: _diag_http('https://www.tikwm.com/api/?url=https://www.tiktok.com/@tiktok/video/7106594312292453675', timeout=6.0), hard_timeout=7.0)
 
-        This is a direct Range GET on the URL yt-dlp resolved - the same URL
-        the download lanes pull from - so it proves bytes actually flow. It
-        deliberately does NOT ask yt-dlp to cut a section: section cutting
-        needs ffmpeg, which is not bundled on the device, and the m3u8
-        variants need it too. Either would report a working network broken.
-        """
-        def resolve(selector):
-            opts = {
-                'quiet': True, 'no_warnings': True, 'skip_download': True,
-                'js_runtimes': {}, 'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
-                'noplaylist': True, 'ca_certs': certifi.where(),
-                'format': selector,
-            }
-            with YoutubeDL(opts) as ydl:
-                return ydl.extract_info(u, download=False)
+    # 5. Instagram
+    check('Instagram DNS', lambda: _diag_dns('www.instagram.com', timeout=4.0), hard_timeout=5.0)
+    check('Instagram TLS', lambda: _diag_tls('www.instagram.com', timeout=4.0), hard_timeout=5.0)
+    check('Instagram reachability', lambda: _diag_http('https://www.instagram.com/', timeout=5.0, method='HEAD'), hard_timeout=6.0)
 
-        def pull(info, nbytes):
-            url = (info or {}).get('url')
-            if not url:
-                raise RuntimeError('the engine resolved no media URL')
-            headers = dict(info.get('http_headers') or {})
-            headers['Range'] = 'bytes=0-%d' % (nbytes - 1)
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                data = resp.read(nbytes)
-            if not data:
-                raise RuntimeError('the media request returned no bytes')
-
-        video = resolve('bestvideo[protocol=https][ext=mp4][vcodec^=avc1][height<=1080]/'
-                        'bestvideo[protocol=https][height<=1080]')
-        pull(video, 65536)
-        audio = resolve('bestaudio[protocol=https][ext=m4a]/bestaudio[protocol=https]')
-        pull(audio, 16384)
-
-    def _check_instagram():
-        # The probe reel can be deleted or made private at any time — a dead
-        # probe must not report a working network as broken. If extraction
-        # alone fails, fall back to plain reachability before declaring defeat.
-        try:
-            _extract('https://www.instagram.com/reel/DcZTAe4jKBp')
-        except Exception:
-            _head('https://www.instagram.com/')
-
-    def _youtube_downloadable():
-        """Probe what a download actually needs - and prove the bytes come.
-
-        YouTube serves adaptive-only streams, so the app's lanes resolve a
-        VIDEO-ONLY format and merge the audio on device (v3.0.3). The probe
-        does exactly that - and then pulls a real 64 KB of the media. Resolving
-        a format proves the page was readable, not that the media request is
-        allowed, and a block looks exactly like that. So the probe has to try
-        the same lanes the app tries, and report the real reason when none of
-        them resolve.
-        """
-        u = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-        last = ''
-        for selector in ('bestvideo[ext=mp4][vcodec^=avc1][height<=1080]/bestvideo[height<=1080]',
-                         'bestaudio[ext=m4a]/bestaudio'):
-            try:
-                opts = {'quiet': True, 'no_warnings': True, 'skip_download': True,
-                        'js_runtimes': {}, 'ffmpeg_location': '/nonexistent/downi-no-ffmpeg',
-                        'ca_certs': certifi.where(), 'format': selector}
-                with YoutubeDL(opts) as ydl:
-                    ydl.extract_info(u, download=False)
-                last = ''
-                break
-            except Exception as e:
-                last = str(e)[:220]
-        if last:
-            raise RuntimeError(last)
-        # The formats resolved - now prove the bytes actually come.
-        _fetch_media_range(u)
-
-    check('Internet reachability', lambda: _head('https://www.google.com/generate_204'))
-    check('YouTube extraction', _youtube_downloadable)
-    check('Instagram extraction', _check_instagram)
-    # Exercise the REAL TikTok path (the tikwm API the engine downloads through),
-    # not a bare HEAD to the site root — tikwm 403s plain HEAD requests, which
-    # made working downloads show up as a failed diagnostic.
-    check('TikTok API reachability', lambda: _fetch_tiktok_data('https://www.tiktok.com/@tiktok/video/7106594312292453675'))
-
-    # The extraction layer ships inside the APK, so a site that changed can only
-    # be fixed by a newer DOWNI. This is a LOOKUP, never a check: no network
-    # means "couldn't check", not "the engine is broken".
-    latest = _latest_ytdlp_version()
-    ours = _version_tuple(yt_dlp.version.__version__)
-    note = ''
-    if not latest:
-        note = "Couldn't check for a newer engine (no network)."
-    elif ours < _version_tuple(latest):
-        note = "A newer yt-dlp (%s) is out - update DOWNI to get it." % latest
-    elif ours > _version_tuple(latest):
-        note = ("Running a newer yt-dlp than the latest stable (%s) - the fixes for "
-                "broken sites land there first." % latest)
-    else:
-        note = "Your engine is the latest stable yt-dlp."
     return json.dumps({
         'results': results,
         'yt_dlp': yt_dlp.version.__version__,
         'python': platform.python_version(),
-        'latest_ytdlp': latest,
-        'engine_note': note.strip(),
     })

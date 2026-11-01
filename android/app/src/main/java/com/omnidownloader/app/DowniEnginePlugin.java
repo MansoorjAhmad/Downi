@@ -266,10 +266,12 @@ public class DowniEnginePlugin extends Plugin {
             result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
-            // Defect C (v3.1.1): THIS SPOT MUST MATCH build.gradle versionCode/versionName —
-            // it is one of the three version spots bumped at release (see MISSION §J).
-            result.put("versionName", "3.6.2");
-            result.put("versionCode", 55L);
+            // Defect C: Single source of truth — read directly from BuildConfig
+            // generated from build.gradle, eliminating stale hardcoded fallbacks.
+            result.put("versionName", BuildConfig.VERSION_NAME);
+            result.put("versionCode", (long) BuildConfig.VERSION_CODE);
+            result.put("packageName", getContext().getPackageName());
+            result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         }
     }
@@ -406,7 +408,7 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve();
     }
 
-    // ---------- Engine health check ----------
+    // ---------- Engine info ----------
 
     @PluginMethod
     public void engineInfo(PluginCall call) {
@@ -419,10 +421,9 @@ public class DowniEnginePlugin extends Plugin {
                 result.put("engine", info.optString("engine", "DOWNI Engine"));
                 result.put("ytDlpVersion", info.optString("yt_dlp_version", ""));
                 result.put("pythonVersion", info.optString("python", ""));
-                result.put("healthy", true);
                 call.resolve(result);
             } catch (Exception error) {
-                call.reject("Engine check failed: " + error.getMessage(), error);
+                call.reject("Engine info failed: " + error.getMessage(), error);
             }
         });
     }
@@ -625,6 +626,7 @@ public class DowniEnginePlugin extends Plugin {
             // (which only adds on the complete event) stayed at 0 forever — a lie on the
             // Queue dashboard of a release called "The Truth Release".
             long finalBytes = 0;
+            VideoUniquifier.Result uRes = null;
             boolean wantUnique = job.call.getBoolean("makeUnique", false)
                 || getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getBoolean("autoUnique", true);
 
@@ -642,6 +644,7 @@ public class DowniEnginePlugin extends Plugin {
                 File merged = new File(videoPart.getParentFile(), file.getString("title") + "-merged.mp4");
                 if (Mp4Merger.merge(videoPart, audioPart, merged)) {
                     File toSave = merged;
+                    String ext = "mp4";
                     if (wantUnique) {
                         try {
                             DowniDownloadService.updateJob(getContext(), job.id, "Making video unique…", 97);
@@ -650,17 +653,22 @@ public class DowniEnginePlugin extends Plugin {
                             uProg.put("percent", 97);
                             uProg.put("status", "Making video unique…");
                             notifyListeners("onProgress", uProg);
-                            File uniqueOut = new File(videoPart.getParentFile(), file.getString("title") + "-unique.mp4");
-                            if (VideoUniquifier.process(merged, uniqueOut)) {
+                            File uniqueCandidate = new File(videoPart.getParentFile(), file.getString("title") + "-unique-temp.mp4");
+                            uRes = VideoUniquifier.process(merged, uniqueCandidate);
+                            if (uRes.success && ("remux".equals(uRes.mode) || "identity".equals(uRes.mode))) {
                                 try { merged.delete(); } catch (Exception ignored) {}
-                                toSave = uniqueOut;
+                                toSave = uRes.file;
+                                ext = uRes.extension;
+                            } else {
+                                toSave = merged;
                             }
                         } catch (Throwable t) {
                             Log.w("DowniEngine", "Uniquifier error, using original: " + t.getMessage());
+                            toSave = merged;
                         }
                     }
                     finalBytes = toSave.length();
-                    destination = copyToGallery(toSave, file.getString("title"), "mp4");
+                    destination = copyToGallery(toSave, file.getString("title"), ext);
                     try { if (toSave != merged) toSave.delete(); } catch (Exception ignored) {}
                 } else {
                     try { videoPart.delete(); } catch (Exception ignored) {}
@@ -681,14 +689,18 @@ public class DowniEnginePlugin extends Plugin {
                         uProg.put("percent", 97);
                         uProg.put("status", "Making video unique…");
                         notifyListeners("onProgress", uProg);
-                        File uniqueOut = new File(single.getParentFile(), file.getString("title") + "-unique.mp4");
-                        if (VideoUniquifier.process(single, uniqueOut)) {
+                        File uniqueCandidate = new File(single.getParentFile(), file.getString("title") + "-unique-temp." + ext);
+                        uRes = VideoUniquifier.process(single, uniqueCandidate);
+                        if (uRes.success && ("remux".equals(uRes.mode) || "identity".equals(uRes.mode))) {
                             try { single.delete(); } catch (Exception ignored) {}
-                            toSave = uniqueOut;
-                            ext = "mp4";
+                            toSave = uRes.file;
+                            ext = uRes.extension;
+                        } else {
+                            toSave = single;
                         }
                     } catch (Throwable t) {
                         Log.w("DowniEngine", "Uniquifier error, using original: " + t.getMessage());
+                        toSave = single;
                     }
                 }
                 finalBytes = toSave.length();
@@ -705,6 +717,11 @@ public class DowniEnginePlugin extends Plugin {
             progress.put("complete", true);
             progress.put("title", file.optString("title", "Video"));
             progress.put("destination", destination);
+            if (uRes != null) {
+                progress.put("shieldMode", uRes.mode);
+                progress.put("shieldReason", uRes.reason);
+                progress.put("shieldSha", uRes.outputSha256);
+            }
             // N9: hand the web layer the size that actually landed so "MB grabbed" is real.
             progress.put("totalBytes", finalBytes);
             progress.put("downloadedBytes", finalBytes);
@@ -827,8 +844,7 @@ public class DowniEnginePlugin extends Plugin {
             File tempOutput = null;
             try {
                 Uri uri = Uri.parse(uriStr);
-                tempInput = new File(getContext().getCacheDir(), "src_" + System.currentTimeMillis() + ".mp4");
-                tempOutput = new File(getContext().getCacheDir(), "uniq_" + System.currentTimeMillis() + ".mp4");
+                tempInput = new File(getContext().getCacheDir(), "src_" + System.currentTimeMillis() + ".tmp");
 
                 try (InputStream in = getContext().getContentResolver().openInputStream(uri);
                      FileOutputStream out = new FileOutputStream(tempInput)) {
@@ -840,16 +856,28 @@ public class DowniEnginePlugin extends Plugin {
                     }
                 }
 
-                if (VideoUniquifier.process(tempInput, tempOutput)) {
+                IsoBmff.ContainerType container = IsoBmff.sniff(tempInput);
+                String candExt = container.extension.isEmpty() ? "mp4" : container.extension;
+                tempOutput = new File(getContext().getCacheDir(), "uniq_" + System.currentTimeMillis() + "." + candExt);
+
+                VideoUniquifier.Result uRes = VideoUniquifier.process(tempInput, tempOutput);
+                if (uRes.success && ("remux".equals(uRes.mode) || "identity".equals(uRes.mode))) {
                     String cleanTitle = (title.endsWith("(Unique)") ? title : (title + " (Unique)")).trim();
-                    String dest = copyToGallery(tempOutput, cleanTitle, "mp4");
+                    String dest = copyToGallery(uRes.file, cleanTitle, uRes.extension);
                     JSObject res = new JSObject();
                     res.put("success", true);
                     res.put("destination", dest);
                     res.put("title", cleanTitle);
+                    res.put("shieldMode", uRes.mode);
+                    res.put("shieldReason", uRes.reason);
+                    res.put("shieldSha", uRes.outputSha256);
                     call.resolve(res);
                 } else {
-                    call.reject("Could not create unique video on this device.");
+                    // Do not save a duplicate under "(Unique)" — return an honest error and leave the original untouched.
+                    String msg = (uRes != null && uRes.reason != null && !uRes.reason.isEmpty())
+                            ? uRes.reason
+                            : "Format not upload-safe for modification; original left untouched.";
+                    call.reject("Anti-Repost Shield skipped: " + msg);
                 }
             } catch (Exception e) {
                 call.reject("Uniquifier failed: " + e.getMessage());
@@ -888,10 +916,7 @@ public class DowniEnginePlugin extends Plugin {
                 }
                 result.put("results", results);
                 result.put("ytDlp", info.optString("yt_dlp", ""));
-                // The engine's own note: whether a newer extraction layer exists
-                // (the extraction layer ships inside the APK, so only a newer
-                // DOWNI can carry a site fix).
-                result.put("engineNote", info.optString("engine_note", ""));
+                result.put("python", info.optString("python", ""));
                 call.resolve(result);
             } catch (Exception error) {
                 call.reject("Diagnostics failed: " + error.getMessage(), error);
@@ -1011,20 +1036,6 @@ public class DowniEnginePlugin extends Plugin {
         if (jobId != null && !jobId.trim().isEmpty()) {
             Intent intent = new Intent(getContext(), DowniDownloadService.class);
             intent.setAction("shared_cancel");
-            intent.putExtra("jobId", jobId);
-            try { getContext().startService(intent); } catch (Exception ignored) {}
-        }
-        call.resolve();
-    }
-
-    /** Wave 3: resume one PAUSED grab from the Queue — the same byte-continuation as the
-     *  notification's Resume action and the paused Core's tap (one mechanism, three doors). */
-    @PluginMethod
-    public void resumeDropJob(PluginCall call) {
-        String jobId = call.getString("jobId");
-        if (jobId != null && !jobId.trim().isEmpty()) {
-            Intent intent = new Intent(getContext(), DowniDownloadService.class);
-            intent.setAction("shared_resume");
             intent.putExtra("jobId", jobId);
             try { getContext().startService(intent); } catch (Exception ignored) {}
         }
@@ -1199,8 +1210,8 @@ public class DowniEnginePlugin extends Plugin {
     }
 
     private synchronized String nextGalleryName(String title, String extension, File source) {
-        String ext = (extension == null || extension.trim().isEmpty()) ? "mp4" : extension.toLowerCase(Locale.US);
-        String base = safeFileName(title, Uri.fromFile(source));
+        String ext = (extension == null || extension.trim().isEmpty()) ? "mp4" : extension.toLowerCase(Locale.US).replaceFirst("^\\.", "");
+        String base = TitleSanitizer.sanitize(title);
         if (base.toLowerCase(Locale.US).endsWith("." + ext)) base = base.substring(0, base.length() - ext.length() - 1);
         String key = (base + "." + ext).toLowerCase(Locale.US);
         android.content.SharedPreferences names = getContext().getSharedPreferences("downi_saved_names", Context.MODE_PRIVATE);
@@ -1231,29 +1242,9 @@ public class DowniEnginePlugin extends Plugin {
     }
 
     private String safeFileName(String requested, Uri uri) {
-        if (requested == null || requested.trim().isEmpty()) requested = "Video";
-        // Strip illegal filesystem characters: \ / : * ? " < > | and control chars
-        String base = requested.replaceAll("[\\/:*?\"<>|\r\n\t]+", " ");
-        // Collapse multiple spaces into one
-        base = base.replaceAll("\s+", " ").trim();
-        // Strip leading/trailing dots and dashes that cause issues on Android storage
-        base = base.replaceAll("^[.-]+|[.-]+$", "").trim();
-        if (base.isEmpty()) base = "Video";
-
         String path = (uri != null && uri.getPath() != null) ? uri.getPath() : "";
         String ext = path.contains(".") ? path.substring(path.lastIndexOf('.')).toLowerCase(Locale.US) : ".mp4";
-        if (ext.isEmpty() || ext.equals(".")) ext = ".mp4";
-
-        if (base.toLowerCase(Locale.US).endsWith(ext)) {
-            base = base.substring(0, base.length() - ext.length()).trim();
-        }
-
-        // Smart word-boundary truncation (max 90 chars before extension)
-        if (base.length() > 90) {
-            int cut = base.lastIndexOf(' ', 90);
-            base = (cut > 40) ? base.substring(0, cut).trim() : base.substring(0, 90).trim();
-        }
-        return base + ext;
+        return TitleSanitizer.safeFileName(requested, ext);
     }
 
     private String getAppVersionName() {
@@ -1261,7 +1252,7 @@ public class DowniEnginePlugin extends Plugin {
             PackageInfo pInfo = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
             return pInfo.versionName;
         } catch (Exception e) {
-            return "DOWNI"; // UA fallback only — never a stale version number
+            return BuildConfig.VERSION_NAME;
         }
     }
 

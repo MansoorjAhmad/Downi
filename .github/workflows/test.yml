@@ -14,8 +14,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Resolve pinned yt-dlp from build.gradle (Single Source of Truth)
+        id: ytdlp-pin
+        run: |
+          PIN=$(python ci/verify_pin_parity.py --print-pin)
+          echo "pin=$PIN" >> $GITHUB_OUTPUT
+          echo "Resolved engine pin: $PIN"
       - name: Install engine deps
-        run: pip install yt-dlp==2026.8.19 certifi
+        run: pip install ${{ steps.ytdlp-pin.outputs.pin }}
+      - name: Verify engine pin parity & SHA-256 integrity (drift guard)
+        run: python ci/verify_pin_parity.py
+      - name: Verify version parity & single source of truth (drift guard)
+        run: python ci/verify_version_parity.py
       - name: Run engine smoke test
         env:
           PYTHONIOENCODING: utf-8

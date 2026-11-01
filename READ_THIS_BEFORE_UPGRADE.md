@@ -1,6 +1,6 @@
 # READ THIS BEFORE UPGRADE
 
-> **Last reviewed: 2026-10-30 (v3.7.0 / versionCode 59).** This is a living document, not an
+> **Last reviewed: 2026-11-01 (v3.8.0 / versionCode 60).** This is a living document, not an
 > archive. Every feature, fix, engine constraint or newly found truth defect must update it **in
 > the same commit** as the change (§9). If this file and the app disagree, the app is the fact and
 > this file is the defect.
@@ -41,9 +41,9 @@
 > This is history, not a claim about the current build. The current release's evidence lives in
 > `DEVICE_TEST.md`; §9 forbids promoting a baseline claim to "verified".
 >
-> **Current deviation (v3.6.2):** `nopart` is `not supports_pause`. The in‑app lanes keep the
-> proven `True`; headless DowniDrop jobs use `.part` so a pause can resume. See §7.1 for the
-> unresolved freeze conflict. The Android engine constraints (`js_runtimes: {}` and the
+> **Current rule (v3.8.0):** `nopart` is always `True` and `continuedl` is always `False`.
+> DOWNI has no pause/resume (§7.1): every lane downloads straight to its final name and a
+> cancelled transfer restarts from zero. The Android engine constraints (`js_runtimes: {}` and the
 > non‑existent `ffmpeg_location`) are in §8.9; they are additions, not replacements for the
 > baseline options.
 
@@ -134,15 +134,15 @@ v3.1.1 earned the name **"The Truth Release"** by killing the ways the app contr
 
 Scope is closed. These are the things that must **not** appear in a future version — each one either adds a new way to be false, or costs a full re‑verification pass for no user‑visible truth:
 
-1. **Pause / resume with `.part` files** — **status correction (2026-10-22): the original sentence
-   "nothing in the UI claims it" is stale and wrong.** It was ruled out on 2026-09-23 (`0fd4001`:
-   owner ruling, *"Pause/Resume ... permanently out of v3.2.0 scope"*), then implemented three days
-   later in `c631514` (*"wave2: true PAUSE/RESUME"*) and it is **live in v3.6.2**: the notification
-   offers **Pause / Resume**, the Queue shows **▶ Resume**, and headless jobs keep `.part` bytes
-   across a process death. This is an **unresolved contradiction**, not permission to add more: do
-   not add new pause surfaces, resumable state machines or `.part` paths without an explicit owner
-   ruling. The owner must decide whether the shipped feature stays or is removed; until then it is
-   **frozen as shipped**. The original risk still stands — this is exactly the N11/N12 class.
+1. **Pause / resume, `.part` continuation, and resumable job state** — **removed in 3.8.0 by
+   owner ruling; permanently banned.** History: ruled out on 2026-09-23 (`0fd4001`), implemented
+   by mistake in `c631514`, shipped in v3.6.2, and finally deleted in 3.8.0. The removal covered
+   the notification **Pause / Resume** actions, the Queue **▶ Resume** control, the
+   `shared_pause` / `shared_resume` / `shared_resume_latest` service actions, `resumeDropJob`,
+   `PausedError`, the `pausedJobs` / `pausedGrabs` state, `DownloadProgressListener.isPaused` /
+   `supportsPause`, and the `.part` continuation path. Do **not** reintroduce it under any name:
+   no "resume from where you left off", no resumable state machine, no new pause surface. A
+   cancelled or interrupted transfer restarts from zero. See `DECISIONS.md`.
 2. **TikTok photo‑post / carousel downloads** — new extractor surface, niche payoff, new falseness risk. The TikTok chip means *video*.
 3. **Web‑side direct‑to‑CDN or "speed" tricks** — the engine already picks lanes; these only add failure modes.
 4. **Any Cloud Boost–style relay** (see §4) — removed for cause. Reviving it revives the false claims.
@@ -210,7 +210,7 @@ These are **not defects**. Each is a property of the platform or a deliberate de
 
 ## 9️⃣ Claims Discipline – What A Release Note May And May Not Say
 
-- **"Verified" is a fact, not a mood.** A note may only say fixed/verified for cells **dated ✅ in `DEVICE_TEST.md`**. For v3.6.2 the six TikTok/Instagram cells are dated ✅ (row 6-13) and file-checked with ffprobe (row 6-14); the Instagram **duration** and **quality label** rows are now ✅ (6-15/6-16) and the grab-card pan is ✅ (6-17) on the fixed build (same 3.6.2 / 55, hash `AFB29A0D…`). The owner ruled on 2026-10-22 to ship pause/resume as-is; it is deferred, not fixed.
+- **"Verified" is a fact, not a mood.** A note may only say fixed/verified for cells **dated ✅ in `DEVICE_TEST.md`**. For v3.6.2 the six TikTok/Instagram cells are dated ✅ (row 6-13) and file-checked with ffprobe (row 6-14); the Instagram **duration** and **quality label** rows are now ✅ (6‑15/6‑16) and the grab-card pan is ✅ (6‑17) on the fixed build (same 3.6.2 / 55, hash `AFB29A0D…`). Pause/resume was removed in 3.8.0 by owner ruling and is permanently banned (§7.1).
 - **The supported-site claim stays at three chips**: YouTube, TikTok, Instagram. Never "all sites", never "1000+ sites" — and the TikTok chip means **video**.
 - **The offline claim must stay scoped**: *the UI* works with zero internet (Tailwind and the fonts are bundled in the APK). Downloads obviously need the network; the only outbound calls are the grab itself and the GitHub update check — so "no analytics / no tracking" is honest, but a bare "works offline" is not.
 - **The tagged commit's message IS the published release notes** (`release.yml` uses `github.event.head_commit.message`). The tagged commit must carry the full summary — never tag a commit whose message reads "wip", "fixes", "bump" or "release vehicle".
@@ -272,8 +272,8 @@ Ten lessons from this release. Each one is a line of code that looks harmless an
     real selection menu with the URL highlighted, the card stayed aligned, and **Copy** still
     updated the clipboard banner. See `DEVICE_TEST.md` 6-17.
 
-11. **The Video Uniquifier: Interleaving and PTS Clamping over Re-Encoding.**
-    Re-encoding a video on a mobile device is CPU-intensive, drains battery, degrades visual fidelity, and easily causes AV desync. The Anti-Repost Shield (VideoUniquifier.java) uses lightweight sample remuxing via dual MediaExtractor and MediaMuxer with strict monotonic timestamp clamping (if (sampleTime <= lastTime) sampleTime = lastTime + 1000;). If remuxing fails or media is non-standard, it falls back to ISO-14496-12 standard ree metadata box with cryptographically secure UUID entropy injection. File hashes (MD5 and SHA-256) differ completely, bypassing automated platform duplicate detection while preserving 100% video/audio bitstreams.
+11. **The Video Uniquifier: Container Remuxing & Entropy Injection.**
+    In v3.7.0, an experimental remuxer attempted arbitrary timestamp clamping (`sampleTime = lastTime + 1000`). In v3.8.0, this was superseded by Anti-Repost Shield S2 (see §11), which removes arbitrary timestamp clamping, restricts remuxing strictly to MP4/H.264/AAC, and preserves original files on validation failure. The effect of these file modifications on platform duplicate detection is untested.
 12. **Android 13 Foreground Service Notification Cancellation Lock.**
     On Android 12 & 13 (API 31+ / vivo FuntouchOS), calling NotificationManagerCompat.cancel(FG_NOTIFICATION_ID) while the service is actively running as a Foreground Service (startForeground) is silently ignored by the Android framework. Calling deprecated stopForeground(true) without specifying STOP_FOREGROUND_REMOVE and without cancelling after stopping the foreground state causes the progress notification ('DOWNI is grabbing... 100%') to stay stuck indefinitely in the notification shade. The service teardown must use stopForeground(STOP_FOREGROUND_REMOVE) and explicitly invoke cancel(FG_NOTIFICATION_ID) post-teardown.
 
@@ -285,7 +285,25 @@ Instagram paths delivered the same SHA-256 `9438E8E8…`. **The two truth defect
 are fixed and dated ✅** (6‑15 / N16, 6‑16 / N17, 6‑17): Instagram offers only **Best Available
 Quality**, unknown duration is hidden, and long-press selection no longer pans the card. The APK
 is signed with the §8.8 key and **local only** — no tag, push or release until the owner says go.
-The owner ruled on 2026-10-22 to ship pause/resume as-is; it is deferred, not fixed.
+Pause/resume was removed in 3.8.0 by owner ruling and is permanently banned (§7.1).
+
+---
+
+## 1️⃣1️⃣ v3.8.0 — The Anti-Repost Shield & Engine Parity Release (2026-11-01, versionCode 60)
+
+Key architectural rulings and fixes in 3.8.0:
+
+1. **Pause / Resume is permanently removed and banned (D-001).** All pause/resume surfaces (notification actions, Queue buttons, service maps, listener methods, Python `PausedError` and `.part` continuation) are deleted. Cancel is final; subsequent downloads restart from 0%.
+2. **Anti-Repost Shield S2 (D-003).** Replaces experimental remuxing with a verified S2 implementation:
+   - Performs software sample-by-sample remuxing via `android.media.MediaExtractor` and `android.media.MediaMuxer` (no hardware encoding/decoding) strictly for MP4 containers with 1 H.264 video track (profile <= High) and 0 or 1 AAC audio track (`VideoUniquifier.java` lines 158–190, 202–307). Preserves orientation hints (`KEY_ROTATION`, lines 227–235) and interleaves samples by presentation timestamp without artificial clamping.
+   - Appends an ISO-14496-12 `free` box with 48 bytes of random entropy from `SecureRandom` (`VideoUniquifier.java` line 297, `IsoBmff.java` lines 85–98).
+   - Identity lane fallback: for non-remuxable containers/codecs or upon remux failure, copies input bytes unchanged and appends an ISO `free` box (MP4) or EBML `Void` element (WebM) (`IsoBmff.java` lines 175–222). For MP4 files, overwrites `creation_time` and `modification_time` fields in the `moov.mvhd` atom (`IsoBmff.java` lines 229–296). It does not parse or strip individual metadata tags.
+   - Post-remux validation: uses `android.media.MediaExtractor` (`VideoUniquifier.java` lines 328–330) to check track count match (line 331), dimensions match (lines 345–349), duration tolerance within ±150ms (lines 352–356), and checks that the first video sample has `MediaExtractor.SAMPLE_FLAG_SYNC` set (lines 359–365). Does NOT use `MediaMetadataRetriever` and does not decode video frames.
+   - Original file preservation: on validation failure or if Shield is skipped, preserves original files untouched and reports an honest error without generating duplicate files (`VideoUniquifier.java` lines 146–149, `DowniEnginePlugin.java` lines 242–245).
+   - Platform effect: The effect of container remuxing, timestamp rewriting, or entropy injection on any platform's ingest, processing, duplicate detection, or account standing is completely untested. The code makes no claim to defeat, bypass, or evade detection on any service.
+3. **Engine Pin & CI Drift Verification.** `yt-dlp==2026.10.29.232701.dev0` and `certifi==2026.10.23` are pinned in `android/app/build.gradle` as the single source of truth, verified by cryptographic PyPI wheel SHA-256 matching via `ci/verify_pin_parity.py`.
+4. **Network Diagnostics Integrity (Engine Settings Option B).** Removed misleading mock engine health badges, fake version checks, and dead notifications. Replaced with real DNS, TLS, and TCP reachability tests with hard timeouts in worker threads and sanitized native clipboard export.
+5. **Single Source of Truth for App Version (D-005).** `build.gradle` is the sole source for `versionName` and `versionCode`. `DowniEnginePlugin` reads directly from `BuildConfig`, eliminating hardcoded fallbacks like `3.6.2`/`55L`. The web UI reads version info dynamically via native bridge calls. `ci/verify_version_parity.py` validates this on every commit.
 
 ---
 
@@ -300,7 +318,7 @@ The owner ruled on 2026-10-22 to ship pause/resume as-is; it is deferred, not fi
 - **Show only what is actually happening** (v3.1.1, §6). If a change makes any tile, card, badge or notification say something the system is not doing, it is a blocker — not a polish item.
 - **A missing value is not a zero, and a quality label is a claim** (N16/N17): hide an unknown duration, and derive quality rows from the formats the extractor will actually deliver (or offer only **Best Available**). A hidden overflow container is still scrollable; `overflow: clip` plus a scroll reset fixes the card pan, and long-press text selection must be re-tested on a real device.
 - **Any change touching live state, counters, notifications or the ledger must re-run the §6 re-checks (N8‑N13) on a real device** before it ships. A green build proves nothing about truthfulness.
-- **Never re-introduce §7 by stealth** — no "just one" new permission, no new pause surface. The pause/resume that already shipped is **frozen as shipped** (§7.1); do not extend it.
+- **Never re-introduce §7 by stealth** — no "just one" new permission, no new pause surface. Pause/resume was removed in 3.8.0 and is **permanently banned** (§7.1); do not extend, revive or rename it.
 - **Chaquopy cannot spawn a process** — `js_runtimes: {}` and a non‑existent `ffmpeg_location` stay; no ffmpeg, no subprocess, no "quick fix" that enables either (§8.9).
 
 *This file is a permanent reference; future contributors should read it before touching the download engine.*

@@ -104,6 +104,7 @@ public final class JobSnapshot {
                 JSONObject o = list.optJSONObject(i);
                 if (o == null || !url.equals(o.optString("url"))) continue;
                 String s = o.optString("state", "running");
+                if ("paused".equalsIgnoreCase(s)) continue; // R1: ignore legacy paused rows
                 if ("running".equals(s)) return s;                        // a live job wins outright
                 if (now - o.optLong("ts", now) <= TERMINAL_TTL_MS) state = s;
             }
@@ -124,7 +125,12 @@ public final class JobSnapshot {
         for (int i = 0; i < list.length(); i++) {
             JSONObject o = list.optJSONObject(i);
             if (o == null) continue;
-            boolean running = "running".equals(o.optString("state"));
+            String state = o.optString("state", "");
+            if ("paused".equalsIgnoreCase(state)) {
+                // R1: legacy 3.7 paused row must be discarded immediately
+                continue;
+            }
+            boolean running = "running".equals(state);
             if (running) {
                 if (liveJobIds == null || !liveJobIds.contains(o.optString("id"))) continue;
             } else if (now - o.optLong("ts", now) > TERMINAL_TTL_MS) {
