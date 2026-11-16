@@ -3,6 +3,51 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.11.0 - Unified Batch Queue, Playlist Sheet, Immediate Metadata & UI/UX Polish (versionCode 64) - 2026-11-16
+
+**Unified persistent batch queue (`BatchQueue`), direct Playlist Sheet with thumbnails, live selection/filtering and a deliberate-selection confirmation for large batches, immediate Queue metadata & artwork, one fixed Electric Lime OLED brand, richer History receipts, and subtitle/format accuracy fixes.**
+
+### What Changed
+- **Unified Persistent Batch Queue & Playlist Sheet (`www/index.html`, `www/assets/css/downi.css`, `downloader.py`):**
+  - Replaced separate playlist pending arrays and manual batch queues with one shared persistent `BatchQueue` (`downi_batch_v1`, with automatic migration from legacy `pl_pending`/`pl_total`), driving a compact Queue `.batch-summary` bar (`Cancel queued`) and thumbnail-led `.job` cards.
+  - Pure playlist links route directly into the Playlist Sheet (`#playlistModal`) with per-entry thumbnails (from `playlist_inspect()`), durations, search filtering, `Saved` markers, and footer quality selection.
+  - Multi-item Grab lists queue through the same shared `BatchQueue` and surface real per-item titles and thumbnails immediately on `Queued` jobs and Android download notifications (`DowniEnginePlugin.java`, `DowniDownloadService.java`).
+- **Dark Accent Presets & Queue/History UX (`www/assets/css/downi.css`, `www/index.html`):**
+  - Refreshed the Obsidian dark palette to a single fixed Electric Lime (`#C6FF3D`) OLED brand; the earlier accent presets were removed within this release (see Post-verification refinements / D-004).
+  - Fixed Queue `.job__label` flex truncation so format badges (e.g., `1080P`) remain visible on long video titles.
+  - Added thumbnails, format chips, and file sizes to History & Recent Saves rows, `Size` and `Duration` rows in History details, storage byte accounting on item delete, and actionable `Remove` prompts when a saved file is missing from storage.
+- **Inspector Format, Subtitle & Platform Polish (`downloader.py`, `www/index.html`):**
+  - Omitted duplicate `Best Available Quality (HD)` rows in `_build_youtube_formats()` when the top explicit height tier already matches its stream size and extension.
+  - Prioritized clean language tags and English variants over hashed subtitle keys in `_extract_subtitle_langs()`, and scoped subtitle toggle state per inspected video instead of leaking across future downloads.
+  - Expanded URL pill recognition (`detectUrlKind()`) to cover X / Twitter, Reddit, Facebook, SoundCloud, Vimeo, and Pinterest alongside YouTube, TikTok, and Instagram.
+
+### Post-verification refinements (2026-11-16, owner-directed)
+- **Fixed first-grab toast:** corrected an array-alias bug in `enqueueBatchItems()` (`batchState.pending = fresh` then `pumpBatchQueue()` shifted the shared array, so the returned count read 0 and a fresh grab falsely showed `Already queued`). The enqueued count is now captured before mutation.
+- **Single fixed electric-lime brand:** removed the `Lime`/`Cyan`/`Amber` accent switcher per owner ruling (D-004) — one OLED-dark brand, no theme picker or persisted accent state.
+- **Clean caption languages:** playlist + Inspector subtitle dropdowns filter hashed YouTube caption keys to clean BCP-47 codes only.
+- **No notification double-prompt:** declining the in-app notification hint now suppresses the OS permission dialog on the first grab.
+- **Deliberate playlist selection:** pure playlists now open with nothing selected (`Select at least 1 video`); selections of ≥10 require a second confirmation tap before queueing.
+
+## V3.10.0 - 4K/1440p, IG 1080p DASH, Audio Tagging, Subtitles & Deep Shield (versionCode 63) - 2026-11-15
+
+**1440p/4K VP9 & AV1 YouTube lanes, Instagram 1080p DASH split+merge, pure-Python audio cover art & metadata tagging, Opus/WebM audio, subtitle sidecars, paginated playlists, and Opt-in Hardware Deep Creator Shield.**
+
+### What Changed
+- **1440p / 4K VP9/AV1 & Instagram 1080p DASH (`downloader.py`):**
+  - `inspect(url, sdk_int=34)` and `download(url, target_dir, format_id, listener, sdk_int=34, opts_json=None)` gate `1440` (`1440p QHD`) and `2160` (`4K Ultra HD`) by device API level (VP9 on API >= 29, AV1 on API >= 34) and raise the `best` lane cap to `2160` on API >= 29 (`1080` on older devices).
+  - Exposes `audio_opus` (`Audio Track (Opus/WebM)`) alongside `audio` (`M4A`) when a WebM/Opus stream is available.
+  - Unlocks on-device DASH split+merge (`Mp4Merger`) for Instagram and other non-YouTube sites when a supported video-only stream (`>720p`) and AAC audio-only stream exist.
+- **Pure-Python Audio Cover Art & Metadata Tagging (`audio_tagger.py`):**
+  - Zero subprocesses, zero C dependencies. Writes `ID3v2.3` (`TIT2`, `TPE1`, `APIC`) on `.mp3` and ISO BMFF `moov/udta/meta/ilst` (`©nam`, `©ART`, `covr`) on `.m4a`, updating `stco`/`co64` chunk offsets whenever `moov` precedes `mdat`. Non-fatal: preserves original file intact on any error.
+- **Subtitles & Paginated Playlists (`downloader.py`):**
+  - `inspect()` detects `subtitles` / `automatic_captions`, returning `has_subtitles` and `subtitle_langs`.
+  - `download(..., opts_json)` fetches `.srt`/`.vtt` sidecar files without ffmpeg when `subtitles: true`, returning `subtitle_paths`.
+  - `playlist_inspect(url, offset=0, limit=50)` paginates via `playliststart`/`playlistend`, returning `{ title, items, total_count, has_more, next_offset }` with truth error propagation.
+- **Anti-Repost Shield Tiers (`D-003`):**
+  - Standard Lossless Shield (S2+) remains default ON; Opt-in Hardware Deep Creator Shield (`shieldTier = "deep"`) is OFF by default and falls back safely to Standard S2+ on any codec error.
+- **Engine Pin:**
+  - `yt-dlp==2026.11.4.232659.dev0` (`js_runtimes: {}`, `ffmpeg_location: '/nonexistent/downi-no-ffmpeg'`, no `player_client` spoofing, no IG cookies).
+
 ## V3.8.0 - the Anti-Repost Shield & Engine Integrity release (versionCode 60) - 2026-11-01
 
 **Verified Anti-Repost Shield S2, permanent removal of Pause/Resume, engine & version parity guards, and real network diagnostics.**

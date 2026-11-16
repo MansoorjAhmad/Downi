@@ -57,21 +57,25 @@
       <!-- ================= GRAB ================= -->
       <section id="viewGrab" class="view" aria-label="Grab">
 
-        <div id="clipboardBanner" class="card card--lime clipboard hidden fade-in">
-          <div class="clipboard__thumb">
-            <span id="clipboardIcon">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg>
-            </span>
-            <img id="clipboardThumb" src="" alt="" class="hidden">
-          </div>
-          <div class="clipboard__body">
-            <p class="clipboard__label" id="clipboardLabel">Link detected</p>
-            <p id="clipboardTitle" class="clipboard__title">…</p>
-            <p id="clipboardUrlText" class="clipboard__meta">…</p>
-          </div>
-          <div class="clipboard__actions">
-            <button onclick="handleGrabClipboardLink()" class="btn btn--sm">Inspect</button>
-            <button id="clipboardGrabBtn" onclick="handleClipboardFastDl()" class="btn btn--sm btn--accent">Grab now</button>
+        <div id="clipboardSlot" class="cb-slot">
+          <div class="cb-slot__inner">
+            <div id="clipboardBanner" class="card card--lime clipboard hidden">
+              <div class="clipboard__thumb">
+                <span id="clipboardIcon">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg>
+                </span>
+                <img id="clipboardThumb" src="" alt="" class="hidden">
+              </div>
+              <div class="clipboard__body">
+                <p class="clipboard__label" id="clipboardLabel">Link detected</p>
+                <p id="clipboardTitle" class="clipboard__title">…</p>
+                <p id="clipboardUrlText" class="clipboard__meta">…</p>
+              </div>
+              <div class="clipboard__actions">
+                <button onclick="handleGrabClipboardLink()" class="btn btn--sm">Inspect</button>
+                <button id="clipboardGrabBtn" onclick="handleClipboardFastDl()" class="btn btn--sm btn--accent">Grab now</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -79,7 +83,7 @@
         <div class="card grab-card" onscroll="this.scrollLeft=0">
           <p class="eyebrow">New grab</p>
           <h1 class="grab-title">Paste a link. Get the <em>file</em>.</h1>
-          <p class="grab-sub">YouTube · TikTok · Instagram — one link is all it takes.</p>
+          <p class="grab-sub">Videos, playlists, audio, or a list of links — one tap.</p>
 
           <div class="field">
             <span class="field__icon" aria-hidden="true">
@@ -88,14 +92,39 @@
                 <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
               </svg>
             </span>
-            <input id="inputManualUrl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+            <textarea id="inputManualUrl" rows="1" inputmode="url" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false"
               placeholder="https://…" aria-label="Video link"
-              class="field__input" oninput="handleUrlInputChanged()">
+              class="field__input field__textarea" oninput="handleUrlInputChanged()"
+              onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleInspectButtonClick(); }"></textarea>
             <div class="field__actions">
               <button id="btnClearInput" onclick="clearManualUrl()" class="btn btn--icon btn--ghost" style="display:none" aria-label="Clear link">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
               <button onclick="handlePasteButton()" class="btn btn--sm">Paste</button>
+            </div>
+          </div>
+
+          <div id="urlDetectRow" class="url-detect-row hidden">
+            <span id="urlPlatformBadge" class="chip chip--on">YouTube</span>
+            <span id="urlDetectHint" class="mono" style="font-size:10px;color:var(--ti)">Ready to inspect</span>
+          </div>
+
+          <div id="batchPasteBar" class="card card--lime batch-bar hidden">
+            <div class="batch-bar__top">
+              <div style="min-width:0">
+                <span id="batchCountBadge" class="chip chip--on">0 links</span>
+                <p class="mono" style="margin:4px 0 0;font-size:9.5px;color:var(--ti)">Persistent queue · 3 active at once</p>
+              </div>
+              <div class="batch-bar__btns">
+                <button type="button" onclick="openPastedBatchModal()" class="btn btn--sm">Review</button>
+                <button type="button" id="btnGrabBatch" onclick="grabBatchUrls()" class="btn btn--sm btn--accent">Grab All</button>
+              </div>
+            </div>
+            <div id="batchQualityPills" class="batch-q-pills" role="group" aria-label="Batch quality">
+              <button type="button" class="batch-q-pill on" data-bq="best" onclick="setBatchPasteQuality('best')">Best</button>
+              <button type="button" class="batch-q-pill" data-bq="1080" onclick="setBatchPasteQuality('1080')">1080p</button>
+              <button type="button" class="batch-q-pill" data-bq="720" onclick="setBatchPasteQuality('720')">720p</button>
+              <button type="button" class="batch-q-pill" data-bq="audio" onclick="setBatchPasteQuality('audio')">Audio</button>
             </div>
           </div>
 
@@ -107,9 +136,9 @@
           </button>
 
           <div class="platforms" aria-hidden="true">
-            <span class="chip">YouTube</span>
-            <span class="chip">TikTok</span>
-            <span class="chip">Instagram</span>
+            <span class="chip" data-plat="youtube">YouTube</span>
+            <span class="chip" data-plat="tiktok">TikTok</span>
+            <span class="chip" data-plat="instagram">Instagram</span>
           </div>
 
           <button id="lastGrabChip" onclick="handleLastGrabClick()" class="lastgrab hidden">
@@ -147,8 +176,8 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
           </div>
           <div>
-            <p class="hint__title">Playlists work too</p>
-            <p class="hint__text">Paste a playlist link — DOWNI grabs every video in it, one after another.</p>
+            <p class="hint__title">Playlists &amp; batch lists</p>
+            <p class="hint__text">Paste a playlist or multiple links — pick tracks, quality, and track progress live.</p>
           </div>
         </div>
 
@@ -207,6 +236,14 @@
         <div class="section-head" style="margin:2px 2px -4px">
           <h2 class="section-title">History</h2>
           <button onclick="clearCompletedHistory()" class="btn btn--sm btn--ghost">Clear</button>
+        </div>
+        <div id="historyTools" class="hist-tools hidden">
+          <div class="hist-filters" role="tablist" aria-label="Filter history">
+            <button type="button" class="hist-pill on" data-hf="all" onclick="setHistoryFilter('all')">All</button>
+            <button type="button" class="hist-pill" data-hf="saved" onclick="setHistoryFilter('saved')">Saved</button>
+            <button type="button" class="hist-pill" data-hf="failed" onclick="setHistoryFilter('failed')">Failed</button>
+          </div>
+          <input id="historySearchInput" type="search" class="hist-search" placeholder="Search title or site…" aria-label="Search history" oninput="setHistorySearch(this.value)">
         </div>
         <div id="queueListContainer" class="card hist stagger"></div>
       </section>
@@ -299,11 +336,21 @@
               </div>
               <input type="checkbox" id="chkAutoUnique" class="switch" checked onchange="handleAutoUniqueChange(event)">
             </label>
+            <div id="shieldTierRow" class="srow" style="display:block">
+              <div class="srow__main">
+                <p class="srow__title">Shield mode</p>
+                <p class="srow__sub" id="shieldTierDesc">Lossless container &amp; metadata uniqueness (0% quality loss).</p>
+              </div>
+              <div class="seg" id="shieldTierSeg" role="group" aria-label="Shield mode">
+                <button type="button" class="seg__btn" data-tier="standard" onclick="setShieldTier('standard')">Standard (Lossless)</button>
+                <button type="button" class="seg__btn" data-tier="deep" onclick="setShieldTier('deep')">Deep (Creator)</button>
+              </div>
+            </div>
             <div class="srow" style="display:block">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
                 <div class="srow__main">
                   <p class="srow__title">One-tap quality</p>
-                  <p class="srow__sub">What a copied link grabs with one tap</p>
+                  <p class="srow__sub">Best reaches up to 4K when supported</p>
                 </div>
               </div>
               <div class="seg" id="oneTapQuality" role="group" aria-label="One-tap quality">
@@ -325,7 +372,10 @@
                 <p class="srow__title">Save location</p>
                 <p class="srow__sub" id="folderText">Gallery — Movies / Music</p>
               </div>
-              <button onclick="handleChooseFolder()" class="btn btn--sm">Change</button>
+              <div style="display:flex;align-items:center;gap:6px;flex:0 0 auto">
+                <button id="btnResetFolder" onclick="handleResetFolder()" class="btn btn--sm btn--ghost hidden" style="color:var(--ti)">Reset</button>
+                <button onclick="handleChooseFolder()" class="btn btn--sm">Change</button>
+              </div>
             </div>
             <div class="srow">
               <div class="srow__main">
@@ -342,6 +392,7 @@
 
     <!-- DOCK -->
     <nav class="dock" aria-label="Sections">
+      <div class="dock__track" aria-hidden="true"><span id="dockPill" class="dock__pill"></span></div>
       <button id="navGrab" onclick="switchTab('grab')" class="nav-item on">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
@@ -379,12 +430,27 @@
 
       <div class="thumb">
         <div id="inspectorThumbSkel" class="skel" style="position:absolute;inset:0;border-radius:0"></div>
-        <img id="inspectorThumbnail" src="assets/brand/downi-symbol.svg" alt="" onload="this.classList.add('loaded');document.getElementById('inspectorThumbSkel').style.display='none'">
+        <img id="inspectorThumbnail" class="is-fallback" src="assets/brand/downi-symbol.svg" alt=""
+          onload="this.classList.add('loaded');this.classList.toggle('is-fallback', this.getAttribute('src')==='assets/brand/downi-symbol.svg');document.getElementById('inspectorThumbSkel').style.display='none'"
+          onerror="this.onerror=null;this.src='assets/brand/downi-symbol.svg';this.classList.add('loaded','is-fallback');document.getElementById('inspectorThumbSkel').style.display='none'">
         <span id="inspectorDuration" class="thumb__dur">0:00</span>
       </div>
 
       <h2 id="inspectorTitle" class="sheet__title" style="margin-top:10px">Video title</h2>
       <p id="inspectorUploader" style="margin:3px 0 0;font-size:10.5px;color:var(--ti)">Creator</p>
+
+      <div id="playlistBanner" class="card card--lime hidden" style="padding:11px 12px;margin-top:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div style="min-width:0">
+            <p class="srow__title">Part of a <span id="playlistCount">0</span><span id="playlistTotalSuffix"></span>-video playlist</p>
+            <p class="srow__sub mono" style="font-size:9.5px">View all tracks or queue multiple</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex:0 0 auto">
+            <button type="button" onclick="openPlaylistModal()" class="btn btn--sm btn--accent">View list</button>
+          </div>
+        </div>
+        <button type="button" id="btnBannerPlaylistMore" onclick="loadMorePlaylistItems()" class="btn btn--sm hidden" style="width:100%;margin-top:8px">Load more items</button>
+      </div>
 
       <p class="eyebrow" style="margin:14px 0 6px">Quality</p>
       <div id="inspectorQualitiesList" class="stagger">
@@ -392,12 +458,15 @@
         <div class="skel" style="height:56px;margin-bottom:7px"></div>
         <div class="skel" style="height:56px"></div>
       </div>
-      <div id="playlistBanner" class="card card--lime hidden" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;margin-top:10px">
-        <div style="min-width:0">
-          <p class="srow__title"><span id="playlistCount">0</span> videos in this playlist</p>
-          <p class="srow__sub mono" style="font-size:9.5px">Batch mode — one tap grabs them all</p>
-        </div>
-        <button onclick="grabAllPlaylist()" class="btn btn--sm btn--accent" style="flex:0 0 auto">Grab all</button>
+      <div id="inspectorSubtitlesWrap" class="hidden" style="margin-top:10px">
+        <label class="srow" for="chkIncludeSubtitles" style="padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(244,247,248,.02);gap:10px">
+          <div class="srow__main">
+            <p class="srow__title">Include Subtitles (.srt/.vtt)</p>
+            <p class="srow__sub">Saves sidecar caption file alongside video</p>
+          </div>
+          <select id="inspectorSubLang" class="sub-select hidden" aria-label="Subtitle language" onclick="event.stopPropagation()" onchange="setInspectorSubLang(this.value)"></select>
+          <input type="checkbox" id="chkIncludeSubtitles" class="switch" onchange="toggleSubtitlesSelection(this.checked)">
+        </label>
       </div>
       <p id="inspectorQualityNote" class="sheet__note hidden"></p>
 
@@ -407,6 +476,39 @@
           <span id="btnConfirmDownloadText">Download</span>
         </button>
         <button onclick="closeInspector()" class="btn btn--ghost" style="width:100%;margin-top:4px">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PLAYLIST & BATCH SHEET -->
+  <div id="playlistModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="playlistModalTitle">
+    <div class="modal__scrim" onclick="closePlaylistModal()"></div>
+    <div id="playlistSheet" class="sheet">
+      <div class="grabber" data-drag-dismiss="playlistSheet"></div>
+      <div class="sheet__head">
+        <span id="playlistModalBadge" class="chip chip--on">Playlist</span>
+        <button onclick="closePlaylistModal()" class="btn btn--icon btn--ghost" aria-label="Close playlist">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <h2 id="playlistModalTitle" class="sheet__title">Playlist</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px">
+        <p id="playlistModalMeta" class="mono" style="margin:0;font-size:10px;color:var(--ti)">0 of 0 loaded</p>
+        <button type="button" id="btnPlaylistToggleAll" onclick="togglePlaylistSelectAll()" class="btn btn--sm btn--ghost" style="padding:0 8px;min-height:28px;font-size:10px">None</button>
+      </div>
+      <input id="playlistSearchInput" type="search" class="pl-search" placeholder="Filter videos…" aria-label="Filter playlist" oninput="setPlaylistSearch(this.value)">
+      <div id="playlistItemsList" class="pl-list"></div>
+      <button type="button" id="btnPlaylistLoadMore" onclick="loadMorePlaylistItems()" class="btn hidden" style="width:100%;margin-top:10px">Load more</button>
+      <div class="action-bar" style="display:grid;gap:8px">
+        <div id="playlistQualityStrip" class="pl-qstrip" role="group" aria-label="Batch quality"></div>
+        <div id="playlistSubsRow" class="pl-subrow hidden">
+          <span class="pl-subrow__label">Include captions <span class="pl-subrow__fmt">(.srt/.vtt)</span></span>
+          <div style="display:flex;align-items:center;gap:8px;flex:0 0 auto">
+            <select id="playlistSubLang" class="sub-select hidden" aria-label="Playlist subtitle language" onchange="playlistState.subLang=this.value"></select>
+            <input type="checkbox" id="chkPlaylistSubs" class="switch" onchange="playlistState.subtitles=this.checked">
+          </div>
+        </div>
+        <button type="button" id="btnPlaylistGrabAll" onclick="grabAllPlaylist()" class="btn btn--primary" style="margin-top:0">Grab selected</button>
       </div>
     </div>
   </div>
@@ -433,7 +535,7 @@
           <p class="srow__title">Downloading update…</p>
           <span id="updateProgressPercent" class="srow__value srow__value--lime">0%</span>
         </div>
-        <div class="bar live"><div id="updateProgressBar" style="width:0%"></div></div>
+        <div class="bar live"><div id="updateProgressBar" style="transform:scaleX(0)"></div></div>
         <div class="mono" style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:9.5px;color:var(--ti)">
           <span id="updateProgressRatio">0 MB / 0 MB</span>
           <span id="updateProgressSpeed" style="color:var(--lime)">--</span>
@@ -507,7 +609,7 @@
       </div>
       <h2 id="shieldConfirmTitle" class="sheet__title">Turn off Anti-repost shield?</h2>
       <p class="sheet__note" style="font-size:12px;color:var(--ti);margin-top:8px;line-height:1.5">
-        Downloaded videos will not be made unique and will retain the exact platform file hash. Re-uploading raw files to TikTok, Reels, or Shorts may be flagged as reposts or duplicates.
+        Downloaded videos will keep the exact original container and file SHA-256 hash instead of being remuxed or given a unique container hash. Visual pixels and audio are never altered either way, and platform duplicate-detection effects are untested.
       </p>
       <div class="action-bar" style="margin-top:16px">
         <button onclick="closeShieldConfirmModal()" class="btn btn--primary" style="margin-bottom:6px">
@@ -516,6 +618,36 @@
         <button onclick="confirmDisableShield()" class="btn btn--ghost" style="color:var(--bad, #ff4d4f);width:100%">
           Turn Off
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SAVED ITEM & SHIELD RECEIPT SHEET -->
+  <div id="historyDetailModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="historyDetailTitle">
+    <div class="modal__scrim" onclick="closeHistoryDetailModal()"></div>
+    <div id="historyDetailSheet" class="sheet">
+      <div class="grabber" data-drag-dismiss="historyDetailSheet"></div>
+      <div class="sheet__head">
+        <span id="historyDetailBadge" class="chip chip--on">Saved</span>
+        <button onclick="closeHistoryDetailModal()" class="btn btn--icon btn--ghost" aria-label="Close receipt">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <h2 id="historyDetailTitle" class="sheet__title">Saved video</h2>
+      <p id="historyDetailSub" class="mono" style="margin:4px 0 0;font-size:10px;color:var(--ti)"></p>
+      <div id="historyDetailReceipt" class="receipt-box"></div>
+      <div id="historyDetailActions" style="display:grid;gap:8px;margin-top:16px">
+        <div id="historyMediaActions" style="display:flex;gap:8px">
+          <button id="btnHistoryOpen" onclick="openHistoryMedia()" class="btn btn--primary" style="flex:1;margin-top:0">Open / Play</button>
+          <button id="btnHistoryShare" onclick="shareHistoryMedia()" class="btn" style="flex:0 0 auto;min-width:92px">Share</button>
+        </div>
+        <button id="btnHistorySubtitles" onclick="openHistorySubtitles()" class="btn hidden" style="margin-top:0">Open Captions (.srt/.vtt)</button>
+        <button id="btnHistoryRetry" onclick="retryHistoryItem()" class="btn btn--primary hidden" style="margin-top:0">Retry from 0%</button>
+        <div style="display:flex;gap:8px">
+          <button id="btnHistoryCopyLink" onclick="copyHistoryLink()" class="btn" style="flex:1">Copy link</button>
+          <button id="btnHistoryDelete" onclick="deleteHistoryItem()" class="btn btn--ghost" style="color:var(--bad);flex:0 0 auto">Delete</button>
+          <button onclick="closeHistoryDetailModal()" class="btn btn--ghost" style="flex:1">Close</button>
+        </div>
       </div>
     </div>
   </div>
@@ -533,15 +665,25 @@
     const inspectCache = new Map(); // url -> { ts, info } — same link re-opens instantly for 5 min
     const INSPECT_TTL_MS = 5 * 60 * 1000;
     let toastActionFn = null;
+    let toastTimer = null;
     let installedVersion = '';
     let installedVersionCode = 0;
     let latestPendingDownloadUrl = '';
+    let isDownloadingUpdate = false;
     let updateListenerAttached = false;
+    let progressListenerAttached = false;
+    let inspectReqSeq = 0;
     let lastFailedUrl = '';
     let lastFailedFormat = 'best';
     let currentRawError = '';
+    let lastDetectedUrlKey = '';
+    let activeHistoryItem = null;
+    let clearHistoryUndoTimer = null;
+    let pendingClearedSnapshot = null;
 
     const activeJobs = new Map();
+    const cancelledJobIds = new Set();
+    const settledErrorJobIds = new Set();
     // v3.1.1 (defect N4): background DowniDrop grabs, mirrored from native via getDropJobs().
     // Keyed by the native job id ("drop…"); rendered with a "bg_" key prefix.
     const bgJobs = new Map();
@@ -552,6 +694,42 @@
     // v3.1.1 (defect N9): bytes of headless DowniDrop grabs, read from the service's own ledger.
     // They usually finish with no WebView alive, so the app would otherwise never count them.
     let dropBytes = 0;
+
+    // Stage 3 / v3.11.0 Milestone 1: Queue bounds mirrored from DowniEnginePlugin (MAX_ACTIVE=3, MAX_QUEUED=6).
+    const MAX_ACTIVE_JOBS = 3;
+    const MAX_QUEUED_JOBS = 6;
+    const MAX_TOTAL_JOBS = MAX_ACTIVE_JOBS + MAX_QUEUED_JOBS;
+    let includeSubtitles = false;
+    let selectedSubLang = 'en';
+    let historyFilter = 'all';
+    let historySearch = '';
+    let deviceCaps = { availBytes: 0, maxAvcEncodeHeight: 0 };
+    let batchPasteQuality = 'best';
+    const playlistState = {
+      mode: 'playlist', // 'playlist' | 'batch'
+      url: '',
+      title: '',
+      items: [],
+      selectedUrls: new Set(),
+      search: '',
+      quality: 'best',
+      availableFormats: null,
+      subtitles: false,
+      subLang: 'en',
+      availableSubLangs: [],
+      totalCount: 0,
+      hasMore: false,
+      nextOffset: 0,
+      loading: false
+    };
+    const batchState = {
+      id: '',
+      title: '',
+      total: 0,
+      done: 0,
+      failed: 0,
+      pending: []
+    };
 
                             
     function getEngine() { return window.Capacitor?.Plugins?.DowniEngine || null; }
@@ -571,11 +749,52 @@
     function storeDel(key) {
       try { localStorage.removeItem('downi_' + key); localStorage.removeItem('omni_' + key); } catch (e) {}
     }
-    // v3.1.1: one-time sweep of keys that no longer have any reader — the light theme was
-    // hard-deleted (owner ruling 2026-09-24), so a leftover preference would be dead weight.
+    // Single fixed Electric Lime brand on OLED dark (D-002 frozen fonts, D-004).
+    // The old accent picker is gone; clear any legacy cyan/amber override so a
+    // returning user cannot keep a stale non-brand accent.
+    function clearLegacyAccent() {
+      try { document.documentElement.removeAttribute('data-accent'); } catch (e) {}
+      try { storeDel('accent_palette'); } catch (e) {}
+    }
+    clearLegacyAccent();
     try { localStorage.removeItem('downi_theme'); localStorage.removeItem('omni_theme'); } catch (e) {}
     function triggerHaptic(style) {
-      try { window.Capacitor?.Plugins?.Haptics?.impact?.({ style: (style || 'light').toUpperCase() }); } catch (e) {}
+      const s = String(style || 'light').toLowerCase();
+      try {
+        const engine = getEngine();
+        if (engine?.hapticTick) {
+          Promise.resolve(engine.hapticTick({ style: s })).catch(() => {});
+          return;
+        }
+        window.Capacitor?.Plugins?.Haptics?.impact?.({ style: (s === 'error' ? 'HEAVY' : s).toUpperCase() });
+      } catch (e) {}
+    }
+
+    function openModalEl(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('is-closing', 'hidden');
+    }
+
+    function closeModalEl(id) {
+      const el = document.getElementById(id);
+      if (!el || el.classList.contains('hidden')) return;
+      if (id === 'updateModal' && isDownloadingUpdate) {
+        showToast('Update in progress', 'Tap Cancel update download to stop first.', 'info');
+        return;
+      }
+      if (calmMotion()) {
+        el.classList.remove('is-closing');
+        el.classList.add('hidden');
+        return;
+      }
+      el.classList.add('is-closing');
+      setTimeout(() => {
+        if (el.classList.contains('is-closing')) {
+          el.classList.remove('is-closing');
+          el.classList.add('hidden');
+        }
+      }, 145);
     }
 
     // ================= Notification tap + permission honesty (v3.1.1 N6/N7) =================
@@ -607,16 +826,30 @@
     async function fixNotificationHint() {
       const engine = getEngine();
       try { await engine?.requestNotificationPermission?.(); } catch (e) {}
+      try {
+        const res = await engine?.notificationStatus?.();
+        if (res && res.enabled) {
+          // Opted in — drop the "Not now" decline so nothing blocks future prompts.
+          try { storeDel('notif_hint_dismissed'); } catch (e) {}
+        } else if (engine?.openAppSettings) {
+          await engine.openAppSettings({ target: 'notifications' });
+        }
+      } catch (e) {}
       checkNotificationHint();
     }
 
     // ================= Navigation =================
     function switchTab(tab) {
       triggerHaptic('light');
+      const prevTab = currentTab;
       currentTab = tab;
       try { window.scrollTo(0, 0); } catch (e) {}
+      const order = { grab: 0, queue: 1, settings: 2 };
       const view = { grab: 'viewGrab', queue: 'viewQueue', settings: 'viewSettings' }[tab];
       const nav = { grab: 'navGrab', queue: 'navQueue', settings: 'navSettings' }[tab];
+      const prevIdx = Object.prototype.hasOwnProperty.call(order, prevTab) ? order[prevTab] : 0;
+      const nextIdx = Object.prototype.hasOwnProperty.call(order, tab) ? order[tab] : 0;
+      const dir = nextIdx - prevIdx;
       // Every view and every nav item carries its own state, so the ones we are
       // leaving have to be cleared here - nothing else does it. (The Vault's
       // removal took these two loops with it; a browser run caught that in
@@ -630,11 +863,15 @@
       const el = document.getElementById(view);
       if (el) {
         el.classList.remove('hidden');
-        el.classList.remove('fade-in');
+        el.classList.remove('fade-in', 'slide-left', 'slide-right');
         void el.offsetWidth; // restart animation
-        el.classList.add('fade-in');
+        el.classList.add(dir > 0 ? 'slide-right' : (dir < 0 ? 'slide-left' : 'fade-in'));
       }
       document.getElementById(nav)?.classList.add('on');
+      const pill = document.getElementById('dockPill');
+      if (pill && pill.style) {
+        pill.style.transform = `translateX(calc(${nextIdx} * (100% + 4px)))`;
+      }
 
       if (tab === 'queue') renderQueueTab();
       if (tab === 'grab') renderJobCards();
@@ -673,9 +910,11 @@
       if (line) { line.classList.remove('run'); void line.offsetWidth; line.classList.add('run'); }
       // One ring only: the brand pulse in confettiBurst() is the success ring,
       // and it lands on the same mark the toast covers.
-      setTimeout(hideToast, 3500);
+      if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+      toastTimer = setTimeout(hideToast, 3500);
     }
     function hideToast() {
+      if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
       const toast = document.getElementById('appToast');
       toast.classList.remove('is-visible');
     }
@@ -725,6 +964,13 @@
     }
 
     // ================= Clipboard =================
+    function setClipboardBannerVisible(visible) {
+      const slot = document.getElementById('clipboardSlot');
+      const banner = document.getElementById('clipboardBanner');
+      if (banner) banner.classList.toggle('hidden', !visible);
+      if (slot) slot.classList.toggle('is-open', !!visible);
+    }
+
     async function checkClipboard() {
       if (storeGet('clipboard_detect') === '0') return;
       let text = "";
@@ -737,12 +983,11 @@
         }
       } catch (e) { return; }
 
-      const banner = document.getElementById('clipboardBanner');
       const clean = extractUrl(text || "");
       if (!clean) {
         // Nothing on the clipboard: the banner has nothing to offer, so it goes.
         detectedClipboardUrl = '';
-        banner?.classList.add('hidden');
+        setClipboardBannerVisible(false);
         return;
       }
       // THE BANNER STAYS for as long as the link is on the clipboard. It does
@@ -752,8 +997,9 @@
       // is right there, with the title and the lane already read).
       const changed = clean !== detectedClipboardUrl;
       detectedClipboardUrl = clean;
-      banner?.classList.remove('hidden');
+      setClipboardBannerVisible(true);
       if (changed) {
+        triggerHaptic('light');
         const ct = document.getElementById('clipboardThumb');
         if (ct) ct.classList.add('hidden');
         updateClipboardBanner(null, clean);
@@ -798,9 +1044,187 @@
       }
     }
 
+    function detectUrlKind(url) {
+      const clean = extractUrl(url || '');
+      if (!clean) return null;
+      let host = '';
+      try { host = new URL(clean).hostname.toLowerCase(); } catch (e) { return null; }
+      if (host.includes('youtube.com') || host.includes('youtu.be')) {
+        const isPl = clean.includes('list=') && !clean.includes('watch?v=') && !host.includes('youtu.be');
+        return isPl
+          ? { key: 'playlist', chip: 'youtube', label: 'YouTube Playlist', cta: 'Inspect Playlist', hint: 'Batch playlist supported' }
+          : { key: 'youtube', chip: 'youtube', label: 'YouTube', cta: 'Inspect YouTube Video', hint: 'Qualities + audio lanes' };
+      }
+      if (host.includes('tiktok.com')) {
+        return { key: 'tiktok', chip: 'tiktok', label: 'TikTok', cta: 'Inspect TikTok', hint: 'Watermark-free + MP3' };
+      }
+      if (host.includes('instagram.com') || host.includes('instagr.am')) {
+        return { key: 'instagram', chip: 'instagram', label: 'Instagram', cta: 'Inspect Instagram', hint: 'Reels & posts' };
+      }
+      if (host.includes('twitter.com') || host.includes('x.com') || host === 't.co') {
+        return { key: 'x', chip: '', label: 'X / Twitter', cta: 'Inspect X Video', hint: 'Videos & clips' };
+      }
+      if (host.includes('reddit.com') || host.includes('redd.it')) {
+        return { key: 'reddit', chip: '', label: 'Reddit', cta: 'Inspect Reddit Video', hint: 'Dash video + audio' };
+      }
+      if (host.includes('facebook.com') || host.includes('fb.watch') || host.includes('fb.com')) {
+        return { key: 'facebook', chip: '', label: 'Facebook', cta: 'Inspect Facebook Video', hint: 'Reels & watch' };
+      }
+      if (host.includes('soundcloud.com')) {
+        return { key: 'soundcloud', chip: '', label: 'SoundCloud', cta: 'Inspect SoundCloud', hint: 'Audio track' };
+      }
+      if (host.includes('vimeo.com')) {
+        return { key: 'vimeo', chip: '', label: 'Vimeo', cta: 'Inspect Vimeo Video', hint: 'HD streams' };
+      }
+      if (host.includes('pinterest.') || host.includes('pin.it')) {
+        return { key: 'pinterest', chip: '', label: 'Pinterest', cta: 'Inspect Pinterest', hint: 'Video pins' };
+      }
+      return { key: 'other', chip: '', label: host.replace(/^www\./, ''), cta: 'Inspect Link', hint: 'Direct video link' };
+    }
+
     function handleUrlInputChanged() {
-      const val = document.getElementById('inputManualUrl').value.trim();
-      document.getElementById('btnClearInput').style.display = val ? 'inline-flex' : 'none';
+      const inp = document.getElementById('inputManualUrl');
+      const val = (inp ? inp.value : '').trim();
+      if (inp && inp.tagName === 'TEXTAREA') {
+        inp.style.height = 'auto';
+        if (val.includes('\n')) {
+          inp.style.height = Math.min(108, Math.max(52, inp.scrollHeight)) + 'px';
+        }
+      }
+      const clr = document.getElementById('btnClearInput');
+      if (clr) clr.style.display = val ? 'inline-flex' : 'none';
+
+      const allUrls = extractAllUrls(val);
+      const isBatch = allUrls.length >= 2;
+      const batchBar = document.getElementById('batchPasteBar');
+      const batchBadge = document.getElementById('batchCountBadge');
+      if (batchBar) batchBar.classList.toggle('hidden', !isBatch);
+      if (batchBadge && isBatch) batchBadge.textContent = allUrls.length + ' links';
+      if (isBatch) paintBatchPasteQuality();
+
+        const info = isBatch ? null : detectUrlKind(val);
+      const row = document.getElementById('urlDetectRow');
+      const badge = document.getElementById('urlPlatformBadge');
+      const hint = document.getElementById('urlDetectHint');
+      const btnText = document.getElementById('btnInspectText');
+      if (row) row.classList.toggle('hidden', !info);
+      if (info) {
+        if (badge) badge.textContent = info.label;
+        if (hint) hint.textContent = info.hint;
+        if (btnText && btnText.textContent !== 'Scanning…') btnText.textContent = info.cta;
+        if (lastDetectedUrlKey !== info.key) {
+          lastDetectedUrlKey = info.key;
+          triggerHaptic('light');
+        }
+      } else {
+        lastDetectedUrlKey = '';
+        if (btnText && btnText.textContent !== 'Scanning…') btnText.textContent = isBatch ? 'Inspect first link' : 'Grab this link';
+      }
+      document.querySelectorAll('.platforms .chip[data-plat]').forEach(ch => {
+        ch.classList.toggle('on', !!(info && ch.dataset.plat === info.chip));
+      });
+    }
+    function resetInspectButtonText() {
+      const btn = document.getElementById('btnInspectText');
+      if (btn) btn.innerText = 'Grab this link';
+      handleUrlInputChanged();
+    }
+    function setBatchPasteQuality(q) {
+      triggerHaptic('light');
+      batchPasteQuality = q || 'best';
+      storeSet('batch_paste_q', batchPasteQuality);
+      paintBatchPasteQuality();
+    }
+    function paintBatchPasteQuality() {
+      const cur = batchPasteQuality || storeGet('batch_paste_q') || oneTapQualityId();
+      batchPasteQuality = cur;
+      document.querySelectorAll('#batchQualityPills .batch-q-pill').forEach(b => {
+        b.classList.toggle('on', b.getAttribute('data-bq') === cur);
+      });
+    }
+    function batchItemSeedFromUrl(u) {
+      const cached = inspectCache.get(u)?.info;
+      let host = 'Media link';
+      try { host = new URL(u).hostname.replace(/^www\./, ''); } catch (e) {}
+      let thumb = (cached && cached.thumbnail) || '';
+      if (!thumb) {
+        const ytId = extractYoutubeId(u);
+        if (ytId) thumb = `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`;
+      }
+      return {
+        url: u,
+        title: (cached && cached.title) || host,
+        duration: Number(cached && cached.duration) || 0,
+        thumbnail: thumb
+      };
+    }
+    function openPastedBatchModal() {
+      const inp = document.getElementById('inputManualUrl');
+      const urls = extractAllUrls((inp && inp.value) || '');
+      if (urls.length < 2) { handleInspectButtonClick(); return; }
+      triggerHaptic('light');
+      resetPlaylistState('');
+      playlistState.mode = 'batch';
+      playlistState.title = `Pasted links (${urls.length})`;
+      playlistState.items = urls.map(batchItemSeedFromUrl);
+      playlistState.selectedUrls = new Set(urls);
+      playlistState.totalCount = urls.length;
+      playlistState.quality = batchPasteQuality || oneTapQualityId();
+      renderPlaylistModal();
+      openModalEl('playlistModal');
+      hydrateBatchPreviewItems(urls.slice(0, 8));
+    }
+    function hydrateBatchPreviewItems(urls) {
+      const engine = getEngine();
+      if (!engine?.extract || !Array.isArray(urls)) return;
+      urls.forEach((u, idx) => {
+        if (inspectCache.has(u)) return;
+        setTimeout(() => {
+          if (document.getElementById('playlistModal')?.classList.contains('hidden')) return;
+          engine.extract({ url: u }).then(info => {
+            if (!info) return;
+            inspectCache.set(u, { ts: Date.now(), info });
+            const item = playlistState.items.find(x => x && x.url === u);
+            if (item && playlistState.mode === 'batch') {
+              if (info.title) item.title = info.title;
+              if (info.thumbnail) item.thumbnail = info.thumbnail;
+              if (info.duration) item.duration = Number(info.duration) || 0;
+              if (!document.getElementById('playlistModal')?.classList.contains('hidden')) renderPlaylistModal();
+            }
+          }).catch(() => {});
+        }, idx * 180);
+      });
+    }
+    function grabBatchUrls() {
+      const inp = document.getElementById('inputManualUrl');
+      const urls = extractAllUrls((inp && inp.value) || '');
+      if (urls.length < 2) {
+        handleInspectButtonClick();
+        return;
+      }
+      const lane = batchPasteQuality || oneTapQualityId();
+      const items = urls.map(u => {
+        const seed = batchItemSeedFromUrl(u);
+        return {
+          url: seed.url,
+          title: seed.title,
+          thumbnail: seed.thumbnail,
+          duration: seed.duration,
+          formatId: lane,
+          fallbacks: (lane === 'audio' || lane === 'audio_opus') ? null : oneTapLadder(u).slice(1),
+          subtitles: false,
+          subLang: '',
+          source: 'batch'
+        };
+      });
+      const added = enqueueBatchItems(items, { batchTitle: `Pasted batch (${urls.length})`, replace: false });
+      triggerHaptic('medium');
+      clearManualUrl();
+      if (added > 0) {
+        showToast('Batch queued', `Grabbing ${added} link${added === 1 ? '' : 's'} (up to ${MAX_ACTIVE_JOBS} at once).`, 'success');
+      } else {
+        showToast('Already queued', 'All pasted links are already active or in queue.', 'info');
+      }
     }
     function clearManualUrl() {
       document.getElementById('inputManualUrl').value = '';
@@ -836,14 +1260,17 @@
     }
 
     function oneTapLadder(url) {
-      // The lane the user chose first, then every other real lane the
-      // prefetch resolved - the fallback order, not a guess.
+      // The lane the user chose first (only when the inspected platform actually
+      // offers it), then every other real lane the prefetch resolved - the
+      // fallback order, not a guess. Audio-only lanes (audio / audio_opus) never
+      // enter a video fallback ladder.
       const want = oneTapQualityId();
       const info = (inspectCache.get(url) || {}).info;
       const ids = (info && Array.isArray(info.formats))
-        ? info.formats.filter(f => f && f.id && f.id !== 'audio').map(f => f.id)
+        ? info.formats.filter(f => f && f.id && f.id !== 'audio' && f.id !== 'audio_opus').map(f => f.id)
         : [];
-      const ladder = [want];
+      const ladder = [];
+      if (!ids.length || ids.indexOf(want) >= 0) ladder.push(want);
       ids.forEach(id => { if (ladder.indexOf(id) === -1) ladder.push(id); });
       if (ladder.indexOf('best') === -1) ladder.push('best');
       return ladder;
@@ -865,10 +1292,10 @@
       }
       if (labelEl) labelEl.textContent = seen ? 'Already grabbed' : 'Link detected';
       if (titleEl) titleEl.textContent = info.title || url;
-      const want = oneTapQualityId();
+      const effectiveLane = (oneTapLadder(url)[0]) || 'best';
       const bits = [];
       // The lane, not its paragraph: the banner has one line to work with.
-      bits.push(oneTapQualityName(want));
+      bits.push(oneTapQualityName(effectiveLane));
       if (info.platform) bits.push(String(info.platform).toUpperCase());
       if (info.duration) bits.push(formatDuration(info.duration));
       if (metaEl) metaEl.textContent = bits.join(' · ');
@@ -876,6 +1303,7 @@
     }
 
     function setOneTapQuality(id) {
+      triggerHaptic('light');
       try { storeSet('one_tap_quality', id); } catch (e) {}
       paintOneTapQuality();
       const url = detectedClipboardUrl;
@@ -904,9 +1332,9 @@
       const info = (inspectCache.get(url) || {}).info;
       const ladder = oneTapLadder(url);
       const first = ladder[0];
+      if (!enqueueDownload(url, first, { fallbacks: ladder.slice(1), title: (info && info.title) || '', quiet: true })) return;
       triggerHaptic('medium');
       showToast('Grabbing ' + oneTapQualityName(first), (info && info.title) || 'your link', 'success');
-      initiateDownload(url, first, { fallbacks: ladder.slice(1), title: (info && info.title) || '' });
     }
 
     // ================= Inspect =================
@@ -929,14 +1357,73 @@
       handleInspectAndOpenModal(clean);
     }
 
+    function extractYoutubeId(u) {
+      if (!u) return '';
+      try {
+        const parsed = new URL(u);
+        const h = parsed.hostname.toLowerCase();
+        if (h === 'youtu.be' || h.endsWith('.youtu.be')) {
+          return parsed.pathname.replace(/^\/+/, '').split('/')[0] || '';
+        }
+        if (h.includes('youtube.com')) {
+          const v = parsed.searchParams.get('v');
+          if (v) return v;
+          const m = parsed.pathname.match(/\/(?:shorts|live|embed)\/([A-Za-z0-9_-]{6,20})/);
+          if (m) return m[1];
+        }
+      } catch (e) {}
+      return '';
+    }
+
+    function openPlaylistLoading(url) {
+      resetPlaylistState(url);
+      playlistState.mode = 'playlist';
+      playlistState.title = 'Loading playlist…';
+      playlistState.loading = true;
+      renderPlaylistModal();
+      openModalEl('playlistModal');
+    }
+
     async function handleInspectAndOpenModal(url) {
+      document.getElementById('inputManualUrl')?.blur();
+      const reqId = ++inspectReqSeq;
       currentInspectedUrl = url;
       const btn = document.getElementById('btnInspectText');
       if (btn) btn.innerText = 'Scanning…';
 
+      const engine = getEngine();
+      const isPurePlaylist = url.includes('list=') && !url.includes('watch?v=') && !url.includes('youtu.be');
+
+      if (isPurePlaylist && engine?.playlistInspect) {
+        openPlaylistLoading(url);
+        try {
+          const plRes = await engine.playlistInspect({ url: url, offset: 0, limit: 50 });
+          if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
+          if (plRes && Array.isArray(plRes.items) && plRes.items.length > 0) {
+            playlistState.loading = false;
+            applyPlaylistPage(plRes, false);
+            playlistState.quality = defaultPlaylistQualityFor('youtube');
+            renderPlaylistModal();
+            probePlaylistFirstFormats(plRes.items[0].url, url);
+            resetInspectButtonText();
+            return;
+          }
+        } catch (e) {
+          if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
+          closePlaylistModal();
+          currentRawError = (e && e.message) ? e.message : '';
+          const voice = ERROR_VOICES[(e && e.code) || 'unknown'] || ERROR_VOICES.unknown;
+          showToast('Playlist inspect failed', voice.short, 'error');
+          if (btn) { btn.innerText = 'Grab this link'; handleUrlInputChanged(); }
+          return;
+        }
+        closePlaylistModal();
+      }
+
       document.getElementById('inspectorThumbSkel').style.display = '';
       const thumbReset = document.getElementById('inspectorThumbnail');
       thumbReset.classList.remove('loaded');
+      thumbReset.classList.add('is-fallback');
       thumbReset.src = 'assets/brand/downi-symbol.svg';
       document.getElementById('inspectorTitle').innerText = 'Scanning qualities…';
       const durationReset = document.getElementById('inspectorDuration');
@@ -945,23 +1432,35 @@
       document.getElementById('inspectorQualitiesList').innerHTML = '<div class="skel h-14"></div><div class="skel h-14"></div><div class="skel h-14"></div>';
       const noteReset = document.getElementById('inspectorQualityNote');
       if (noteReset) { noteReset.innerText = ''; noteReset.classList.add('hidden'); }
-      document.getElementById('inspectorModal')?.classList.remove('hidden');
+      const subWrapReset = document.getElementById('inspectorSubtitlesWrap');
+      if (subWrapReset) subWrapReset.classList.add('hidden');
+      const subLangReset = document.getElementById('inspectorSubLang');
+      if (subLangReset) { subLangReset.innerHTML = ''; subLangReset.classList.add('hidden'); }
+      const subChkReset = document.getElementById('chkIncludeSubtitles');
+      if (subChkReset) subChkReset.checked = false;
+      includeSubtitles = false;
+      const plBannerReset = document.getElementById('playlistBanner');
+      if (plBannerReset) plBannerReset.classList.add('hidden');
+      openModalEl('inspectorModal');
 
       try {
-        const engine = getEngine();
         const cached = inspectCache.get(url);
         if (cached && (Date.now() - cached.ts) < INSPECT_TTL_MS) {
+          if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
           fillInspector(cached.info);
           return;
         }
         if (engine?.extract) {
           const info = await engine.extract({ url: url });
           inspectCache.set(url, { ts: Date.now(), info });
-          fillInspector(info);
+          if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
+          fillInspector(info, null);
         } else {
+          if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
           renderInspectorQualities([]);
         }
       } catch (e) {
+        if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
         closeInspector();
         // The truth layer: the engine's reason and its cause come back with the
         // rejection, so say what happened instead of "could not be inspected".
@@ -969,14 +1468,15 @@
         const voice = ERROR_VOICES[(e && e.code) || 'unknown'] || ERROR_VOICES.unknown;
         showToast('Inspect failed', voice.short, 'error');
       } finally {
-        if (btn) btn.innerText = 'Grab this link';
+        if (reqId === inspectReqSeq) resetInspectButtonText();
       }
     }
 
-    function fillInspector(info) {
+    function fillInspector(info, preloadedPl) {
       currentInspectorPlatform = info.platform || 'other';
       const thumb = document.getElementById('inspectorThumbnail');
       thumb.classList.remove('loaded');
+      thumb.classList.toggle('is-fallback', !info.thumbnail);
       thumb.src = info.thumbnail || 'assets/brand/downi-symbol.svg';
       document.getElementById('inspectorTitle').innerText = info.title || 'Video';
       document.getElementById('inspectorUploader').innerText = info.uploader || (info.platform || 'Media').toUpperCase();
@@ -992,48 +1492,641 @@
         }
       }
       document.getElementById('inspectorPlatformBadge').innerText = (info.platform || 'video').toUpperCase();
+      window._currentInspectorNote = info.note || '';
       renderInspectorQualities(info.formats);
+      renderInspectorSubtitles(info);
       const noteEl = document.getElementById('inspectorQualityNote');
-      if (noteEl) {
+      if (noteEl && !noteEl.innerText.startsWith('⚠️')) {
         noteEl.innerText = info.note ? 'ℹ️ ' + info.note : '';
         noteEl.classList.toggle('hidden', !info.note);
       }
-      checkPlaylist(currentInspectedUrl, currentInspectorPlatform);
+      checkPlaylist(currentInspectedUrl, currentInspectorPlatform, preloadedPl);
     }
 
-    // ---- Playlist batch mode ----
-    let playlistPending = [];
-    let playlistTotal = 0;
+    function isCleanSubLangCode(code) {
+      return /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,4})?$/.test(String(code || '').trim());
+    }
 
-    function checkPlaylist(url, platform) {
-      const banner = document.getElementById('playlistBanner');
-      if (!banner) return;
-      banner.classList.add('hidden');
-      playlistPending = [];
-      playlistTotal = 0;
-      if (platform !== 'youtube' || !/list=/.test(url)) return;
+    function pickPreferredSubLang(langs, savedLang) {
+      const list = Array.isArray(langs) ? langs.filter(Boolean).map(String) : [];
+      const saved = String(savedLang || '').trim();
+      if (saved && !isCleanSubLangCode(saved)) {
+        storeDel('sub_lang');
+      }
+      if (saved && isCleanSubLangCode(saved) && (!list.length || list.indexOf(saved) >= 0)) return saved;
+      return list.find(l => l.toLowerCase() === 'en')
+        || list.find(l => l.toLowerCase().startsWith('en-') && isCleanSubLangCode(l))
+        || list.find(l => isCleanSubLangCode(l))
+        || list[0]
+        || 'en';
+    }
+
+    function renderInspectorSubtitles(info) {
+      const wrap = document.getElementById('inspectorSubtitlesWrap');
+      const sel = document.getElementById('inspectorSubLang');
+      const chk = document.getElementById('chkIncludeSubtitles');
+      const hasSubs = !!(info && (info.hasSubtitles ?? info.has_subtitles));
+      const rawLangs = (info && (info.subtitleLangs ?? info.subtitle_langs)) || [];
+      const langs = Array.isArray(rawLangs) ? rawLangs.filter(Boolean).map(String) : [];
+
+      if (!wrap || !hasSubs || langs.length === 0) {
+        if (wrap) wrap.classList.add('hidden');
+        if (sel) { sel.innerHTML = ''; sel.classList.add('hidden'); }
+        if (chk) chk.checked = false;
+        includeSubtitles = false;
+        return;
+      }
+
+      const chosen = pickPreferredSubLang(langs, storeGet('sub_lang'));
+      selectedSubLang = chosen;
+      if (sel) {
+        // Only clean BCP-47 codes are selectable; hide hashed YouTube caption keys.
+        const cleanLangs = langs.filter(isCleanSubLangCode);
+        const opts = cleanLangs.length ? cleanLangs : [chosen];
+        sel.innerHTML = opts.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l.toUpperCase())}</option>`).join('');
+        sel.value = opts.indexOf(chosen) >= 0 ? chosen : opts[0];
+        selectedSubLang = sel.value;
+        sel.classList.remove('hidden');
+      }
+      // Subtitles stay opt-in per video session so one caption download never leaks onto unrelated videos.
+      includeSubtitles = false;
+      storeDel('include_subs');
+      if (chk) chk.checked = false;
+      wrap.classList.remove('hidden');
+    }
+
+    function toggleSubtitlesSelection(enabled) {
+      triggerHaptic('light');
+      includeSubtitles = !!enabled;
+    }
+
+    function setInspectorSubLang(lang) {
+      selectedSubLang = String(lang || 'en');
+      storeSet('sub_lang', selectedSubLang);
+    }
+
+    // ---- Unified Persistent Batch Queue (Playlists + Multi-link Paste) ----
+    function saveBatchQueue() {
+      try {
+        if (batchState.pending.length > 0) {
+          storeSet('batch_v1', JSON.stringify(batchState));
+        } else {
+          storeDel('batch_v1');
+        }
+        storeDel('pl_pending');
+        storeDel('pl_total');
+      } catch (e) {}
+    }
+
+    function normalizeBatchEntry(x, defaultTitle) {
+      if (!x || !x.url) return null;
+      return {
+        id: String(x.id || ('bi_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6))),
+        url: String(x.url),
+        title: String(x.title || ''),
+        thumbnail: String(x.thumbnail || ''),
+        duration: Number(x.duration) || 0,
+        formatId: String(x.formatId || 'best'),
+        fallbacks: Array.isArray(x.fallbacks) ? x.fallbacks.slice() : null,
+        subtitles: !!x.subtitles,
+        subLang: String(x.subLang || ''),
+        batchId: String(x.batchId || ''),
+        batchTitle: String(x.batchTitle || defaultTitle || 'Batch'),
+        source: String(x.source || 'playlist')
+      };
+    }
+
+    function restoreBatchQueue() {
+      try {
+        const raw = storeGet('batch_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.pending)) {
+            batchState.id = String(parsed.id || '');
+            batchState.title = String(parsed.title || 'Batch');
+            batchState.total = Number(parsed.total) || parsed.pending.length;
+            batchState.done = Number(parsed.done) || 0;
+            batchState.failed = Number(parsed.failed) || 0;
+            batchState.pending = parsed.pending.map(x => normalizeBatchEntry(x, batchState.title)).filter(Boolean);
+            if (batchState.pending.length > 0) {
+              pumpBatchQueue();
+              renderJobCards();
+              return;
+            }
+          }
+        }
+        // One-time migration from v3.10 pl_pending storage key
+        const legacyRaw = storeGet('pl_pending');
+        if (!legacyRaw) return;
+        const legacyArr = JSON.parse(legacyRaw);
+        if (Array.isArray(legacyArr) && legacyArr.length > 0) {
+          const legacyTotal = parseInt(storeGet('pl_total') || '0', 10) || legacyArr.length;
+          batchState.id = 'batch_' + Date.now();
+          batchState.title = 'Playlist batch';
+          batchState.total = legacyTotal;
+          batchState.done = Math.max(0, legacyTotal - legacyArr.length);
+          batchState.failed = 0;
+          batchState.pending = legacyArr.map(x => normalizeBatchEntry(x, 'Playlist batch')).filter(Boolean);
+          saveBatchQueue();
+          if (batchState.pending.length > 0) {
+            pumpBatchQueue();
+            renderJobCards();
+          }
+        }
+      } catch (e) {}
+    }
+
+    function enqueueBatchItems(items, opts) {
+      const o = opts || {};
+      const clean = (Array.isArray(items) ? items : []).map(x => normalizeBatchEntry(x, o.batchTitle)).filter(Boolean);
+      if (!clean.length) return 0;
+
+      const existingKeys = new Set();
+      batchState.pending.forEach(p => existingKeys.add(p.url + '|' + p.formatId));
+      activeJobs.forEach(j => { if (j && j.url) existingKeys.add(j.url + '|' + (j.formatId || 'best')); });
+
+      const fresh = [];
+      for (const item of clean) {
+        const k = item.url + '|' + item.formatId;
+        if (existingKeys.has(k)) continue;
+        existingKeys.add(k);
+        fresh.push(item);
+      }
+      if (!fresh.length) return 0;
+      // Capture the count BEFORE pumpBatchQueue() shifts items off batchState.pending.
+      // When the queue was empty, `batchState.pending = fresh` aliases the same array,
+      // so shifting it empties `fresh` too and a late `fresh.length` would report 0.
+      const addedCount = fresh.length;
+
+      if (o.replace || batchState.pending.length === 0) {
+        batchState.id = 'batch_' + Date.now();
+        batchState.title = o.batchTitle || fresh[0].batchTitle || 'Batch';
+        batchState.total = fresh.length;
+        batchState.done = 0;
+        batchState.failed = 0;
+        batchState.pending = fresh;
+      } else {
+        batchState.total += fresh.length;
+        if (o.batchTitle && batchState.title !== o.batchTitle) {
+          batchState.title = `Batch (${batchState.total} items)`;
+        }
+        batchState.pending.push(...fresh);
+      }
+      fresh.forEach(f => { f.batchId = batchState.id; });
+      saveBatchQueue();
+      pumpBatchQueue();
+      renderJobCards();
+      updateQueueBadge();
+      return addedCount;
+    }
+
+    function clearBatchQueue() {
+      batchState.id = '';
+      batchState.title = '';
+      batchState.total = 0;
+      batchState.done = 0;
+      batchState.failed = 0;
+      batchState.pending = [];
+      saveBatchQueue();
+    }
+
+    function cancelRemainingBatch() {
+      const n = batchState.pending.length;
+      if (n <= 0) return;
+      clearBatchQueue();
+      renderJobCards();
+      updateQueueBadge();
+      showToast('Remaining cleared', `Stopped ${n} queued item${n === 1 ? '' : 's'}.`, 'info');
+    }
+
+    function defaultPlaylistQualityFor(platform) {
+      try {
+        const saved = storeGet('q_' + (platform || 'youtube'));
+        if (saved && !isAudioFormatId(saved)) return saved;
+      } catch (e) {}
+      return '1080';
+    }
+
+    function resetPlaylistState(url) {
+      playlistState.mode = 'playlist';
+      playlistState.url = url || '';
+      playlistState.title = 'Playlist';
+      playlistState.items = [];
+      playlistState.selectedUrls = new Set();
+      playlistState.search = '';
+      playlistState.quality = defaultPlaylistQualityFor('youtube');
+      playlistState.availableFormats = null;
+      playlistState.subtitles = false;
+      playlistState.subLang = pickPreferredSubLang([], storeGet('sub_lang'));
+      playlistState.availableSubLangs = [];
+      playlistState.totalCount = 0;
+      playlistState.hasMore = false;
+      playlistState.nextOffset = 0;
+      playlistState.loading = false;
+      largeGrabKey = ''; largeGrabAt = 0;
+      const sInp = document.getElementById('playlistSearchInput');
+      if (sInp) sInp.value = '';
+      window._playlistItems = [];
+    }
+
+    function applyPlaylistPage(res, append) {
+      const items = Array.isArray(res && res.items) ? res.items : [];
+      if (append) {
+        const seen = new Set(playlistState.items.map(i => i && i.url).filter(Boolean));
+        items.forEach(i => {
+          if (i && i.url && !seen.has(i.url)) {
+            seen.add(i.url);
+            playlistState.items.push(i);
+            // Selection stays opt-in — never auto-select newly loaded items.
+          }
+        });
+      } else {
+        playlistState.items = items.slice();
+        // Playlists open with nothing selected; the user picks tracks deliberately
+        // (or taps "Select all"). Batch mode pre-selects its own pasted links separately.
+        playlistState.selectedUrls = new Set();
+      }
+      if (res && res.title) playlistState.title = String(res.title);
+      const rawTotal = Number(res && (res.totalCount ?? res.total_count));
+      playlistState.totalCount = rawTotal > 0 ? Math.max(rawTotal, playlistState.items.length) : playlistState.items.length;
+      playlistState.hasMore = !!(res && (res.hasMore ?? res.has_more));
+      const rawNext = res && (res.nextOffset ?? res.next_offset);
+      playlistState.nextOffset = (rawNext !== undefined && rawNext !== null) ? Number(rawNext) : playlistState.items.length;
+      window._playlistItems = playlistState.items;
+    }
+
+    function probePlaylistFirstFormats(firstUrl, playlistUrl) {
       const engine = getEngine();
-      if (!engine?.playlistInspect) return;
-      engine.playlistInspect({ url: url }).then(res => {
-        if (!res || !res.items || res.items.length < 2) return;
-        playlistTotal = res.items.length;
-        const count = document.getElementById('playlistCount');
-        if (count) count.innerText = String(res.items.length);
-        banner.classList.remove('hidden');
-        window._playlistItems = res.items;
+      if (!firstUrl || !engine?.extract) return;
+      engine.extract({ url: firstUrl }).then(info => {
+        if (!info || playlistState.url !== playlistUrl) return;
+        inspectCache.set(firstUrl, { ts: Date.now(), info });
+        if (Array.isArray(info.formats) && info.formats.length) {
+          playlistState.availableFormats = info.formats;
+        }
+        const langs = (info.subtitleLangs ?? info.subtitle_langs) || [];
+        if (Array.isArray(langs) && langs.length) {
+          // Only expose clean BCP-47 codes (en, en-US, pt-BR…) in the picker.
+          // Hashed YouTube caption keys (zh-HK-2epwjfpmbia) are not selectable languages.
+          playlistState.availableSubLangs = langs.filter(Boolean).map(String).filter(isCleanSubLangCode);
+          playlistState.subLang = pickPreferredSubLang(playlistState.availableSubLangs, storeGet('sub_lang'));
+        }
+        if (!document.getElementById('playlistModal')?.classList.contains('hidden')) {
+          renderPlaylistFooterControls();
+        }
       }).catch(() => {});
     }
 
+    function playlistQualityOptions() {
+      if (Array.isArray(playlistState.availableFormats) && playlistState.availableFormats.length) {
+        return playlistState.availableFormats.map(f => ({
+          id: String(f.id),
+          label: f.id === 'audio' ? 'Audio M4A' : (f.id === 'audio_opus' ? 'Opus' : (f.badge || f.id))
+        }));
+      }
+      return [
+        { id: 'best', label: 'Best' },
+        { id: '1440', label: '1440p' },
+        { id: '1080', label: '1080p' },
+        { id: '720', label: '720p' },
+        { id: '480', label: '480p' },
+        { id: 'audio', label: 'Audio M4A' }
+      ];
+    }
+
+    function setPlaylistQuality(fmtId) {
+      triggerHaptic('light');
+      playlistState.quality = String(fmtId || 'best');
+      if (!isAudioFormatId(playlistState.quality) && playlistState.mode === 'playlist') {
+        try { storeSet('q_youtube', playlistState.quality); } catch (e) {}
+      }
+      renderPlaylistFooterControls();
+    }
+
+    function setPlaylistSearch(q) {
+      playlistState.search = String(q || '').trim().toLowerCase();
+      renderPlaylistModal();
+    }
+
+    function renderPlaylistFooterControls() {
+      const strip = document.getElementById('playlistQualityStrip');
+      const opts = playlistQualityOptions();
+      if (!opts.some(o => o.id === playlistState.quality)) {
+        playlistState.quality = opts[0]?.id || 'best';
+      }
+      if (strip) {
+        strip.innerHTML = opts.map(o =>
+          `<button type="button" class="pl-qchip${o.id === playlistState.quality ? ' on' : ''}" onclick="setPlaylistQuality('${escapeHtml(o.id)}')">${escapeHtml(o.label)}</button>`
+        ).join('');
+      }
+      const subRow = document.getElementById('playlistSubsRow');
+      const subChk = document.getElementById('chkPlaylistSubs');
+      const subSel = document.getElementById('playlistSubLang');
+      if (subRow) {
+        const showSubs = playlistState.mode === 'playlist' && !isAudioFormatId(playlistState.quality);
+        subRow.classList.toggle('hidden', !showSubs);
+        if (subChk) subChk.checked = !!playlistState.subtitles;
+        if (subSel) {
+          const langs = (playlistState.availableSubLangs.length ? playlistState.availableSubLangs : ['en']).filter(isCleanSubLangCode);
+          const safeLangs = langs.length ? langs : ['en'];
+          const wants = isCleanSubLangCode(playlistState.subLang) ? playlistState.subLang : 'en';
+          const safeSub = safeLangs.indexOf(wants) >= 0 ? wants : (safeLangs.indexOf('en') >= 0 ? 'en' : safeLangs[0]);
+          subSel.innerHTML = safeLangs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l.toUpperCase())}</option>`).join('');
+          subSel.value = safeSub;
+          subSel.classList.toggle('hidden', safeLangs.length <= 1 && !playlistState.availableSubLangs.length);
+        }
+      }
+      updatePlaylistSelectionButtons();
+    }
+
+    function historySavedKeySet() {
+      const keys = new Set();
+      downloadsHistory.forEach(h => {
+        if (!h || h.failed || !h.url) return;
+        keys.add(h.url);
+        const yid = extractYoutubeId(h.url);
+        if (yid) keys.add('yt:' + yid);
+      });
+      return keys;
+    }
+
+    function renderPlaylistBanner() {
+      const banner = document.getElementById('playlistBanner');
+      const countEl = document.getElementById('playlistCount');
+      const suffixEl = document.getElementById('playlistTotalSuffix');
+      const moreBtn = document.getElementById('btnBannerPlaylistMore');
+      if (!banner) return;
+      if (playlistState.items.length < 2) {
+        banner.classList.add('hidden');
+        return;
+      }
+      if (countEl) countEl.innerText = String(playlistState.items.length);
+      if (suffixEl) {
+        suffixEl.innerText = playlistState.totalCount > playlistState.items.length
+          ? (' of ' + playlistState.totalCount)
+          : '';
+      }
+      if (moreBtn) {
+        moreBtn.classList.toggle('hidden', !playlistState.hasMore);
+        moreBtn.disabled = playlistState.loading;
+        moreBtn.innerText = playlistState.loading ? 'Loading…' : 'Load more items';
+      }
+      banner.classList.remove('hidden');
+    }
+
+    function selectedPlaylistItems() {
+      return playlistState.items.filter(i => i && i.url && playlistState.selectedUrls.has(i.url));
+    }
+
+    function togglePlaylistItem(url, checked) {
+      if (!url) return;
+      if (checked) playlistState.selectedUrls.add(url);
+      else playlistState.selectedUrls.delete(url);
+      updatePlaylistSelectionButtons();
+    }
+
+    function togglePlaylistSelectAll() {
+      const visible = filteredPlaylistEntries();
+      const allUrls = visible.map(({ item }) => item && item.url).filter(Boolean);
+      const allSelected = allUrls.length > 0 && allUrls.every(u => playlistState.selectedUrls.has(u));
+      if (allSelected) allUrls.forEach(u => playlistState.selectedUrls.delete(u));
+      else allUrls.forEach(u => playlistState.selectedUrls.add(u));
+      renderPlaylistModal();
+    }
+
+    function filteredPlaylistEntries() {
+      const q = playlistState.search || '';
+      const out = [];
+      playlistState.items.forEach((item, idx) => {
+        if (!item) return;
+        if (q) {
+          const hay = ((item.title || '') + ' ' + (item.url || '')).toLowerCase();
+          if (!hay.includes(q)) return;
+        }
+        out.push({ item, idx });
+      });
+      return out;
+    }
+
+    function updatePlaylistSelectionButtons() {
+      const selCount = selectedPlaylistItems().length;
+      const grabBtn = document.getElementById('btnPlaylistGrabAll');
+      const toggleBtn = document.getElementById('btnPlaylistToggleAll');
+      const visible = filteredPlaylistEntries();
+      const qLabel = (playlistQualityOptions().find(o => o.id === playlistState.quality)?.label) || playlistState.quality;
+      if (grabBtn) {
+        if (playlistState.loading && !playlistState.items.length) {
+          grabBtn.textContent = 'Loading list…';
+          grabBtn.disabled = true;
+        } else {
+          grabBtn.textContent = selCount > 0 ? `Grab ${selCount} selected · ${qLabel}` : 'Select at least 1 video';
+          grabBtn.disabled = selCount === 0;
+        }
+      }
+      if (toggleBtn) {
+        const visSelected = visible.length > 0 && visible.every(({ item }) => item.url && playlistState.selectedUrls.has(item.url));
+        toggleBtn.textContent = visSelected ? 'None' : 'Select all';
+      }
+    }
+
+    function renderPlaylistModal() {
+      const badgeEl = document.getElementById('playlistModalBadge');
+      const titleEl = document.getElementById('playlistModalTitle');
+      const metaEl = document.getElementById('playlistModalMeta');
+      const listEl = document.getElementById('playlistItemsList');
+      const moreBtn = document.getElementById('btnPlaylistLoadMore');
+      if (badgeEl) badgeEl.innerText = playlistState.mode === 'batch' ? 'Batch queue' : 'Playlist';
+      if (titleEl) titleEl.innerText = playlistState.title || 'Playlist';
+      if (metaEl) {
+        if (playlistState.loading && !playlistState.items.length) {
+          metaEl.innerText = 'Fetching tracks…';
+        } else {
+          const sel = selectedPlaylistItems();
+          const selDur = sel.reduce((sum, i) => sum + (Number(i.duration) || 0), 0);
+          const durNote = selDur > 0 ? ` · ${formatDuration(selDur)} selected` : '';
+          metaEl.innerText = `${playlistState.items.length} of ${playlistState.totalCount || playlistState.items.length} loaded${durNote}`;
+        }
+      }
+      if (listEl) {
+        if (playlistState.loading && !playlistState.items.length) {
+          listEl.innerHTML = '<div class="skel h-14" style="margin:8px"></div><div class="skel h-14" style="margin:8px"></div><div class="skel h-14" style="margin:8px"></div>';
+        } else {
+          const entries = filteredPlaylistEntries();
+          const savedKeys = historySavedKeySet();
+          if (!entries.length) {
+            listEl.innerHTML = '<div style="padding:18px;text-align:center;font-size:11px;color:var(--ti)">No videos match that filter.</div>';
+          } else {
+            listEl.innerHTML = entries.map(({ item, idx }) => {
+              const u = String(item.url || '');
+              const chk = playlistState.selectedUrls.has(u) ? ' checked' : '';
+              const dur = Number(item.duration) || 0;
+              const durHtml = dur > 0 ? `<span class="pl-item__dur">${escapeHtml(formatDuration(dur))}</span>` : '';
+              const yid = extractYoutubeId(u);
+              const isSaved = savedKeys.has(u) || (yid && savedKeys.has('yt:' + yid));
+              const savedHtml = isSaved ? '<span class="pl-item__saved">Saved</span>' : '';
+              const thumbSrc = item.thumbnail || (yid ? `https://i.ytimg.com/vi/${yid}/mqdefault.jpg` : '');
+              const thumbHtml = thumbSrc
+                ? `<span class="pl-item__thumb"><img src="${escapeHtml(thumbSrc)}" alt="" loading="lazy" onerror="this.style.display='none'"></span>`
+                : `<span class="pl-item__thumb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--mu)"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>`;
+              return `
+              <label class="pl-item" style="cursor:pointer">
+                <input type="checkbox" class="pl-item__chk"${chk} data-pl-url="${escapeHtml(u)}" onchange="togglePlaylistItem(this.dataset.plUrl, this.checked)">
+                <span class="pl-item__idx">${idx + 1}</span>
+                ${thumbHtml}
+                <div class="pl-item__main">
+                  <span class="pl-item__title">${escapeHtml(item.title || u || 'Video')}</span>
+                  ${savedHtml ? `<div class="pl-item__sub">${savedHtml}</div>` : ''}
+                </div>
+                ${durHtml}
+              </label>`;
+            }).join('');
+          }
+        }
+      }
+      if (moreBtn) {
+        moreBtn.classList.toggle('hidden', !playlistState.hasMore || playlistState.mode === 'batch');
+        moreBtn.disabled = playlistState.loading;
+        moreBtn.innerText = playlistState.loading ? 'Loading more…' : 'Load more';
+      }
+      renderPlaylistFooterControls();
+    }
+
+    function openPlaylistModal() {
+      if (!playlistState.items.length) return;
+      triggerHaptic('light');
+      playlistState.mode = 'playlist';
+      renderPlaylistModal();
+      openModalEl('playlistModal');
+    }
+
+    function closePlaylistModal() {
+      if (playlistState.loading) {
+        playlistState.loading = false;
+        inspectReqSeq++;
+        resetInspectButtonText();
+      }
+      closeModalEl('playlistModal');
+    }
+
+    function checkPlaylist(url, platform, preloadedRes) {
+      const banner = document.getElementById('playlistBanner');
+      if (!banner) return;
+      banner.classList.add('hidden');
+      resetPlaylistState(url);
+      if (platform !== 'youtube' || !/list=/.test(url)) return;
+      if (preloadedRes && Array.isArray(preloadedRes.items) && preloadedRes.items.length >= 2) {
+        applyPlaylistPage(preloadedRes, false);
+        renderPlaylistBanner();
+        return;
+      }
+      const engine = getEngine();
+      if (!engine?.playlistInspect) return;
+      const targetUrl = url;
+      playlistState.loading = true;
+      engine.playlistInspect({ url: targetUrl, offset: 0, limit: 50 }).then(res => {
+        playlistState.loading = false;
+        if (playlistState.url !== targetUrl) return;
+        if (!res || !Array.isArray(res.items) || res.items.length < 2) return;
+        applyPlaylistPage(res, false);
+        renderPlaylistBanner();
+        if (!document.getElementById('playlistModal')?.classList.contains('hidden')) renderPlaylistModal();
+      }).catch(() => {
+        playlistState.loading = false;
+      });
+    }
+
+    async function loadMorePlaylistItems() {
+      if (playlistState.loading || !playlistState.hasMore || !playlistState.url) return;
+      const engine = getEngine();
+      if (!engine?.playlistInspect) return;
+      const targetUrl = playlistState.url;
+      playlistState.loading = true;
+      renderPlaylistBanner();
+      renderPlaylistModal();
+      try {
+        const res = await engine.playlistInspect({ url: targetUrl, offset: playlistState.nextOffset, limit: 50 });
+        playlistState.loading = false;
+        if (playlistState.url !== targetUrl) return;
+        if (res && Array.isArray(res.items)) {
+          applyPlaylistPage(res, true);
+        }
+      } catch (e) {
+        playlistState.loading = false;
+        showToast('Playlist load failed', (e && e.message) || 'Could not load more items.', 'error');
+      }
+      renderPlaylistBanner();
+      renderPlaylistModal();
+    }
+
+    let lastPlaylistGrabAt = 0;
+    // Large batches need a deliberate second tap: queueing 50+ items on mobile
+    // data from one stray tap is a footgun. Key tracks the exact pending selection.
+    let largeGrabKey = '';
+    let largeGrabAt = 0;
+    const LARGE_GRAB_THRESHOLD = 10;
+
     function grabAllPlaylist() {
-      const items = window._playlistItems || [];
-      if (!items.length) return;
-      // Honor the quality the user actually picked in the Inspector (B10)
-      const quality = selectedInspectorQuality || 'best';
-      playlistPending = items.slice(1).map(i => ({ url: i.url, formatId: quality }));
-      playlistTotal = items.length;
+      const now = Date.now();
+      if (now - lastPlaylistGrabAt < 450) return;
+      lastPlaylistGrabAt = now;
+      const modalOpen = !document.getElementById('playlistModal')?.classList.contains('hidden');
+      const chosen = modalOpen ? selectedPlaylistItems() : (playlistState.items.length ? selectedPlaylistItems() : (window._playlistItems || []));
+      if (!chosen.length) {
+        showToast('Nothing selected', 'Pick at least one video first.', 'info');
+        return;
+      }
+      triggerHaptic('medium');
+      const quality = modalOpen ? (playlistState.quality || 'best') : (selectedInspectorQuality || 'best');
+      const subsEnabled = modalOpen ? (!!playlistState.subtitles && !isAudioFormatId(quality)) : (!!includeSubtitles && !isAudioFormatId(quality));
+      const subLang = modalOpen ? (playlistState.subLang || 'en') : (selectedSubLang || 'en');
+      const items = chosen.map(i => ({
+        url: i.url,
+        title: i.title || '',
+        thumbnail: i.thumbnail || '',
+        duration: Number(i.duration) || 0,
+        formatId: quality,
+        subtitles: subsEnabled,
+        subLang: subLang,
+        source: playlistState.mode === 'batch' ? 'batch' : 'playlist'
+      }));
+
+      // Large selections need a deliberate confirmation tap. The first tap arms it
+      // (button relabels + a summary toast); a second tap on the same selection
+      // within 6 s actually queues. Any selection change makes the key mismatch.
+      if (items.length >= LARGE_GRAB_THRESHOLD) {
+        const grabKey = items.map(i => i.url + '|' + i.formatId).sort().join('\u0001');
+        const nowGrab = Date.now();
+        if (grabKey === largeGrabKey && nowGrab - largeGrabAt < 6000) {
+          largeGrabKey = ''; largeGrabAt = 0; // confirmed — fall through to queue
+        } else {
+          largeGrabKey = grabKey;
+          largeGrabAt = nowGrab;
+          const grabBtn = document.getElementById('btnPlaylistGrabAll');
+          if (grabBtn) grabBtn.innerText = `Confirm — grab ${items.length} items`;
+          const cap = subsEnabled ? ` · ${subLang.toUpperCase()} captions` : '';
+          showToast('Confirm large batch',
+            `About to queue ${items.length} items · ${quality.toUpperCase()}${cap}. Tap Grab again to confirm — up to ${MAX_ACTIVE_JOBS} run at once.`,
+            'info');
+          return;
+        }
+      } else {
+        largeGrabKey = ''; largeGrabAt = 0;
+      }
+
+      const added = enqueueBatchItems(items, { batchTitle: playlistState.title || 'Batch', replace: false });
+      const skipped = Math.max(0, items.length - added);
+      if (playlistState.mode === 'batch') clearManualUrl();
+      closePlaylistModal();
       closeInspector();
-      showToast('Playlist batch', 'Grabbing ' + items.length + ' videos — they queue one by one.', 'success');
-      initiateDownload(items[0].url, quality);
+      if (added > 0) {
+        const prefix = playlistState.mode === 'batch' ? 'Batch queued' : 'Playlist queued';
+        const note = skipped > 0
+          ? `Added ${added} new (${skipped} already queued).`
+          : `Grabbing ${added} item${added === 1 ? '' : 's'} (up to ${MAX_ACTIVE_JOBS} at once).`;
+        showToast(prefix, note, 'success');
+      } else {
+        showToast('Already queued', 'Selected items are already active or in queue.', 'info');
+      }
     }
 
     // Background scan when a clipboard link is detected — thumbnail preview on
@@ -1049,8 +2142,8 @@
         updateClipboardBanner(info, url);
       }).catch(err => {
         if (detectedClipboardUrl === url) {
-          const metaEl = document.getElementById('clipboardMeta');
-          if (metaEl) metaEl.textContent = 'Tap to inspect link';
+          const metaEl = document.getElementById('clipboardUrlText');
+          if (metaEl) metaEl.textContent = 'Tap Inspect to check link';
         }
       });
     }
@@ -1116,53 +2209,86 @@
       }
     }
 
+    function isAudioFormatId(fmtId) {
+      const k = String(fmtId || '').toLowerCase();
+      return ['audio', 'audio_opus', 'mp3', 'm4a', 'opus', 'webm'].indexOf(k) >= 0;
+    }
+
+    function updateInspectorStorageHint(fmt) {
+      const noteEl = document.getElementById('inspectorQualityNote');
+      if (!noteEl) return;
+      const baseNote = window._currentInspectorNote || '';
+      const sz = Number((fmt && fmt.filesize) || 0);
+      const avail = Number(deviceCaps && deviceCaps.availBytes) || 0;
+      const lowSpace = sz > 0 && avail > 0 && sz > avail * 0.9;
+      if (lowSpace) {
+        noteEl.innerText = `⚠️ Low storage: needs ~${formatBytesJs(sz)}, only ${formatBytesJs(avail)} free.`;
+        noteEl.classList.remove('hidden');
+      } else {
+        noteEl.innerText = baseNote ? 'ℹ️ ' + baseNote : '';
+        noteEl.classList.toggle('hidden', !baseNote);
+      }
+    }
+
     function renderInspectorQualities(formats) {
       if (!formats || formats.length === 0) {
         formats = [
-          { id: 'best', label: 'Best Available Quality', ext: 'mp4', badge: 'Best' }
+          { id: 'best', label: 'Best Available Quality', ext: 'mp4', badge: 'Best', filesize: 0 }
         ];
       }
-      // Remember the user's last quality choice per platform.
-      let preferred = formats[0].id;
+      window._currentInspectorFormats = formats;
+      // Remember the user's last video quality choice per platform (never lock future videos to audio-only).
+      let preferred = String(formats[0].id || 'best');
       try {
         const saved = storeGet('q_' + (currentInspectorPlatform || 'any'));
-        if (saved && formats.some(f => f.id === saved)) preferred = saved;
+        if (saved && !isAudioFormatId(saved) && formats.some(f => String(f.id) === saved)) preferred = saved;
       } catch (e) {}
       selectedInspectorQuality = preferred;
-      updateConfirmButtonText((formats.find(f => f.id === preferred) || formats[0]).label);
+      const pickedFmt = formats.find(f => String(f.id) === preferred) || formats[0];
+      updateConfirmButtonText(pickedFmt.label);
+      updateInspectorStorageHint(pickedFmt);
 
-      document.getElementById('inspectorQualitiesList').innerHTML = formats.map((fmt, idx) => `
-        <div id="quality_card_${fmt.id}" onclick="selectInspectorQuality('${fmt.id}', '${fmt.label}')"
-          class="quality-card${fmt.id === selectedInspectorQuality ? ' on' : ''}">
+      document.getElementById('inspectorQualitiesList').innerHTML = formats.map((fmt) => {
+        const id = String(fmt.id || 'best');
+        const label = String(fmt.label || 'Standard');
+        const badge = String(fmt.badge || 'HD');
+        const ext = String(fmt.ext || 'mp4');
+        const sizeBytes = Number(fmt.filesize || 0);
+        const destHint = (id === 'audio_opus' && ext.toLowerCase() === 'webm') ? ' · Movies' : '';
+        const extLine = sizeBytes > 0 ? `${ext} · ${formatBytesJs(sizeBytes)}${destHint}` : `${ext}${destHint}`;
+        const on = id === selectedInspectorQuality;
+        return `
+        <div data-fmt-id="${escapeHtml(id)}" data-fmt-label="${escapeHtml(label)}"
+          onclick="selectInspectorQuality(this.dataset.fmtId, this.dataset.fmtLabel)"
+          class="quality-card${on ? ' on' : ''}">
           <div class="quality-card__left">
-            <span class="qx${fmt.id === selectedInspectorQuality ? ' qx-on' : ''}">${fmt.badge || 'HD'}</span>
+            <span class="qx${on ? ' qx-on' : ''}">${escapeHtml(badge)}</span>
             <div style="min-width:0">
-              <p class="quality-card__label">${fmt.label}</p>
-              <p class="quality-card__ext">${fmt.ext || 'mp4'}</p>
+              <p class="quality-card__label">${escapeHtml(label)}</p>
+              <p class="quality-card__ext">${escapeHtml(extLine)}</p>
             </div>
           </div>
           <span class="quality-card__pick" aria-hidden="true"></span>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
     }
 
     function selectInspectorQuality(fmtId, fmtLabel) {
       triggerHaptic('light');
       selectedInspectorQuality = fmtId;
-      try { storeSet('q_' + (currentInspectorPlatform || 'any'), fmtId); } catch (e) {}
-      syncDropSettings(); // keep the headless DowniDrop path's quality memory in sync
-      document.querySelectorAll('.quality-card').forEach(el => {
-        el.classList.remove('on');
-        const badge = el.querySelector('.qx');
-        if (badge) badge.className = 'qx';
-      });
-      const active = document.getElementById('quality_card_' + fmtId);
-      if (active) {
-        active.classList.add('on');
-        const badge = active.querySelector('.qx');
-        if (badge) badge.className = 'qx qx-on';
+      if (!isAudioFormatId(fmtId)) {
+        try { storeSet('q_' + (currentInspectorPlatform || 'any'), fmtId); } catch (e) {}
+        syncDropSettings(); // keep the headless DowniDrop path's video quality memory in sync
       }
+      document.querySelectorAll('#inspectorQualitiesList .quality-card').forEach(el => {
+        const match = el.dataset.fmtId === fmtId;
+        el.classList.toggle('on', match);
+        const badge = el.querySelector('.qx');
+        if (badge) badge.className = match ? 'qx qx-on' : 'qx';
+      });
+      const pickedFmt = (window._currentInspectorFormats || []).find(f => String(f.id) === String(fmtId));
       updateConfirmButtonText(fmtLabel);
+      updateInspectorStorageHint(pickedFmt);
     }
 
     function updateConfirmButtonText(label) {
@@ -1170,42 +2296,259 @@
       if (el) el.innerText = 'Download ' + label;
     }
     function proceedSelectedQualityDownload() {
+      triggerHaptic('medium');
+      const cached = inspectCache.get(currentInspectedUrl)?.info;
+      const titleText = (cached && cached.title) || document.getElementById('inspectorTitle')?.innerText || '';
+      const thumbUrl = (cached && cached.thumbnail) || '';
+      if (!enqueueDownload(currentInspectedUrl, selectedInspectorQuality, {
+        title: titleText === 'Scanning qualities…' ? '' : titleText,
+        thumbnail: thumbUrl,
+        duration: Number(cached && cached.duration) || 0,
+        subtitles: includeSubtitles,
+        subLang: selectedSubLang
+      })) return;
       closeInspector();
-      initiateDownload(currentInspectedUrl, selectedInspectorQuality);
     }
     function closeInspector() {
-      document.getElementById('inspectorModal')?.classList.add('hidden');
+      inspectReqSeq++;
+      closeModalEl('inspectorModal');
     }
 
     // ================= Parallel download pipeline =================
+    function createJobRecord(overrides) {
+      return Object.assign({
+        tempId: '',
+        jobId: '',
+        label: 'Media',
+        title: '',
+        thumbnail: '',
+        duration: 0,
+        batchId: '',
+        url: '',
+        formatId: 'best',
+        fallbacks: null,
+        background: false,
+        status: 'Connecting.',
+        percent: 0,
+        shownPct: 0,
+        size: '',
+        sizeText: '',
+        speed: '',
+        speedText: '',
+        eta: '',
+        etaText: '',
+        speedEma: 0,
+        speedSeries: [],
+        startedAt: Date.now(),
+        endedAt: 0,
+        done: false,
+        failed: false,
+        reason: '',
+        cause: '',
+        mediaUri: '',
+        mimeType: '',
+        subtitleCount: 0,
+        subtitleUri: '',
+        shieldMode: '',
+        shieldReason: '',
+        shieldInputSha: '',
+        shieldSha: '',
+        completedHandled: false
+      }, overrides || {});
+    }
+
+    function ensureProgressListener(engine) {
+      if (!engine || progressListenerAttached || !engine.addListener) return;
+      engine.addListener('onProgress', (p) => handleProgressEvent(p));
+      progressListenerAttached = true;
+    }
+
+    function finalizeForegroundSuccess(payload) {
+      const tempId = payload.tempId;
+      const jobId = payload.jobId || tempId;
+      const existing = activeJobs.get(jobId) || activeJobs.get(tempId);
+      if (existing && existing.completedHandled) return;
+
+      const job = existing || createJobRecord({
+        label: payload.title || 'Media',
+        url: payload.url || '',
+        formatId: payload.formatId || 'best'
+      });
+      job.completedHandled = true;
+      job.done = true;
+      job.failed = false;
+      job.percent = 100;
+      job.shownPct = 100;
+      job.status = 'Saved ✓';
+      job.endedAt = job.endedAt || Date.now();
+      if (payload.sizeText) job.sizeText = payload.sizeText;
+      if (payload.totalBytes && !job.bytesCounted) {
+        grabbedBytes += Number(payload.totalBytes) || 0;
+        job.bytesCounted = true;
+      }
+      if (payload.totalBytes) job.fileBytes = Number(payload.totalBytes) || 0;
+      if (payload.mediaUri) job.mediaUri = payload.mediaUri;
+      if (payload.mimeType) job.mimeType = payload.mimeType;
+      if (payload.subtitleCount !== undefined) job.subtitleCount = Number(payload.subtitleCount) || 0;
+      if (payload.subtitleUri) job.subtitleUri = payload.subtitleUri;
+      if (payload.shieldMode) job.shieldMode = payload.shieldMode;
+      if (payload.shieldReason) job.shieldReason = payload.shieldReason;
+      if (payload.shieldInputSha) job.shieldInputSha = payload.shieldInputSha;
+      if (payload.shieldSha) job.shieldSha = payload.shieldSha;
+
+      if (tempId && tempId !== jobId) activeJobs.delete(tempId);
+      activeJobs.set(jobId, job);
+
+      onJobComplete(
+        jobId,
+        payload.title || job.label || 'Video',
+        payload.destination || 'Gallery',
+        payload.url || job.url,
+        job.shieldMode,
+        job.shieldReason,
+        job.shieldInputSha,
+        job.shieldSha,
+        job.mediaUri,
+        job.mimeType,
+        job.subtitleCount,
+        job.subtitleUri,
+        {
+          thumbnail: job.thumbnail || '',
+          duration: Number(job.duration) || 0,
+          fileBytes: Number(payload.totalBytes || job.fileBytes) || 0,
+          formatId: payload.formatId || job.formatId || 'best',
+          sizeText: payload.sizeText || job.sizeText || ''
+        }
+      );
+
+      setTimeout(() => {
+        if (activeJobs.get(jobId) === job) {
+          activeJobs.delete(jobId);
+          renderJobCards();
+          updateQueueBadge();
+          if (mergedJobs().size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden');
+        }
+      }, 1400);
+    }
+
+    function adoptForegroundJob(jobId, url) {
+      let job = activeJobs.get(jobId);
+      if (job) return job;
+      // Match the waiting card to THIS job by URL first (parallel grabs can
+      // resolve out of order); only fall back to FIFO when no URL matches (B5).
+      const pendings = [...activeJobs.entries()].filter(([k]) => k.startsWith('pending_'));
+      const byUrl = url ? pendings.find(([, v]) => v.url === url) : null;
+      const pendingKey = byUrl ? byUrl[0] : (pendings.length ? pendings[0][0] : null);
+      if (!pendingKey) return null;
+      job = activeJobs.get(pendingKey);
+      activeJobs.delete(pendingKey);
+      job.tempId = job.tempId || pendingKey;
+      job.jobId = jobId;
+      activeJobs.set(jobId, job);
+      return job;
+    }
+
+    function finalizeForegroundFailure(jobId, tempId, fallbackUrl, fallbackFormat, msg, cause, fallbacks, title) {
+      const job = (jobId && activeJobs.get(jobId)) || (tempId && activeJobs.get(tempId));
+      const resolvedJobId = jobId || (job && job.jobId) || null;
+      const resolvedTempId = tempId || (job && job.tempId) || null;
+
+      if ((resolvedJobId && settledErrorJobIds.has(resolvedJobId))
+          || (resolvedTempId && settledErrorJobIds.has(resolvedTempId))) {
+        return;
+      }
+      if (resolvedJobId) settledErrorJobIds.add(resolvedJobId);
+      if (resolvedTempId) settledErrorJobIds.add(resolvedTempId);
+
+      const jobUrl = (job && job.url) || fallbackUrl;
+      const jobFormat = (job && job.formatId) || fallbackFormat;
+      const isCancelled = cause === 'cancelled'
+        || (resolvedJobId && cancelledJobIds.has(resolvedJobId))
+        || (resolvedTempId && cancelledJobIds.has(resolvedTempId))
+        || (msg || '').toLowerCase().includes('cancel');
+
+      if (resolvedJobId) { activeJobs.delete(resolvedJobId); cancelledJobIds.delete(resolvedJobId); }
+      if (resolvedTempId) { activeJobs.delete(resolvedTempId); cancelledJobIds.delete(resolvedTempId); }
+      renderJobCards();
+
+      if (isCancelled) {
+        updateQueueBadge();
+        return;
+      }
+
+      const activeFallbacks = (fallbacks && fallbacks.length)
+        ? fallbacks
+        : (job && Array.isArray(job.fallbacks) ? job.fallbacks : null);
+      const activeTitle = title || (job && job.title) || null;
+
+      const nextFallbacks = (cause === 'format') ? (activeFallbacks || []).slice() : [];
+      if (nextFallbacks.length) {
+        const next = nextFallbacks.shift();
+        showToast('Trying ' + oneTapQualityName(next), msg, 'info');
+        initiateDownload(jobUrl, next, { fallbacks: nextFallbacks, title: activeTitle });
+        updateQueueBadge();
+        return;
+      }
+
+      onDownloadError(msg, jobUrl, jobFormat, cause, activeTitle || (job && job.label) || '');
+      updateQueueBadge();
+    }
+
+    function enqueueDownload(url, formatId, opts) {
+      if (!url) return false;
+      if (activeJobs.size >= MAX_TOTAL_JOBS) {
+        if (!(opts && opts.quiet)) {
+          showToast('Queue is full', 'Wait for a download to finish or cancel one.', 'info');
+        }
+        return false;
+      }
+      initiateDownload(url, formatId, opts);
+      return true;
+    }
+
     function initiateDownload(url, formatId, opts) {
-      // opts is optional and only the one-tap uses it: opts.fallbacks is the
-      // lane ladder if this lane fails, opts.title is the resolved title for
-      // the job card. Every other caller passes nothing and behaves exactly as
-      // it did before.
+      // opts is optional: opts.fallbacks is the lane ladder, opts.title / opts.thumbnail
+      // carry known metadata, opts.subtitles / opts.subLang request sidecar captions.
       const o = opts || {};
-      lastFailedUrl = url;
-      lastFailedFormat = formatId;
 
       const engine = getEngine();
+      const cached = inspectCache.get(url)?.info;
       let label = 'Media';
       try {
         label = new URL(url).hostname.replace('www.', '');
       } catch (e) {}
-      if (formatId === 'audio') label += ' · MP3';
-      if (o.title) label = o.title;
+      if (formatId === 'audio' || formatId === 'audio_opus') label += ' · Audio';
+      const initTitle = o.title || (cached && cached.title) || '';
+      const initThumb = o.thumbnail || (cached && cached.thumbnail) || (extractYoutubeId(url) ? `https://i.ytimg.com/vi/${extractYoutubeId(url)}/mqdefault.jpg` : '');
+      if (initTitle) label = initTitle;
 
-      const tempId = 'pending_' + Date.now();
-      activeJobs.set(tempId, {
-        label, url: url, formatId: formatId, status: 'Connecting.', percent: 0,
-        size: '', speed: '', eta: '', done: false, speedSeries: [],
-        // v3.6.1: the card's own clock. shownPct is what the user sees (it eases
-        // toward the engine's truth), speedEma is the smoothed speed, and
-        // startedAt is the honest elapsed time.
-        startedAt: Date.now(), shownPct: 0, speedEma: 0, speedText: '', etaText: '', sizeText: ''
-      });
+      const tempId = 'pending_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      activeJobs.set(tempId, createJobRecord({
+        tempId: tempId,
+        label,
+        title: initTitle,
+        thumbnail: initThumb,
+        duration: Number(o.duration ?? (cached && cached.duration)) || 0,
+        batchId: o.batchId || '',
+        url: url,
+        formatId: formatId,
+        fallbacks: Array.isArray(o.fallbacks) ? o.fallbacks.slice() : null
+      }));
       renderJobCards();
       updateQueueBadge();
+      if (!initTitle && engine?.extract) {
+        engine.extract({ url }).then(info => {
+          if (!info) return;
+          inspectCache.set(url, { ts: Date.now(), info });
+          const j = [...activeJobs.values()].find(x => x && (x.tempId === tempId || x.url === url));
+          if (j && !j.done && !j.failed) {
+            if (info.title) { j.title = info.title; j.label = info.title; }
+            if (info.thumbnail) j.thumbnail = info.thumbnail;
+            if (info.duration) j.duration = Number(info.duration) || 0;
+            paintJobNumbers();
+          }
+        }).catch(() => {});
+      }
 
       // The keyboard has no business sitting over a progress card.
       try {
@@ -1214,52 +2557,68 @@
         else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       } catch (e) {}
 
-      showToast('Grab queued', 'DOWNI is on it — track it below.', 'success');
+      if (!o.quiet) {
+        showToast('Grab queued', 'DOWNI is on it — track it below.', 'success');
+      }
 
-      // First Grab is the moment notification permission actually makes sense (B13)
-      try { engine?.requestNotificationPermission?.().catch(() => {}); } catch (e) {}
+      // Ask for notification permission on first Grab — but only if the user has
+      // not already declined via the in-app hint ("Not now"). Otherwise the OS
+      // dialog fires on top of the soft prompt, which is a jarring double ask.
+      // The in-app card's "Turn on" remains the explicit way to opt in later.
+      let declinedNotif = false;
+      try { declinedNotif = storeGet('notif_hint_dismissed') === '1'; } catch (e) {}
+      if (!declinedNotif) {
+        try { engine?.requestNotificationPermission?.().catch(() => {}); } catch (e) {}
+      }
 
       if (engine) {
-        engine.removeAllListeners?.('onProgress');
-        engine.addListener('onProgress', (p) => handleProgressEvent(p));
+        ensureProgressListener(engine);
 
-        engine.download({ url: url, formatId: formatId })
+        engine.download({
+          url: url,
+          formatId: formatId,
+          title: initTitle,
+          subtitles: !!o.subtitles,
+          subLang: o.subLang || '',
+          shieldTier: currentShieldTier()
+        })
           .then(res => {
             const jobId = (res && res.jobId) || tempId;
-            activeJobs.delete(activeJobs.has(tempId) ? tempId : jobId);
-            onJobComplete(jobId, (res && res.title) || 'Video', (res && res.destination) || 'Gallery', url, res && res.shieldMode, res && res.shieldReason);
+            finalizeForegroundSuccess({
+              tempId: tempId,
+              jobId: jobId,
+              url: url,
+              formatId: formatId,
+              title: (res && res.title) || o.title || 'Video',
+              destination: (res && res.destination) || 'Gallery',
+              sizeText: (res && res.sizeText) || '',
+              totalBytes: Number(res && res.totalBytes) || 0,
+              mediaUri: (res && res.mediaUri) || '',
+              mimeType: (res && res.mimeType) || '',
+              subtitleCount: Number(res && (res.subtitleCount ?? res.subtitle_count)) || 0,
+              subtitleUri: (res && (res.subtitleUri ?? res.subtitle_uri)) || '',
+              shieldMode: res && res.shieldMode,
+              shieldReason: res && res.shieldReason,
+              shieldInputSha: res && res.shieldInputSha,
+              shieldSha: res && res.shieldSha
+            });
           })
           .catch(err => {
-            if (activeJobs.has(tempId)) activeJobs.delete(tempId);
-            renderJobCards();
             const msg = (err && err.message) ? err.message : 'Download failed';
             const cause = (err && err.code) ? err.code : 'unknown';
-            if (!msg.toLowerCase().includes('cancel')) {
-              // A lane that failed is not the end of the road: the one-tap falls
-              // back down the real quality list instead of leaving the user with
-              // an error and a link they have to try again by hand.
-              // ONLY a format failure can be fixed by another quality. A blocked
-              // request, a rate limit or a dead network fail the same way in
-              // every lane, so we stop instead of burning the whole list.
-              const fallbacks = (cause === 'format') ? (o.fallbacks || []).slice() : [];
-              if (fallbacks.length) {
-                const next = fallbacks.shift();
-                showToast('Trying ' + oneTapQualityName(next), msg, 'info');
-                initiateDownload(url, next, { fallbacks: fallbacks, title: o.title });
-                updateQueueBadge();
-                return;
-              }
-              // Cancels already toasted (with Undo) at the cancel call-site — a
-              // second generic toast here would overwrite the Undo action (B2).
-              onDownloadError(msg, url, formatId, cause);
-            }
-            updateQueueBadge();
+            const errJobId = (err && err.jobId) || null;
+            finalizeForegroundFailure(errJobId, tempId, url, formatId, msg, cause, o.fallbacks, o.title);
           });
       } else {
         setTimeout(() => {
-          activeJobs.delete(tempId);
-          renderJobCards();
-          onJobComplete(tempId, 'Sample Media', 'Phone Gallery / Movies');
+          finalizeForegroundSuccess({
+            tempId: tempId,
+            jobId: tempId,
+            url: url,
+            formatId: formatId,
+            title: o.title || 'Sample Media',
+            destination: 'Phone Gallery / Movies'
+          });
         }, 2500);
       }
     }
@@ -1267,30 +2626,34 @@
     function handleProgressEvent(p) {
       if (!p || !p.jobId) return;
       if (p.failed) {
-        const job = activeJobs.get(p.jobId);
-        activeJobs.delete(p.jobId);
-        renderJobCards();
-        updateQueueBadge();
-        onDownloadError(p.error || 'The download was interrupted.', lastFailedUrl, lastFailedFormat, p.cause || 'unknown');
+        const failedJob = adoptForegroundJob(p.jobId, p.url);
+        finalizeForegroundFailure(
+          p.jobId,
+          (failedJob && failedJob.tempId) || null,
+          p.url || '',
+          p.formatId || 'best',
+          p.error || 'The download was interrupted.',
+          p.cause || 'unknown',
+          (failedJob && failedJob.fallbacks) || null,
+          (failedJob && failedJob.title) || null
+        );
         return;
       }
-      let job = activeJobs.get(p.jobId);
-      if (!job) {
-        // Match the waiting card to THIS job by URL first (parallel grabs can
-        // resolve out of order); only fall back to FIFO when no URL matches (B5).
-        const pendings = [...activeJobs.entries()].filter(([k]) => k.startsWith('pending_'));
-        const byUrl = p.url ? pendings.find(([, v]) => v.url === p.url) : null;
-        const pendingKey = byUrl ? byUrl[0] : (pendings.length ? pendings[0][0] : null);
-        if (pendingKey) {
-          job = activeJobs.get(pendingKey);
-          activeJobs.delete(pendingKey);
-          activeJobs.set(p.jobId, job);
-        } else {
-          return;
-        }
+      const job = adoptForegroundJob(p.jobId, p.url);
+      if (!job) return;
+      if (p.title && (!job.title || job.label === job.url)) {
+        job.title = p.title;
+        job.label = p.title;
       }
+      if (p.mediaUri) job.mediaUri = p.mediaUri;
+      if (p.mimeType) job.mimeType = p.mimeType;
+      const pSubCount = p.subtitleCount ?? p.subtitle_count;
+      if (pSubCount !== undefined) job.subtitleCount = Number(pSubCount) || 0;
+      const pSubUri = p.subtitleUri ?? p.subtitle_uri;
+      if (pSubUri) job.subtitleUri = pSubUri;
       if (p.shieldMode) job.shieldMode = p.shieldMode;
       if (p.shieldReason) job.shieldReason = p.shieldReason;
+      if (p.shieldInputSha) job.shieldInputSha = p.shieldInputSha;
       if (p.shieldSha) job.shieldSha = p.shieldSha;
       if (p.queued) {
         job.status = 'In queue…';
@@ -1298,12 +2661,18 @@
         job.status = 'Saved ✓';
         job.percent = 100;
         job.done = true;
-        if (p.totalBytes) grabbedBytes += p.totalBytes;
+        job.endedAt = job.endedAt || Date.now();
+        if (p.sizeText) job.sizeText = p.sizeText;
+        else if (p.sizeFormatted) job.sizeText = bytesText(p.sizeFormatted);
+        if (p.totalBytes && !job.bytesCounted) {
+          grabbedBytes += p.totalBytes;
+          job.bytesCounted = true;
+        }
       } else {
         job.status = p.status || 'Downloading…';
         job.percent = p.percent || 0;
         job.size = p.sizeFormatted || job.size;
-        job.sizeText = bytesText(job.size);
+        job.sizeText = p.sizeText || bytesText(job.size);
         job.speed = p.speedFormatted || '';
         job.eta = p.etaFormatted || '';
         // The engine's speed is a sample, not a reading - it swings by megabytes
@@ -1319,54 +2688,94 @@
       }
       renderJobCards();
       updateQueueBadge();
-      if (p.complete) {
-        setTimeout(() => {
-          const still = [...activeJobs.entries()].find(([k, v]) => v === job);
-          if (still) { activeJobs.delete(still[0]); renderJobCards(); }
-        }, 1400);
-      }
     }
 
-    function onJobComplete(jobId, title, destination, url, shieldMode, shieldReason) {
-      triggerHaptic('medium');
+    function onJobComplete(jobId, title, destination, url, shieldMode, shieldReason, shieldInputSha, shieldSha, mediaUri, mimeType, subtitleCount, subtitleUri, extra) {
+      triggerHaptic('success');
       confettiBurst();
       const job = activeJobs.get(jobId);
+      const ex = extra || {};
       const sMode = shieldMode || (job && job.shieldMode) || '';
       const sReason = shieldReason || (job && job.shieldReason) || '';
-      activeJobs.delete(jobId);
-      completedCount++;
-      renderJobCards();
-      renderQueueTab();
-      updateQueueBadge();
+      const sInSha = shieldInputSha || (job && job.shieldInputSha) || '';
+      const sSha = shieldSha || (job && job.shieldSha) || '';
+      const mUri = mediaUri || (job && job.mediaUri) || '';
+      const mType = mimeType || (job && job.mimeType) || '';
+      const subCount = Number(subtitleCount !== undefined ? subtitleCount : (job && job.subtitleCount)) || 0;
+      const subUri = subtitleUri || (job && job.subtitleUri) || '';
+      const fBytes = Number(ex.fileBytes || (job && job.fileBytes)) || 0;
+      const fmtId = ex.formatId || (job && job.formatId) || '';
+      const fmtBadge = historyFormatLabel(fmtId, mType);
+      const thumbUrl = ex.thumbnail || (job && job.thumbnail) || '';
+      const dur = Number(ex.duration || (job && job.duration)) || 0;
+      const szText = ex.sizeText || (fBytes > 0 ? formatBytesJs(fBytes) : '') || (job && job.sizeText) || '';
       let toastSub = title + (destination ? ' · ' + destination : '');
+      if (subCount > 0) toastSub += ' · ' + subCount + (subCount === 1 ? ' sub' : ' subs');
       if (sMode === 'skipped') toastSub += ' (Shield skipped)';
       showToast('Saved ✓', toastSub, 'success');
       downloadsHistory.unshift({
-        id: Date.now().toString(),
+        id: Date.now().toString() + '_' + Math.random().toString(36).slice(2, 5),
         title: title,
         destination: destination,
         date: new Date().toLocaleDateString(),
         ts: Date.now(),
         // The job's own URL, not whatever happens to be in the input box (B4)
         url: url || currentInspectedUrl || document.getElementById('inputManualUrl').value.trim(),
+        thumbnail: thumbUrl,
+        duration: dur,
+        fileBytes: fBytes,
+        sizeText: szText,
+        formatBadge: fmtBadge,
+        mediaUri: mUri,
+        mimeType: mType,
+        subtitleCount: subCount,
+        subtitleUri: subUri,
         shieldMode: sMode,
-        shieldReason: sReason
+        shieldReason: sReason,
+        shieldInputSha: sInSha,
+        shieldSha: sSha
       });
+      completedCount = downloadsHistory.filter(h => !h.failed).length;
       saveHistory();
+      if (job && job.batchId && job.batchId === batchState.id) {
+        batchState.done++;
+        saveBatchQueue();
+      }
+      renderJobCards();
       renderQueueTab();
+      updateQueueBadge();
       updateLastGrabChip();
-      pumpPlaylist();
-      setTimeout(() => { if (mergedJobs().size === 0) document.getElementById('activeDownloadsWrap')?.classList.add('hidden'); }, 1200);
+      pumpBatchQueue();
     }
 
-    // Playlist batch: one failure must never kill the rest of the queue (B1) —
-    // both the success path (onJobComplete) and the error path pump the next item.
-    function pumpPlaylist() {
-      if (playlistPending.length === 0) return;
-      const next = playlistPending.shift();
-      const done = playlistTotal - playlistPending.length;
-      showToast('Playlist batch', done + ' of ' + playlistTotal + ' done — next up…', 'info');
-      setTimeout(() => initiateDownload(next.url, next.formatId), 1000);
+    // Unified batch engine: one failure never kills the rest of the queue —
+    // pumps up to MAX_ACTIVE_JOBS concurrent slots and persists remaining items.
+    function pumpBatchQueue() {
+      if (batchState.pending.length === 0) {
+        saveBatchQueue();
+        return;
+      }
+      const openSlots = Math.max(0, MAX_ACTIVE_JOBS - activeJobs.size);
+      if (openSlots <= 0) return;
+      const toLaunch = [];
+      for (let i = 0; i < openSlots && batchState.pending.length > 0; i++) {
+        toLaunch.push(batchState.pending.shift());
+      }
+      saveBatchQueue();
+      if (toLaunch.length > 0) {
+        toLaunch.forEach((next, idx) => {
+          setTimeout(() => enqueueDownload(next.url, next.formatId, {
+            quiet: true,
+            title: next.title || '',
+            thumbnail: next.thumbnail || '',
+            duration: Number(next.duration) || 0,
+            batchId: next.batchId || batchState.id,
+            fallbacks: Array.isArray(next.fallbacks) ? next.fallbacks : null,
+            subtitles: !!next.subtitles,
+            subLang: next.subLang || ''
+          }), idx * 250);
+        });
+      }
     }
 
     // ---- The truth layer: one cause, one honest sentence ------------------
@@ -1426,23 +2835,48 @@
       }
     };
 
-    function onDownloadError(errStr, url, formatId, cause) {
+    function onDownloadError(errStr, url, formatId, cause, label) {
       // Cancel UX: a user-initiated cancel is not a failure — the call-site already
       // toasted it (B2). Never pop the scary error sheet for it (this also arrives via
       // the plugin's failed-progress event on cancelDownload).
-      if ((errStr || '').toLowerCase().includes('cancel')) return;
-      triggerHaptic('heavy');
+      if (cause === 'cancelled' || (errStr || '').toLowerCase().includes('cancel')) return;
+      if (url) lastFailedUrl = url;
+      if (formatId) lastFailedFormat = formatId;
+      triggerHaptic('error');
       currentRawError = errStr;
       // The cause comes from the engine (tagged there, carried across the bridge).
       // We do NOT re-read the raw text here - that is what let the old keyword
       // buckets drift out of sync with the Java side and killed every specific
       // message we had.
       const voice = ERROR_VOICES[cause] || ERROR_VOICES.unknown;
+      const failUrl = url || '';
+      const failCause = cause || 'unknown';
+      // Deduplicate stacked identical failures for the same link & cause.
+      downloadsHistory = downloadsHistory.filter(h => !(h && h.failed && h.url === failUrl && (h.cause || 'unknown') === failCause));
+      downloadsHistory.unshift({
+        id: 'fail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+        title: label || url || 'Stopped grab',
+        destination: '',
+        date: new Date().toLocaleDateString(),
+        ts: Date.now(),
+        url: failUrl,
+        formatId: formatId || 'best',
+        failed: true,
+        cause: failCause,
+        rawError: errStr || voice.message
+      });
+      completedCount = downloadsHistory.filter(h => !h.failed).length;
+      saveHistory();
+      renderGrabRecent();
+      renderQueueTab();
+      updateQueueBadge();
       showErrorModal('Download stopped', voice.message, errStr, voice);
-      // A failed playlist item is skipped, not fatal — the batch goes on (B1).
-      if (playlistPending.length > 0) {
-        showToast('Playlist batch', 'One video failed — grabbing the next…', 'info');
-        pumpPlaylist();
+      // A failed batch item is skipped, not fatal — the queue continues cleanly.
+      if (batchState.pending.length > 0) {
+        batchState.failed++;
+        saveBatchQueue();
+        showToast('Batch queue', 'One item failed — starting next…', 'info');
+        pumpBatchQueue();
       }
     }
 
@@ -1483,16 +2917,42 @@
 
     function laneLabel(formatId) {
       if (!formatId || formatId === 'best') return 'Best available';
-      if (formatId === 'audio') return 'Audio only';
+      if (formatId === 'audio') return 'Audio (M4A)';
+      if (formatId === 'audio_opus') return 'Audio (OPUS)';
+      if (formatId === '2160') return '4K (2160p)';
       return String(formatId).toUpperCase() + 'p';
     }
 
     function elapsedLabel(job) {
       if (!job || !job.startedAt) return '-';
-      const s = Math.max(0, Math.round((Date.now() - job.startedAt) / 1000));
+      const endTs = (job.done || job.failed) && job.endedAt ? job.endedAt : Date.now();
+      const s = Math.max(0, Math.round((endTs - job.startedAt) / 1000));
       if (s < 60) return s + 's';
       const m = Math.floor(s / 60), r = s % 60;
       return m + 'm' + (r ? ' ' + r + 's' : '');
+    }
+
+    function shieldSummaryText(mode, reason, inputSha, outputSha) {
+      if (mode === 'deep') return 'Shield deep — Hardware Creator Shield';
+      if (mode === 'remux') return 'Verified remux (New MP4 container)';
+      if (mode === 'identity') {
+        if (inputSha && outputSha && inputSha !== outputSha) {
+          return 'Identity updated (Unique SHA-256)';
+        }
+        return 'Container preserved';
+      }
+      if (mode === 'skipped') return 'Skipped — ' + (reason || 'format not upload-safe');
+      return mode || '';
+    }
+
+    function shieldHistorySuffix(item) {
+      if (!item) return '';
+      const chips = [];
+      if (item.shieldMode === 'deep') chips.push('<span class="hist__pill hist__pill--lime">Deep</span>');
+      else if (item.shieldMode === 'remux' || item.shieldMode === 'identity') chips.push('<span class="hist__pill">S2</span>');
+      else if (item.shieldMode === 'skipped') chips.push('<span class="hist__pill">Orig</span>');
+      if (item.subtitleCount > 0) chips.push('<span class="hist__pill">Sub</span>');
+      return chips.length ? (' ' + chips.join(' ')) : '';
     }
 
     function jobDetailsHtml(id) {
@@ -1504,15 +2964,19 @@
         ['Lane', laneLabel(job.formatId)],
         ['Link', job.url || '-']
       ];
+      if (job.subtitleCount > 0) {
+        rows.push(['Subtitles', job.subtitleCount + (job.subtitleCount === 1 ? ' caption file saved' : ' caption files saved')]);
+      }
       if (job.shieldMode) {
-        let sTxt = '';
-        if (job.shieldMode === 'remux') sTxt = 'Verified remux (Unique MP4)';
-        else if (job.shieldMode === 'identity') sTxt = 'Safe identity (Container preserved)';
-        else if (job.shieldMode === 'skipped') sTxt = 'Skipped — ' + (job.shieldReason || 'format not upload-safe');
-        else sTxt = job.shieldMode;
-        rows.push(['Shield', sTxt]);
+        rows.push(['Shield', shieldSummaryText(job.shieldMode, job.shieldReason, job.shieldInputSha, job.shieldSha)]);
+      }
+      if (job.shieldInputSha && job.shieldSha && job.shieldInputSha !== job.shieldSha) {
+        rows.push(['SHA-256', String(job.shieldInputSha).slice(0, 8) + ' -> ' + String(job.shieldSha).slice(0, 8)]);
+      } else if (job.shieldSha) {
+        rows.push(['SHA-256', String(job.shieldSha).slice(0, 12) + '…']);
       }
       if (job.failed) {
+        if (job.cause) rows.push(['Cause', job.cause]);
         const reason = job.reason || job.size || '';
         if (reason) rows.push(['Reason', reason]);
       }
@@ -1521,12 +2985,32 @@
         '</span><span class="jdetails__v">' + escapeHtml(r[1]) + '</span></div>').join('');
     }
 
-    function toggleJobDetails(id) {
-      const box = document.getElementById('jd_' + id);
+    const JOB_PIPE_LABELS = ['Fetch', 'Merge', 'Shield', 'Save'];
+    function jobStageIndex(job) {
+      if (!job) return 0;
+      if (job.done) return 3;
+      const s = String(job.status || '').toLowerCase();
+      if (s.includes('saving') || s.includes('saved')) return 3;
+      if (s.includes('shield') || s.includes('uniquif') || s.includes('unique') || s.includes('hash')) return 2;
+      if (s.includes('merg') || s.includes('remux') || s.includes('mux') || s.includes('join') || s.includes('convert') || s.includes('audio')) return 1;
+      return 0;
+    }
+
+    function jobPipeStates(job) {
+      const idx = jobStageIndex(job);
+      return JOB_PIPE_LABELS.map((_, i) => {
+        if (job && job.done) return 'done';
+        if (job && job.failed) return i < idx ? 'done' : (i === idx ? 'failed' : 'pending');
+        return i < idx ? 'done' : (i === idx ? 'active' : 'pending');
+      });
+    }
+
+    function toggleJobDetails(id, btnEl) {
+      const card = btnEl ? btnEl.closest('[data-job]') : document.querySelector('[data-job="' + id + '"]');
+      const box = card ? card.querySelector('.jdetails') : document.getElementById('jd_' + id);
       if (!box) return;
       const hidden = box.classList.toggle('hidden');
-      const card = document.querySelector('[data-job="' + id + '"]');
-      const btn = card ? card.querySelector('.jmore') : null;
+      const btn = btnEl || (card ? card.querySelector('.jmore') : null);
       if (btn) {
         btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
         btn.textContent = hidden ? 'Details' : 'Hide';
@@ -1534,31 +3018,63 @@
       if (!hidden) box.innerHTML = jobDetailsHtml(id);
     }
 
+    function shortFmtBadge(fmtId) {
+      const f = String(fmtId || 'best').toLowerCase();
+      if (f === 'audio') return 'M4A';
+      if (f === 'audio_opus') return 'OPUS';
+      if (f === 'best') return 'BEST';
+      if (f === '2160') return '4K';
+      return /^\d+$/.test(f) ? f + 'P' : f.toUpperCase();
+    }
+
     function jobCardHtml(id, job) {
       const shown = job.shownPct !== undefined && !calmMotion() ? job.shownPct : (job.percent || 0);
-      const pct = Math.round(shown);
-      const phase = job.done ? 'Saved to your gallery' : phaseLabel(job.status);
-      const bytes = job.done ? (job.sizeText || job.size || '') : (job.sizeText || '');
+      const pct = job.done ? 100 : (job.failed ? Math.round(job.percent || 0) : Math.round(shown));
+      const barScale = job.done ? 1 : Math.max(0.02, Math.min(1, shown / 100));
+      const phase = job.done ? 'Saved to your gallery' : (job.failed ? 'Download stopped' : phaseLabel(job.status));
+      const bytes = (job.done || job.failed) ? (job.sizeText || job.size || '') : (job.sizeText || '');
+      const ringMarkup = job.done
+        ? '<span class="done-check pop"><svg viewBox="0 0 24 24" class="done-svg" aria-hidden="true"><path d="M5 13l4 4L19 7"/></svg></span>'
+        : (job.failed ? '<span class="done-check" style="background:var(--bad)">!</span>' : ringSvg(shown));
+      let statusTag = '';
+      if (job.done) {
+        statusTag = ' <span class="saved">Saved ✓</span>';
+        if (job.shieldMode) {
+          statusTag += job.shieldMode === 'skipped'
+            ? ' <span class="tag tag--shield tag--shield-skip">Shield skipped</span>'
+            : ' <span class="tag tag--shield">Shield ' + escapeHtml(job.shieldMode) + '</span>';
+        }
+      } else if (job.failed) {
+        statusTag = ' <span class="failed">Failed</span>';
+      }
+      const thumbUrl = job.thumbnail || (extractYoutubeId(job.url) ? `https://i.ytimg.com/vi/${extractYoutubeId(job.url)}/mqdefault.jpg` : '');
+      const thumbHtml = `<span class="job__thumb${thumbUrl ? '' : ' is-empty'}"><img src="${escapeHtml(thumbUrl)}" alt="" loading="lazy" onerror="this.parentElement.classList.add('is-empty')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg></span>`;
+      const fmtChip = `<span class="job__fmt">${escapeHtml(shortFmtBadge(job.formatId))}</span>`;
+      const displayTitle = job.title || job.label;
+      const pipeStates = jobPipeStates(job);
+      const pipeHtml = '<div class="jpipe" aria-hidden="true">' + JOB_PIPE_LABELS.map((lbl, i) =>
+        `<span class="jpipe__step" data-step="${i}" data-state="${pipeStates[i]}"><span class="jpipe__dot"></span><span>${lbl}</span></span>`
+      ).join('') + '</div>';
       return `
         <article class="job" data-job="${id}" data-done="${job.done ? 1 : 0}" data-failed="${job.failed ? 1 : 0}">
           <div class="job__top">
-            <span class="job__ring jring">${job.done
-              ? '<span class="done-check pop">✓</span>'
-              : ringSvg(shown)}</span>
+            ${thumbHtml}
             <div class="job__id">
-              <p class="job__label">${escapeHtml(job.label)}${job.background ? ' <span class="tag">⚡ background</span>' : ''}${job.done ? ' <span class="saved">Saved ✓</span>' : ''}</p>
+              <p class="job__label"><span class="jtitle">${escapeHtml(displayTitle)}</span>${fmtChip}${job.background ? ' <span class="tag">⚡ background</span>' : ''}${statusTag}</p>
               <p class="job__status jstatus">${escapeHtml(phase)}</p>
-              ${bytes ? `<p class="job__bytes jbytes">${escapeHtml(bytes)}</p>` : ''}
+              <p class="job__bytes jbytes${bytes ? '' : ' hidden'}">${escapeHtml(bytes)}</p>
             </div>
+            <span class="job__ring jring">${ringMarkup}</span>
             <span class="jpct">${pct}%</span>
           </div>
-          <div class="bar jbar job__bar${job.done ? '' : ' live'}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="width:${Math.max(2, shown)}%"></div></div>
+          <div class="bar jbar job__bar${(job.done || job.failed) ? '' : ' live'}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div style="transform:scaleX(${barScale.toFixed(4)})"></div></div>
+          ${pipeHtml}
           <div class="job__foot">
-            ${(job.done || job.failed) ? '' : `<button onclick="toggleJobDetails('${id}')" class="job__more jmore" aria-expanded="false" aria-controls="jd_${id}">Details</button>`}
+            <button onclick="toggleJobDetails('${id}', this)" class="job__more jmore" aria-expanded="false" aria-controls="jd_${id}">Details</button>
             <div class="job__right" style="margin-left:auto">
-              <span class="jspark job__spark">${job.speedSeries && job.speedSeries.length > 2 && !job.done ? sparklineSvg(job.speedSeries) : ''}</span>
-              <span class="jspeed job__speed">${job.speedText ? escapeHtml(job.speedText) : ''}</span>
-              <span class="jeta job__eta">${job.etaText ? escapeHtml(job.etaText) : ''}</span>
+              <span class="jspark job__spark">${job.speedSeries && job.speedSeries.length > 2 && !job.done && !job.failed ? sparklineSvg(job.speedSeries) : ''}</span>
+              <span class="jspeed job__speed">${job.speedText && !job.done && !job.failed ? escapeHtml(job.speedText) : ''}</span>
+              <span class="jeta job__eta">${job.etaText && !job.done && !job.failed ? escapeHtml(job.etaText) : ''}</span>
               ${(job.done || job.failed) ? '' : `<button onclick="cancelOneDownload('${id}')" class="job__cancel" aria-label="Cancel download"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`}
             </div>
           </div>
@@ -1567,10 +3083,27 @@
       `;
     }
 
+    function batchSummaryHtml() {
+      const rem = batchState.pending.length;
+      if (rem <= 0) return '';
+      const next = batchState.pending[0];
+      const nextName = (next && next.title) ? next.title : (next ? next.url : '');
+      const prog = batchState.total > rem ? `${batchState.total - rem}/${batchState.total} started` : `${batchState.total} queued`;
+      return `
+        <div class="batch-summary" data-batch-summary="1">
+          <div class="batch-summary__body">
+            <p class="batch-summary__title">${escapeHtml(batchState.title || 'Batch queue')} · ${rem} waiting</p>
+            <p class="batch-summary__sub">${escapeHtml(prog)}${nextName ? ' · Next: ' + escapeHtml(nextName) : ''}</p>
+          </div>
+          <button type="button" onclick="cancelRemainingBatch()" class="btn btn--sm btn--danger">Cancel queued</button>
+        </div>`;
+    }
+
     function renderJobCards() {
       const wrap = document.getElementById('activeDownloadsWrap');
       const jobs = mergedJobs();
-      if (wrap) wrap.classList.toggle('hidden', jobs.size === 0);
+      const hasAny = jobs.size > 0 || batchState.pending.length > 0;
+      if (wrap) wrap.classList.toggle('hidden', !hasAny);
 
       // Rebuild card frames only when the job set (or a job's done state) changes;
       // plain progress ticks update the numbers in place. Rebuilding the whole DOM
@@ -1580,22 +3113,29 @@
       // same wherever you see it (U9) and background grabs appear in both (N4).
       const targets = [document.getElementById('activeDownloads'), document.getElementById('queueActiveContainer')].filter(Boolean);
       const RING_C = 2 * Math.PI * 9;
+      const summaryMarkup = batchSummaryHtml();
       targets.forEach(container => {
-        if (jobs.size === 0) { container.innerHTML = ''; return; }
+        if (!hasAny) { container.innerHTML = ''; return; }
         const ids = [...jobs.keys()];
         const frames = {};
         container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
-        const needRebuild = ids.length !== Object.keys(frames).length || ids.some(id => {
-          const f = frames[id];
-          return !f || (f.dataset.done === '1') !== !!jobs.get(id).done
-            || (f.dataset.failed === '1') !== !!jobs.get(id).failed;
-        });
+        const hasSummaryEl = !!container.querySelector('[data-batch-summary]');
+        const needSummary = batchState.pending.length > 0;
+        const needRebuild = hasSummaryEl !== needSummary
+          || ids.length !== Object.keys(frames).length
+          || ids.some(id => {
+            const f = frames[id];
+            return !f || (f.dataset.done === '1') !== !!jobs.get(id).done
+              || (f.dataset.failed === '1') !== !!jobs.get(id).failed;
+          });
         if (needRebuild) {
-          container.innerHTML = ids.map(id => jobCardHtml(id, jobs.get(id))).join('');
-          container.querySelectorAll('[data-job]').forEach(el => { frames[el.dataset.job] = el; });
+          container.innerHTML = summaryMarkup + ids.map(id => jobCardHtml(id, jobs.get(id))).join('');
+        } else if (needSummary) {
+          const sumEl = container.querySelector('[data-batch-summary]');
+          if (sumEl) sumEl.outerHTML = summaryMarkup;
         }
-        paintJobNumbers(frames, jobs, RING_C);
       });
+      if (jobs.size) paintJobNumbers(collectJobFrames(), jobs, RING_C);
       // One clock for every card: the number, the ring and the bar ease toward
       // the engine's truth together, so the card reads as one moving thing
       // instead of three independent ones.
@@ -1610,32 +3150,56 @@
     /** Writes the live numbers into the existing cards - never rebuilds them. */
     function paintJobNumbers(frames, jobs, RING_C) {
       const C = RING_C || 2 * Math.PI * 9;
-      // The frame map comes in two shapes: a plain object from the rebuild path
-      // and a Map from the tween. Take both.
-      const map = frames instanceof Map ? frames : new Map(Object.entries(frames || {}));
-      map.forEach((card, id) => {
-        const job = (jobs || mergedJobs()).get(id);
-        if (!card || !job) return;
+      const sourceJobs = jobs || mergedJobs();
+      const map = frames instanceof Map ? frames : (frames ? new Map(Object.entries(frames)) : collectJobFrames());
+      map.forEach((cardsOrCard, id) => {
+        const job = sourceJobs.get(id);
+        if (!job || !cardsOrCard) return;
+        const cards = Array.isArray(cardsOrCard) ? cardsOrCard : [cardsOrCard];
         const shown = job.done ? 100
           : (calmMotion() ? (job.percent || 0)
                           : (job.shownPct !== undefined ? job.shownPct : (job.percent || 0)));
         const pct = Math.round(shown);
-        const pctEl = card.querySelector('.jpct'); if (pctEl) pctEl.textContent = pct + '%';
-        const barEl = card.querySelector('.jbar > div'); if (barEl) barEl.style.width = Math.max(2, shown) + '%';
-        const barBox = card.querySelector('.jbar'); if (barBox) barBox.setAttribute('aria-valuenow', String(pct));
-        const ringEl = card.querySelector('.jringfg');
-        if (ringEl) ringEl.setAttribute('stroke-dashoffset', (C - Math.min(100, Math.max(0, shown)) / 100 * C).toFixed(1));
-        if (!job.done) {
-          const stEl = card.querySelector('.jstatus'); if (stEl) stEl.textContent = phaseLabel(job.status);
-          const byEl = card.querySelector('.jbytes');
-          if (byEl) byEl.textContent = job.sizeText || '';
-        }
-        const spEl = card.querySelector('.jspeed'); if (spEl) spEl.textContent = job.speedText || '';
-        const etaEl = card.querySelector('.jeta'); if (etaEl) etaEl.textContent = job.etaText || '';
-        const sparkEl = card.querySelector('.jspark');
-        if (sparkEl) sparkEl.innerHTML = (job.speedSeries && job.speedSeries.length > 2) ? sparklineSvg(job.speedSeries) : '';
-        const detEl = card.querySelector('.jdetails');
-        if (detEl && !detEl.classList.contains('hidden')) detEl.innerHTML = jobDetailsHtml(id);
+        const barScale = job.done ? 1 : Math.max(0.02, Math.min(1, shown / 100));
+        const pipeStates = jobPipeStates(job);
+        cards.forEach(card => {
+          if (!card) return;
+          const titleSpan = card.querySelector('.jtitle');
+          if (titleSpan && (job.title || job.label) && titleSpan.textContent !== (job.title || job.label)) {
+            titleSpan.textContent = job.title || job.label;
+          }
+          if (job.thumbnail) {
+            const thumbBox = card.querySelector('.job__thumb');
+            const thumbImg = thumbBox ? thumbBox.querySelector('img') : null;
+            if (thumbBox && thumbImg && thumbImg.getAttribute('src') !== job.thumbnail) {
+              thumbImg.setAttribute('src', job.thumbnail);
+              thumbBox.classList.remove('is-empty');
+            }
+          }
+          const pctEl = card.querySelector('.jpct'); if (pctEl) pctEl.textContent = pct + '%';
+          const barEl = card.querySelector('.jbar > div'); if (barEl) barEl.style.transform = `scaleX(${barScale.toFixed(4)})`;
+          const barBox = card.querySelector('.jbar'); if (barBox) barBox.setAttribute('aria-valuenow', String(pct));
+          const ringEl = card.querySelector('.jringfg');
+          if (ringEl) ringEl.setAttribute('stroke-dashoffset', (C - Math.min(100, Math.max(0, shown)) / 100 * C).toFixed(1));
+          card.querySelectorAll('.jpipe__step').forEach((stepEl, i) => {
+            if (pipeStates[i]) stepEl.dataset.state = pipeStates[i];
+          });
+          if (!job.done && !job.failed) {
+            const stEl = card.querySelector('.jstatus'); if (stEl) stEl.textContent = phaseLabel(job.status);
+            const byEl = card.querySelector('.jbytes');
+            if (byEl) {
+              const txt = job.sizeText || '';
+              byEl.textContent = txt;
+              byEl.classList.toggle('hidden', !txt);
+            }
+          }
+          const spEl = card.querySelector('.jspeed'); if (spEl) spEl.textContent = (!job.done && !job.failed && job.speedText) ? job.speedText : '';
+          const etaEl = card.querySelector('.jeta'); if (etaEl) etaEl.textContent = (!job.done && !job.failed && job.etaText) ? job.etaText : '';
+          const sparkEl = card.querySelector('.jspark');
+          if (sparkEl) sparkEl.innerHTML = (!job.done && !job.failed && job.speedSeries && job.speedSeries.length > 2) ? sparklineSvg(job.speedSeries) : '';
+          const detEl = card.querySelector('.jdetails');
+          if (detEl && !detEl.classList.contains('hidden')) detEl.innerHTML = jobDetailsHtml(id);
+        });
       });
     }
 
@@ -1643,7 +3207,11 @@
       const frames = new Map();
       [document.getElementById('activeDownloads'), document.getElementById('queueActiveContainer')]
         .filter(Boolean)
-        .forEach(container => container.querySelectorAll('[data-job]').forEach(el => frames.set(el.dataset.job, el)));
+        .forEach(container => container.querySelectorAll('[data-job]').forEach(el => {
+          const id = el.dataset.job;
+          if (!frames.has(id)) frames.set(id, []);
+          frames.get(id).push(el);
+        }));
       return frames;
     }
 
@@ -1664,6 +3232,52 @@
       if (animating) jobTweenRaf = requestAnimationFrame(tickJobTweens);
     }
 
+    function historyFormatLabel(formatId, mimeType) {
+      const f = String(formatId || '').toLowerCase();
+      if (f && f !== 'best') return shortFmtBadge(f);
+      const m = String(mimeType || '').toLowerCase();
+      if (m.includes('mpeg') || m.includes('mp3')) return 'MP3';
+      if (m.includes('audio/mp4') || m.includes('m4a')) return 'M4A';
+      if (m.includes('webm')) return 'WEBM';
+      if (m.includes('mp4')) return 'MP4';
+      return '';
+    }
+
+    function historyRowHtml(item, showTag) {
+      const id = String(item.id || '');
+      const failed = !!item.failed;
+      const voice = failed ? (ERROR_VOICES[item.cause] || ERROR_VOICES.unknown) : null;
+      const chips = [];
+      const fmtPill = item.formatBadge || historyFormatLabel(item.formatId, item.mimeType);
+      if (!failed && fmtPill) chips.push(`<span class="hist__pill">${escapeHtml(fmtPill)}</span>`);
+      const sz = item.sizeText || (item.fileBytes > 0 ? formatBytesJs(item.fileBytes) : '');
+      const metaBase = failed
+        ? `${escapeHtml((item.cause || 'stopped').toUpperCase())} · ${escapeHtml(item.date)}`
+        : `${escapeHtml(item.destination || 'Gallery')}${sz ? ' · ' + escapeHtml(sz) : ''} · ${escapeHtml(item.date)}`;
+      const meta = metaBase + (chips.length ? (' ' + chips.join(' ')) : '') + shieldHistorySuffix(item);
+      const iconSvg = failed
+        ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 8v5M12 16h.01"/></svg>'
+        : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+      const yid = !failed ? extractYoutubeId(item.url) : '';
+      const thumbSrc = !failed ? (item.thumbnail || (yid ? `https://i.ytimg.com/vi/${yid}/mqdefault.jpg` : '')) : '';
+      const leftMedia = thumbSrc
+        ? `<div class="hist__thumb" aria-hidden="true"><img src="${escapeHtml(thumbSrc)}" alt="" loading="lazy" onerror="this.parentElement.classList.add('is-empty')">${iconSvg}</div>`
+        : `<div class="hist__check" aria-hidden="true">${iconSvg}</div>`;
+      const tagHtml = showTag
+        ? (failed ? '<span class="hist__tag hist__tag--bad">RETRY</span>' : '<span class="hist__tag">SAVED</span>')
+        : '';
+      return `
+        <button type="button" class="hist__row hist__row--tap${failed ? ' hist__row--failed' : ''}${showTag ? ' fade-in' : ''}" data-hist-id="${escapeHtml(id)}" onclick="openHistoryDetail(this.dataset.histId)">
+          ${leftMedia}
+          <div class="hist__body">
+            <p class="hist__title">${escapeHtml(item.title || (voice ? voice.short : 'Video'))}</p>
+            <p class="hist__meta">${meta}</p>
+          </div>
+          ${tagHtml}
+        </button>
+      `;
+    }
+
     // The Grab home ends with either the newest three saves or the playlist tip.
     // Called from renderJobCards() so every tab switch and completion refreshes it.
     function renderGrabRecent() {
@@ -1675,17 +3289,7 @@
       if (!wrap || !host) return;
       const items = downloadsHistory.slice(0, 3);
       wrap.classList.toggle('hidden', items.length === 0);
-      host.innerHTML = items.map(item => `
-        <div class="hist__row">
-          <div class="hist__check" aria-hidden="true">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-          </div>
-          <div class="hist__body">
-            <p class="hist__title">${escapeHtml(item.title)}</p>
-            <p class="hist__meta">${escapeHtml(item.destination)} · ${escapeHtml(item.date)}${item.shieldMode === 'skipped' ? ' · <span style="opacity:0.7">Shield skipped</span>' : (item.shieldMode ? ' · <span style="opacity:0.7">Shield verified</span>' : '')}</p>
-          </div>
-        </div>
-      `).join('');
+      host.innerHTML = items.map(item => historyRowHtml(item, false)).join('');
     }
 
     function cancelOneDownload(jobId) {
@@ -1701,22 +3305,30 @@
         return;
       }
       const job = activeJobs.get(jobId);
+      cancelledJobIds.add(jobId);
+      if (job && job.tempId) cancelledJobIds.add(job.tempId);
       activeJobs.delete(jobId);
       renderJobCards();
       updateQueueBadge();
       engine?.cancelDownload?.({ jobId: jobId });
-      if (job) showToast('Cancelled', job.label, 'info', 'Undo', () => { if (job.url) initiateDownload(job.url, job.formatId || 'best'); });
+      pumpBatchQueue();
+      if (job) showToast('Cancelled', job.label, 'info', 'Undo', () => { if (job.url) initiateDownload(job.url, job.formatId || 'best', { title: job.title || '', thumbnail: job.thumbnail || '' }); });
     }
 
     function cancelAllDownloads() {
       const engine = getEngine();
+      activeJobs.forEach((job, id) => {
+        cancelledJobIds.add(id);
+        if (job && job.tempId) cancelledJobIds.add(job.tempId);
+      });
       engine?.cancelDownload?.();
       bgJobs.forEach((_, nativeId) => engine?.cancelDropJob?.({ jobId: nativeId }));
       bgJobs.clear();
       activeJobs.clear();
+      clearBatchQueue();
       renderJobCards();
       updateQueueBadge();
-      showToast('All cancelled', 'Every download was stopped.', 'info');
+      showToast('All cancelled', 'Every download and batch queue was stopped.', 'info');
     }
 
     // ================= Background (DowniDrop) grabs — v3.1.1 defect N4 =================
@@ -1754,14 +3366,35 @@
       let added = false;
       rows.forEach(r => {
         if (!r || !r.id) return;
-        if (downloadsHistory.some(h => h.id === r.id)) return;
+        const existing = downloadsHistory.find(h => h.id === r.id || h.id === 'drop_' + r.id);
+        const rSubCount = Number(r.subtitleCount ?? r.subtitle_count) || 0;
+        const rSubUri = r.subtitleUri || r.subtitle_uri || '';
+        if (existing) {
+          if (!existing.mediaUri && r.mediaUri) existing.mediaUri = r.mediaUri;
+          if (!existing.mimeType && r.mimeType) existing.mimeType = r.mimeType;
+          if (!existing.subtitleCount && rSubCount) existing.subtitleCount = rSubCount;
+          if (!existing.subtitleUri && rSubUri) existing.subtitleUri = rSubUri;
+          if (!existing.shieldMode && (r.shieldMode || r.shield_mode)) existing.shieldMode = r.shieldMode || r.shield_mode;
+          if (!existing.shieldReason && (r.shieldReason || r.shield_reason)) existing.shieldReason = r.shieldReason || r.shield_reason;
+          if (!existing.shieldInputSha && (r.shieldInputSha || r.shield_input_sha)) existing.shieldInputSha = r.shieldInputSha || r.shield_input_sha;
+          if (!existing.shieldSha && (r.shieldSha || r.shield_sha)) existing.shieldSha = r.shieldSha || r.shield_sha;
+          return;
+        }
         downloadsHistory.push({
           id: r.id,
           title: r.title || 'Shared video',
           destination: r.dest || 'Gallery',
           date: new Date(Number(r.ts) || Date.now()).toLocaleDateString(),
           url: r.url || '',
-          ts: Number(r.ts) || 0
+          ts: Number(r.ts) || 0,
+          mediaUri: r.mediaUri || '',
+          mimeType: r.mimeType || '',
+          subtitleCount: rSubCount,
+          subtitleUri: rSubUri,
+          shieldMode: r.shieldMode || r.shield_mode || '',
+          shieldReason: r.shieldReason || r.shield_reason || '',
+          shieldInputSha: r.shieldInputSha || r.shield_input_sha || '',
+          shieldSha: r.shieldSha || r.shield_sha || ''
         });
         added = true;
       });
@@ -1769,9 +3402,9 @@
         // Newest first: rows carrying a timestamp sort above the legacy ones (ts = 0), and
         // Array.sort is stable, so equal keys keep the order they were already in.
         downloadsHistory.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-        completedCount = downloadsHistory.length;
-        saveHistory();
       }
+      completedCount = downloadsHistory.filter(h => !h.failed).length;
+      saveHistory();
       renderQueueTab();
       updateQueueBadge();
     }
@@ -1785,7 +3418,7 @@
         const res = await engine.getDropJobs();
         jobs = (res && res.jobs) || [];
         if (res && res.lastError) {
-          try { lastError = JSON.parse(res.lastError); } catch (e) { lastError = null; }
+          try { lastError = typeof res.lastError === 'string' ? JSON.parse(res.lastError) : res.lastError; } catch (e) { lastError = null; }
         }
       } catch (e) { return; }
       const alive = new Set();
@@ -1793,42 +3426,116 @@
       jobs.forEach(j => {
         if (!j || !j.id) return;
         const state = j.state || 'running';
-        if (state === 'canceled') { if (bgJobs.delete(j.id)) changed = true; return; }
+        if (state === 'canceled' || state === 'cancelled') { if (bgJobs.delete(j.id)) changed = true; return; }
         alive.add(j.id);
         const prev = bgJobs.get(j.id);
-        const job = prev || { label: 'DowniDrop' + (j.platform ? ' · ' + j.platform : ''), url: j.url || '', formatId: 'best', background: true, status: 'Grabbing…', percent: 0, size: '', speed: '', eta: '', done: false, failed: false, speedSeries: [] };
+        const job = prev || createJobRecord({
+          label: 'DowniDrop' + (j.platform ? ' · ' + j.platform : ''),
+          url: j.url || '',
+          formatId: j.formatId || j.format_id || 'best',
+          background: true,
+          status: 'Grabbing…'
+        });
+        if (j.title) job.label = j.title;
         const pct = state === 'done' ? 100 : Math.round(j.pct || 0);
         job.percent = pct;
+        if (state === 'done' || state === 'failed') job.shownPct = pct;
         job.done = state === 'done';
         job.failed = state === 'failed';
-        job.status = job.failed ? 'Failed' : (job.done ? 'Saved to your gallery' : 'Grabbing…');
+        job.status = job.failed ? 'Failed' : (job.done ? 'Saved to your gallery' : (j.status || 'Grabbing…'));
+        if ((job.done || job.failed) && !job.endedAt) {
+          job.endedAt = Number(j.endedAt || j.ended_at) || Date.now();
+        }
         // N8: a finished card must never keep the last phase sentence ("Merging video + audio…")
         // as its sub-line — show real byte totals when known, else the state copy. Phase text
         // is only meaningful while the grab is still running.
-        job.size = j.total ? (fmtBgBytes(j.downloaded) + ' / ' + fmtBgBytes(j.total)) : (state === 'running' ? (j.status || '') : (state === 'failed' && j.error ? j.error : ''));
+        job.size = j.sizeText || (j.total ? (fmtBgBytes(j.downloaded) + ' / ' + fmtBgBytes(j.total)) : (state === 'running' ? (j.status || '') : (state === 'failed' && j.error ? j.error : '')));
+        job.sizeText = j.sizeText || bytesText(job.size);
         // The engine's raw reason for the last headless failure - the card shows the
         // phrase, the details show what the engine actually said.
-        if (state === 'failed' && lastError && lastError.id === j.id) {
-          job.reason = lastError.raw || '';
-          job.cause = lastError.cause || '';
+        let jobErr = null;
+        if (j.lastError) {
+          try { jobErr = typeof j.lastError === 'string' ? JSON.parse(j.lastError) : j.lastError; } catch (e) { jobErr = null; }
         }
-        if (j.shield_mode) job.shieldMode = j.shield_mode;
-        if (j.shield_reason) job.shieldReason = j.shield_reason;
-        if (j.shield_sha) job.shieldSha = j.shield_sha;
-        job.speed = state === 'running' ? fmtBgSpeed(j.speed) : '';
-        if (j.speed > 0 && state === 'running') job.speedSeries = (job.speedSeries || []).concat(j.speed).slice(-24);
+        if (state === 'failed') {
+          const matchedErr = jobErr || (lastError && lastError.id === j.id ? lastError : null);
+          if (matchedErr) {
+            job.reason = matchedErr.raw || matchedErr.message || job.reason || '';
+            job.cause = matchedErr.cause || job.cause || '';
+          } else if (j.error) {
+            job.reason = j.error;
+          }
+        }
+        const sMode = j.shieldMode || j.shield_mode || '';
+        const sReason = j.shieldReason || j.shield_reason || '';
+        const sInSha = j.shieldInputSha || j.shield_input_sha || '';
+        const sSha = j.shieldSha || j.shield_sha || '';
+        if (sMode) job.shieldMode = sMode;
+        if (sReason) job.shieldReason = sReason;
+        if (sInSha) job.shieldInputSha = sInSha;
+        if (sSha) job.shieldSha = sSha;
+        if (j.mediaUri) job.mediaUri = j.mediaUri;
+        if (j.mimeType) job.mimeType = j.mimeType;
+        const jSubCount = Number(j.subtitleCount ?? j.subtitle_count) || 0;
+        const jSubUri = j.subtitleUri || j.subtitle_uri || '';
+        if (jSubCount) job.subtitleCount = jSubCount;
+        if (jSubUri) job.subtitleUri = jSubUri;
+        job.speed = state === 'running' ? (j.speedText || fmtBgSpeed(j.speed)) : '';
+        if (state === 'running' && j.speed > 0) {
+          job.speedSeries = (job.speedSeries || []).concat(j.speed).slice(-24);
+          job.speedEma = job.speedEma ? (job.speedEma * 0.72 + j.speed * 0.28) : j.speed;
+          job.speedText = j.speedText || formatSpeedJs(job.speedEma);
+        } else if (job.done || job.failed) {
+          job.speedText = '';
+          job.etaText = '';
+        }
+        if (state === 'running' && j.etaText !== undefined) job.etaText = j.etaText;
         bgJobs.set(j.id, job);
         changed = true;
+        if (state === 'failed' && !downloadsHistory.some(h => h.id === 'drop_fail_' + j.id)) {
+          downloadsHistory.unshift({
+            id: 'drop_fail_' + j.id,
+            title: j.title || job.label || 'Shared video',
+            destination: '',
+            date: new Date().toLocaleDateString(),
+            url: j.url || '',
+            formatId: job.formatId || 'best',
+            ts: Date.now(),
+            failed: true,
+            cause: job.cause || 'unknown',
+            rawError: job.reason || j.error || 'Background grab stopped.'
+          });
+          completedCount = downloadsHistory.filter(h => !h.failed).length;
+          saveHistory();
+          renderQueueTab();
+        }
         if (state === 'done' && !seenDropDone.has(j.id)) {
           seenDropDone.add(j.id);
-          completedCount++;
           // N9: no byte bookkeeping here. The service keeps its own ledger for headless grabs
           // (including the ones that finish while the app is shut) and syncGrabLedger() folds it
           // in — adding here too would double-book the grab.
-          downloadsHistory.unshift({ id: 'drop_' + j.id, title: j.title || 'Shared video', destination: j.dest || 'Gallery', date: new Date().toLocaleDateString(), url: j.url || '', ts: Date.now(), shieldMode: j.shield_mode || '', shieldReason: j.shield_reason || '' });
+          downloadsHistory.unshift({
+            id: 'drop_' + j.id,
+            title: j.title || 'Shared video',
+            destination: j.dest || 'Gallery',
+            date: new Date().toLocaleDateString(),
+            url: j.url || '',
+            ts: Date.now(),
+            mediaUri: j.mediaUri || '',
+            mimeType: j.mimeType || '',
+            subtitleCount: job.subtitleCount || 0,
+            subtitleUri: job.subtitleUri || '',
+            shieldMode: sMode,
+            shieldReason: sReason,
+            shieldInputSha: sInSha,
+            shieldSha: sSha
+          });
+          completedCount = downloadsHistory.filter(h => !h.failed).length;
           saveHistory();
+          triggerHaptic('success');
           let dropSub = (j.title || 'Shared video') + (j.dest ? ' · ' + j.dest : '');
-          if (j.shield_mode === 'skipped') dropSub += ' (Shield skipped)';
+          if (job.subtitleCount > 0) dropSub += ' · ' + job.subtitleCount + (job.subtitleCount === 1 ? ' sub' : ' subs');
+          if (sMode === 'skipped') dropSub += ' (Shield skipped)';
           showToast('Saved ✓', dropSub, 'success');
           renderQueueTab();
           // v3.1.1 (defect N13): read the service's ledger NOW, not at the next resume. The bytes
@@ -1842,11 +3549,18 @@
       });
       [...bgJobs.keys()].forEach(id => { if (!alive.has(id)) { bgJobs.delete(id); changed = true; } });
       if (changed) { renderJobCards(); updateQueueBadge(); }
+      if (bgJobs.size === 0 && bgPollTimer) {
+        clearInterval(bgPollTimer);
+        bgPollTimer = null;
+      } else if (bgJobs.size > 0 && document.visibilityState === 'visible' && !bgPollTimer) {
+        bgPollTimer = setInterval(syncBackgroundJobs, 1500);
+      }
     }
     function startBgPolling() {
-      if (bgPollTimer) return;
       syncBackgroundJobs();
-      bgPollTimer = setInterval(syncBackgroundJobs, 1500);
+      if (!bgPollTimer && bgJobs.size > 0) {
+        bgPollTimer = setInterval(syncBackgroundJobs, 1500);
+      }
     }
     function stopBgPolling() { if (bgPollTimer) { clearInterval(bgPollTimer); bgPollTimer = null; } }
     function syncBgPolling() { if (document.visibilityState === 'visible') startBgPolling(); else stopBgPolling(); }
@@ -1889,10 +3603,10 @@
         if (voice && voice.retry === false) retry.classList.add('hidden');
         else retry.classList.remove('hidden');
       }
-      document.getElementById('errorModal')?.classList.remove('hidden');
+      openModalEl('errorModal');
     }
     function closeErrorModal() {
-      document.getElementById('errorModal')?.classList.add('hidden');
+      closeModalEl('errorModal');
     }
     function toggleErrorDetails() {
       const box = document.getElementById('errorTechnicalDetailsBox');
@@ -1901,9 +3615,9 @@
       else { box.classList.add('hidden'); btn.innerText = 'View details'; }
     }
     function copyErrorDetails() {
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(currentRawError).then(() => showToast('Copied', 'Error details copied.', 'success'));
-      }
+      writeToClipboard(currentRawError || '').then(ok => {
+        showToast(ok ? 'Copied' : 'Copy failed', ok ? 'Error details copied.' : 'Clipboard access unavailable.', ok ? 'success' : 'error');
+      });
     }
     function runDiagnosticsFromError() {
       closeErrorModal();
@@ -2038,9 +3752,23 @@
       }
     }
 
+    function setHistoryFilter(mode) {
+      historyFilter = (mode === 'saved' || mode === 'failed') ? mode : 'all';
+      document.querySelectorAll('#historyTools .hist-pill').forEach(b => {
+        b.classList.toggle('on', b.getAttribute('data-hf') === historyFilter);
+      });
+      renderQueueTab();
+    }
+
+    function setHistorySearch(q) {
+      historySearch = String(q || '').trim().toLowerCase();
+      renderQueueTab();
+    }
+
     // ================= Queue tab =================
     function renderQueueTab() {
       const histC = document.getElementById('queueListContainer');
+      const tools = document.getElementById('historyTools');
       if (!histC) return;
       // Active cards are painted by renderJobCards() for BOTH containers (one shape, U9) —
       // that is also where background DowniDrop grabs show up (N4).
@@ -2052,6 +3780,7 @@
         const totalMb = (grabbedBytes + dropBytes) / (1024 * 1024);
         statSize.innerText = totalMb >= 1024 ? (totalMb / 1024).toFixed(1) + ' GB' : Math.round(totalMb) + ' MB';
       }
+      if (tools) tools.classList.toggle('hidden', downloadsHistory.length === 0);
 
       if (downloadsHistory.length === 0) {
         histC.innerHTML = `<div class="empty">
@@ -2062,31 +3791,222 @@
         </div>`;
         return;
       }
-      histC.innerHTML = downloadsHistory.map(item => `
-        <div class="hist__row fade-in">
-          <div class="hist__check" aria-hidden="true">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-          </div>
-          <div class="hist__body">
-            <p class="hist__title">${escapeHtml(item.title)}</p>
-            <p class="hist__meta">${escapeHtml(item.destination)} · ${escapeHtml(item.date)}${item.shieldMode === 'skipped' ? ' · <span style="opacity:0.7">Shield skipped</span>' : (item.shieldMode ? ' · <span style="opacity:0.7">Shield verified</span>' : '')}</p>
-          </div>
-          <span class="hist__tag">SAVED</span>
-        </div>
-      `).join('');
+      const filtered = downloadsHistory.filter(item => {
+        if (historyFilter === 'saved' && item.failed) return false;
+        if (historyFilter === 'failed' && !item.failed) return false;
+        if (historySearch) {
+          const hay = ((item.title || '') + ' ' + (item.url || '') + ' ' + (item.destination || '')).toLowerCase();
+          if (!hay.includes(historySearch)) return false;
+        }
+        return true;
+      });
+      if (filtered.length === 0) {
+        histC.innerHTML = `<div class="empty" style="padding:24px 16px">
+          <p class="empty__title">No matching items</p>
+          <p class="empty__text">Clear the search or filter to see all ${downloadsHistory.length} records.</p>
+        </div>`;
+        return;
+      }
+      histC.innerHTML = filtered.map(item => historyRowHtml(item, true)).join('');
+    }
+
+    function openHistoryDetail(id) {
+      const item = downloadsHistory.find(h => String(h.id) === String(id));
+      if (!item) return;
+      triggerHaptic('light');
+      activeHistoryItem = item;
+
+      const failed = !!item.failed;
+      const badge = document.getElementById('historyDetailBadge');
+      const titleEl = document.getElementById('historyDetailTitle');
+      const subEl = document.getElementById('historyDetailSub');
+      const receiptEl = document.getElementById('historyDetailReceipt');
+      const mediaActs = document.getElementById('historyMediaActions');
+      const btnOpen = document.getElementById('btnHistoryOpen');
+      const btnShare = document.getElementById('btnHistoryShare');
+      const btnRetry = document.getElementById('btnHistoryRetry');
+      const btnCopy = document.getElementById('btnHistoryCopyLink');
+
+      if (badge) {
+        if (failed) {
+          badge.className = 'chip chip--bad';
+          badge.textContent = (item.cause || 'stopped').toUpperCase();
+        } else if (item.shieldMode === 'skipped') {
+          badge.className = 'chip';
+          badge.textContent = 'Shield skipped';
+        } else if (item.shieldMode) {
+          badge.className = 'chip chip--on';
+          badge.textContent = 'Shield ' + item.shieldMode;
+        } else {
+          badge.className = 'chip chip--on';
+          badge.textContent = 'Saved';
+        }
+      }
+      if (titleEl) titleEl.textContent = item.title || 'Saved video';
+      if (subEl) subEl.textContent = (item.date || '') + (item.destination ? ' · ' + item.destination : '');
+
+      const rows = [];
+      if (failed) {
+        const voice = ERROR_VOICES[item.cause] || ERROR_VOICES.unknown;
+        rows.push(['Cause', (item.cause || 'unknown') + ' — ' + voice.short]);
+        if (item.rawError) rows.push(['Details', item.rawError]);
+        if (item.url) rows.push(['Link', item.url]);
+      } else {
+        rows.push(['Destination', item.destination || 'Gallery']);
+        if (item.mimeType) rows.push(['Format', item.mimeType]);
+        const detSize = item.sizeText || (item.fileBytes > 0 ? formatBytesJs(item.fileBytes) : '');
+        if (detSize) rows.push(['Size', detSize]);
+        if (item.duration > 0) rows.push(['Duration', formatDuration(item.duration)]);
+        if (item.subtitleCount > 0) rows.push(['Subtitles', item.subtitleCount + ' saved (.srt/.vtt)']);
+        rows.push(['Shield', item.shieldMode ? shieldSummaryText(item.shieldMode, item.shieldReason, item.shieldInputSha, item.shieldSha) : 'Original file']);
+        if (item.shieldReason && item.shieldMode !== 'skipped') rows.push(['Reason', item.shieldReason]);
+        if (item.shieldInputSha) rows.push(['Input SHA-256', item.shieldInputSha]);
+        if (item.shieldSha) rows.push(['Output SHA-256', item.shieldSha]);
+        if (item.url) rows.push(['Link', item.url]);
+      }
+      if (receiptEl) {
+        receiptEl.innerHTML = rows.map(r =>
+          `<div class="receipt-row"><span class="receipt-k">${escapeHtml(r[0])}</span><span class="receipt-v">${escapeHtml(r[1])}</span></div>`
+        ).join('');
+      }
+
+      const hasMedia = !failed && !!item.mediaUri;
+      const btnSub = document.getElementById('btnHistorySubtitles');
+      if (mediaActs) mediaActs.classList.toggle('hidden', failed);
+      if (btnOpen) btnOpen.disabled = !hasMedia;
+      if (btnShare) btnShare.disabled = !hasMedia;
+      if (btnSub) btnSub.classList.toggle('hidden', failed || !item.subtitleUri);
+      if (btnRetry) btnRetry.classList.toggle('hidden', !failed || !item.url);
+      if (btnCopy) btnCopy.classList.toggle('hidden', !item.url);
+
+      openModalEl('historyDetailModal');
+    }
+
+    async function openHistorySubtitles() {
+      const item = activeHistoryItem;
+      const engine = getEngine();
+      if (!item || !item.subtitleUri || !engine?.openSavedMedia) {
+        showToast('Not found', 'No subtitle sidecar file recorded for this item.', 'info');
+        return;
+      }
+      try {
+        await engine.openSavedMedia({ mediaUri: item.subtitleUri, mimeType: 'application/x-subrip' });
+      } catch (e) {
+        showToast('Cannot open captions', (e && e.message) || 'Subtitle file may have been moved or deleted.', 'error');
+      }
+    }
+
+    function removeHistoryById(targetId) {
+      const removed = downloadsHistory.find(h => String(h.id) === String(targetId));
+      downloadsHistory = downloadsHistory.filter(h => String(h.id) !== String(targetId));
+      completedCount = downloadsHistory.filter(h => !h.failed).length;
+      if (removed && !removed.failed && Number(removed.fileBytes) > 0) {
+        grabbedBytes = Math.max(0, grabbedBytes - Number(removed.fileBytes));
+      }
+      saveHistory();
+      renderGrabRecent();
+      renderQueueTab();
+      updateQueueBadge();
+      updateLastGrabChip();
+      showToast('Removed', 'Item removed from history.', 'info');
+    }
+
+    function deleteHistoryItem() {
+      const item = activeHistoryItem;
+      closeHistoryDetailModal();
+      if (!item) return;
+      removeHistoryById(item.id);
+    }
+
+    function closeHistoryDetailModal() {
+      closeModalEl('historyDetailModal');
+    }
+
+    async function openHistoryMedia() {
+      const item = activeHistoryItem;
+      const engine = getEngine();
+      if (!item || !item.mediaUri || !engine?.openSavedMedia) {
+        showToast('Cannot open', 'No playable gallery URI recorded for this item.', 'info');
+        return;
+      }
+      try {
+        await engine.openSavedMedia({ mediaUri: item.mediaUri, mimeType: item.mimeType || '' });
+      } catch (e) {
+        const msg = (e && e.message) || 'File may have been moved or deleted.';
+        showToast('File missing or unreadable', msg, 'error', 'Remove', () => {
+          closeHistoryDetailModal();
+          removeHistoryById(item.id);
+        });
+      }
+    }
+
+    async function shareHistoryMedia() {
+      const item = activeHistoryItem;
+      const engine = getEngine();
+      if (!item || !item.mediaUri || !engine?.shareSavedMedia) {
+        showToast('Cannot share', 'No shareable gallery URI recorded for this item.', 'info');
+        return;
+      }
+      try {
+        await engine.shareSavedMedia({ mediaUri: item.mediaUri, mimeType: item.mimeType || '', title: item.title || 'Shared media' });
+      } catch (e) {
+        showToast('Cannot share', (e && e.message) || 'File could not be shared.', 'error');
+      }
+    }
+
+    function retryHistoryItem() {
+      const item = activeHistoryItem;
+      closeHistoryDetailModal();
+      if (!item || !item.url) return;
+      triggerHaptic('medium');
+      initiateDownload(item.url, item.formatId || 'best', { title: item.title || '' });
+    }
+
+    function copyHistoryLink() {
+      const item = activeHistoryItem;
+      if (!item || !item.url) return;
+      writeToClipboard(item.url).then(ok => {
+        showToast(ok ? 'Copied' : 'Copy failed', ok ? 'Link copied to clipboard.' : 'Clipboard access unavailable.', ok ? 'success' : 'error');
+      });
     }
 
     function clearCompletedHistory() {
+      if (!downloadsHistory.length && !grabbedBytes && !dropBytes) return;
+      pendingClearedSnapshot = {
+        history: downloadsHistory.slice(),
+        grabbed: grabbedBytes,
+        drop: dropBytes
+      };
+      if (clearHistoryUndoTimer) { clearTimeout(clearHistoryUndoTimer); clearHistoryUndoTimer = null; }
       downloadsHistory = [];
       completedCount = 0;
       grabbedBytes = 0;
-      // N9: the headless ledger lives natively — clear it in the same breath, otherwise
-      // "Clear history" would leave rows and MB grabbed behind.
       dropBytes = 0;
-      try { getEngine()?.resetGrabLedger?.(); } catch (e) {}
       saveHistory();
+      renderGrabRecent();
       renderQueueTab();
-      showToast('History cleared', 'All records removed.', 'info');
+      updateLastGrabChip();
+      // Delay clearing native headless ledger for the Undo window so Undo is lossless
+      clearHistoryUndoTimer = setTimeout(() => {
+        clearHistoryUndoTimer = null;
+        pendingClearedSnapshot = null;
+        try { getEngine()?.resetGrabLedger?.(); } catch (e) {}
+      }, 3600);
+      showToast('History cleared', 'Records removed.', 'info', 'Undo', () => {
+        if (clearHistoryUndoTimer) { clearTimeout(clearHistoryUndoTimer); clearHistoryUndoTimer = null; }
+        if (pendingClearedSnapshot) {
+          downloadsHistory = pendingClearedSnapshot.history;
+          grabbedBytes = pendingClearedSnapshot.grabbed;
+          dropBytes = pendingClearedSnapshot.drop;
+          completedCount = downloadsHistory.filter(h => !h.failed).length;
+          pendingClearedSnapshot = null;
+          saveHistory();
+          renderGrabRecent();
+          renderQueueTab();
+          updateLastGrabChip();
+          showToast('Restored', 'Download history restored.', 'success');
+        }
+      });
     }
 
     function fmtClock(sec) {
@@ -2165,7 +4085,7 @@
           document.getElementById('updateChangelog').innerText =
             `Installed: v${local.versionName}\nLatest: ${remoteTag}\nSize: ${formatBytesJs(apk.size)}\n\n` + (data.body || 'Performance updates.');
           resetUpdateModalUI();
-          document.getElementById('updateModal')?.classList.remove('hidden');
+          openModalEl('updateModal');
         } else {
           if (!silent) showToast('Up to date', `v${local.versionName} is the latest.`, 'success');
         }
@@ -2177,18 +4097,19 @@
     }
 
     function resetUpdateModalUI() {
+      isDownloadingUpdate = false;
       document.getElementById('updateInfoSection')?.classList.remove('hidden');
       document.getElementById('updateProgressSection')?.classList.add('hidden');
       document.getElementById('updateActionButtons')?.classList.remove('hidden');
       document.getElementById('btnCancelUpdate')?.classList.add('hidden');
       document.getElementById('updateBackdrop').style.display = '';
       const bar = document.getElementById('updateProgressBar');
-      bar.style.width = '0%';
+      if (bar) bar.style.transform = 'scaleX(0)';
       document.getElementById('updateProgressPercent').innerText = '0%';
       document.getElementById('updateProgressRatio').innerText = '0 MB / 0 MB';
       document.getElementById('updateProgressSpeed').innerText = '--';
     }
-    function closeUpdateModal() { document.getElementById('updateModal')?.classList.add('hidden'); }
+    function closeUpdateModal() { closeModalEl('updateModal'); }
 
     function attachUpdateProgressListener() {
       if (updateListenerAttached) return;
@@ -2197,11 +4118,11 @@
         engine.addListener('onUpdateProgress', (p) => {
           const bar = document.getElementById('updateProgressBar');
           if (p.indeterminate) {
-            bar.style.width = '100%';
+            if (bar) bar.style.transform = 'scaleX(1)';
             document.getElementById('updateProgressPercent').innerText = '--';
           } else {
             const pct = p.percent || 0;
-            bar.style.width = Math.max(2, pct) + '%';
+            if (bar) bar.style.transform = `scaleX(${Math.max(0.02, Math.min(1, pct / 100)).toFixed(4)})`;
             document.getElementById('updateProgressPercent').innerText = pct + '%';
           }
           if (p.sizeFormatted) document.getElementById('updateProgressRatio').innerText = p.sizeFormatted;
@@ -2218,6 +4139,7 @@
         window.open(latestPendingDownloadUrl, '_system');
         return;
       }
+      isDownloadingUpdate = true;
       document.getElementById('updateInfoSection')?.classList.add('hidden');
       document.getElementById('updateActionButtons')?.classList.add('hidden');
       document.getElementById('updateProgressSection')?.classList.remove('hidden');
@@ -2227,15 +4149,24 @@
 
       try {
         const res = await engine.downloadUpdate({ url: latestPendingDownloadUrl });
-        document.getElementById('updateProgressBar').style.width = '100%';
+        const bar = document.getElementById('updateProgressBar');
+        if (bar) bar.style.transform = 'scaleX(1)';
         showToast('Downloaded', 'Launching installer…', 'success');
         try {
           await engine.installApk({ path: res.path });
+          isDownloadingUpdate = false;
           closeUpdateModal();
         } catch (installErr) {
           const msg = (installErr && installErr.message) ? installErr.message : 'Install failed';
           if (msg.toLowerCase().includes('unknown') || msg.toLowerCase().includes('permission')) {
-            showToast('Permission needed', 'Allow "Install unknown apps" for DOWNI, then retry.', 'info');
+            if (engine?.openAppSettings) {
+              try { await engine.openAppSettings({ target: 'unknown_apps' }); } catch (ignored) {}
+              showToast('Permission needed', 'Allow "Install unknown apps" for DOWNI, then tap Install again.', 'info', 'Settings', () => {
+                engine.openAppSettings({ target: 'unknown_apps' }).catch(() => {});
+              });
+            } else {
+              showToast('Permission needed', 'Allow "Install unknown apps" for DOWNI, then retry.', 'info');
+            }
           } else {
             showToast('Install failed', msg, 'error');
           }
@@ -2251,37 +4182,73 @@
     function cancelUpdateDownload() { getEngine()?.cancelUpdateDownload?.(); }
 
     // ================= Engine info =================
-    function loadEngineInfo() {
+    function loadEngineInfo(attempt) {
       const engine = getEngine();
-      if (engine?.engineInfo) {
-        engine.engineInfo().then(info => {
-          if (info?.ytDlpVersion) {
-            const el = document.getElementById('aboutEngine');
-            if (el) el.innerText = `yt-dlp ${info.ytDlpVersion}`;
-          }
-        }).catch(() => {});
+      const dot = document.getElementById('engineDot');
+      if (!engine?.engineInfo) {
+        if (dot) { dot.classList.remove('dot--live', 'dot--bad'); }
+        return;
       }
+      engine.engineInfo().then(info => {
+        if (info?.ytDlpVersion) {
+          const el = document.getElementById('aboutEngine');
+          if (el) el.innerText = `yt-dlp ${info.ytDlpVersion}`;
+        }
+        if (dot) {
+          dot.classList.remove('dot--bad');
+          dot.classList.add('dot--live');
+        }
+      }).catch(() => {
+        if (!attempt) {
+          setTimeout(() => loadEngineInfo(1), 2200);
+        } else if (dot) {
+          dot.classList.remove('dot--live');
+          dot.classList.add('dot--bad');
+        }
+      });
     }
 
     function openGitHubRepo() { window.open(`https://github.com/${GITHUB_REPO}`, '_system'); }
+    function applySaveFolderUI(res) {
+      const label = (res && (res.label || res.folder)) || 'Gallery — Movies / Music';
+      const custom = !!(res && res.custom);
+      const txt = document.getElementById('folderText');
+      if (txt) txt.innerText = label;
+      const resetBtn = document.getElementById('btnResetFolder');
+      if (resetBtn) resetBtn.classList.toggle('hidden', !custom);
+    }
+
     async function handleChooseFolder() {
       const engine = getEngine();
       if (!engine?.chooseFolder) return;
       try {
-        await engine.chooseFolder();
-        document.getElementById('folderText').innerText = 'Custom folder';
-        showToast('Save location', 'New downloads will be saved to your chosen folder.', 'success');
+        const res = await engine.chooseFolder();
+        applySaveFolderUI(Object.assign({ custom: true, label: 'Custom folder' }, res || {}));
+        showToast('Save location', 'New downloads will save to ' + ((res && (res.label || res.folder)) || 'your chosen folder') + '.', 'success');
       } catch (e) {
         const msg = (e && e.message) ? e.message : '';
         if (!msg.toLowerCase().includes('cancel')) showToast('Folder not set', msg || 'Could not use that folder.', 'error');
       }
     }
+
+    async function handleResetFolder() {
+      const engine = getEngine();
+      if (!engine?.clearSaveFolder) return;
+      try {
+        const res = await engine.clearSaveFolder();
+        applySaveFolderUI(res || { uri: '', label: 'Gallery — Movies / Music', custom: false });
+        showToast('Save location reset', 'Restored default Gallery — Movies / Music.', 'info');
+      } catch (e) {
+        showToast('Reset failed', (e && e.message) || 'Could not reset save folder.', 'error');
+      }
+    }
+
     async function refreshSaveLocationLabel() {
       const engine = getEngine();
       if (!engine?.getSaveLocation) return;
       try {
         const res = await engine.getSaveLocation();
-        if (res && res.label) document.getElementById('folderText').innerText = res.label;
+        if (res) applySaveFolderUI(res);
       } catch (e) {}
     }
 
@@ -2299,11 +4266,11 @@
     }
 
     function openShieldConfirmModal() {
-      document.getElementById('shieldConfirmModal')?.classList.remove('hidden');
+      openModalEl('shieldConfirmModal');
     }
 
     function closeShieldConfirmModal() {
-      document.getElementById('shieldConfirmModal')?.classList.add('hidden');
+      closeModalEl('shieldConfirmModal');
     }
 
     function confirmDisableShield() {
@@ -2316,6 +4283,7 @@
 
     async function toggleAutoUnique(enabled) {
       storeSet('auto_unique', enabled ? '1' : '0');
+      paintShieldTierUI();
       try {
         const engine = getEngine();
         if (engine?.setAutoUnique) {
@@ -2326,13 +4294,58 @@
       }
     }
 
+    function currentShieldTier() {
+      return storeGet('shield_tier') === 'deep' ? 'deep' : 'standard';
+    }
+
+    function paintShieldTierUI() {
+      const tier = currentShieldTier();
+      const shieldOn = storeGet('auto_unique') !== '0';
+      const row = document.getElementById('shieldTierRow');
+      const desc = document.getElementById('shieldTierDesc');
+      if (row) {
+        row.style.opacity = shieldOn ? '' : '0.45';
+        row.style.pointerEvents = shieldOn ? '' : 'none';
+      }
+      if (desc) {
+        const capH = Number(deviceCaps && deviceCaps.maxAvcEncodeHeight) || 0;
+        const capHint = (capH > 0 && capH < 1920)
+          ? ` (GPU max ${capH}px height; taller 1080×1920 portrait clips fall back to Standard.)`
+          : '';
+        desc.textContent = !shieldOn
+          ? 'Turn Anti-repost shield on above to pick Standard or Deep Creator Shield.'
+          : (tier === 'deep'
+            ? 'Hardware Creator Shield: subtle re-encode + micro crop/gamma/trim (slower; platform effect untested).' + capHint
+            : 'Lossless container & metadata uniqueness (0% quality loss).');
+      }
+      document.querySelectorAll('#shieldTierSeg .seg__btn').forEach(b => {
+        b.classList.toggle('on', b.getAttribute('data-tier') === tier);
+      });
+    }
+
+    function syncShieldSettings(tier) {
+      const engine = getEngine();
+      if (engine?.syncShieldSettings) {
+        engine.syncShieldSettings({ tier: tier || currentShieldTier() }).catch(() => {});
+      }
+    }
+
+    function setShieldTier(tier) {
+      const clean = tier === 'deep' ? 'deep' : 'standard';
+      triggerHaptic('light');
+      storeSet('shield_tier', clean);
+      paintShieldTierUI();
+      syncShieldSettings(clean);
+      syncDropSettings();
+    }
+
     function toggleClipboardDetect(enabled) {
       storeSet('clipboard_detect', enabled ? '1' : '0');
       if (!enabled) {
         // Detection off means the banner goes too - it exists only to offer
         // what is on the clipboard.
         detectedClipboardUrl = '';
-        document.getElementById('clipboardBanner')?.classList.add('hidden');
+        setClipboardBannerVisible(false);
       }
     }
 
@@ -2366,25 +4379,43 @@
       const engine = getEngine();
       if (!engine?.syncDropSettings) return;
       engine.syncDropSettings({
-        qualities: JSON.stringify(collectQualityMemory())
+        qualities: JSON.stringify(collectQualityMemory()),
+        shieldTier: currentShieldTier()
       }).catch(() => {});
     }
 
 
     // ================= Utils =================
-    function extractUrl(text) {
-      if (!text) return "";
-      const match = text.match(/https?:\/\/[^\s<>\"']+/i);
-      if (!match) return "";
-      let url = match[0].replace(/[.,;:!?)\]]+$/, "");
+    function _cleanExtractedUrl(raw) {
+      if (!raw) return '';
+      const url = String(raw).replace(/[.,;:!?)\]]+$/, '');
       try {
         const u = new URL(url);
         const junk = ['igsh', 'si', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'feature', 'fbclid', 'mibextid', 's', 'fs', 'share_app_id'];
         junk.forEach(p => u.searchParams.delete(p));
-        return u.toString().replace(/\?$/, "");
+        return u.toString().replace(/\?$/, '');
       } catch (e) {
         return url;
       }
+    }
+    function extractAllUrls(text) {
+      if (!text) return [];
+      const matches = String(text).match(/https?:\/\/[^\s<>\"']+/gi) || [];
+      const seen = new Set();
+      const out = [];
+      for (const m of matches) {
+        const cleaned = _cleanExtractedUrl(m);
+        if (cleaned && !seen.has(cleaned)) {
+          seen.add(cleaned);
+          out.push(cleaned);
+        }
+      }
+      return out;
+    }
+    function extractUrl(text) {
+      if (!text) return "";
+      const match = text.match(/https?:\/\/[^\s<>\"']+/i);
+      return match ? _cleanExtractedUrl(match[0]) : "";
     }
     function formatDuration(sec) {
       if (!sec) return "0:00";
@@ -2408,41 +4439,119 @@
     function loadHistory() {
       try { downloadsHistory = JSON.parse(storeGet('v2_history') || '[]'); }
       catch (e) { downloadsHistory = []; }
-      completedCount = downloadsHistory.length;
+      completedCount = downloadsHistory.filter(h => !h.failed).length;
       // Persist lifetime bytes too — otherwise a restart shows "12 completed · 0 MB" (B7)
       grabbedBytes = parseInt(storeGet('bytes_total') || '0', 10) || 0;
       updateLastGrabChip();
     }
 
-    // ================= Sheet drag-to-dismiss =================
+    // ================= Sheet drag-to-dismiss & Android Back =================
     function setupSheetDrag() {
-      document.querySelectorAll('[data-drag-dismiss]').forEach(grabber => {
-        const sheet = document.getElementById(grabber.getAttribute('data-drag-dismiss'));
-        if (!sheet) return;
-        let startY = 0, curY = 0, dragging = false;
-        const start = (y) => { startY = y; dragging = true; sheet.style.transition = 'none'; };
+      document.querySelectorAll('.modal .sheet').forEach(sheet => {
+        const modal = sheet.closest('.modal, .fixed');
+        if (!modal) return;
+        const scrim = modal.querySelector('.modal__scrim');
+        const handles = [
+          ...sheet.querySelectorAll('[data-drag-dismiss]'),
+          ...sheet.querySelectorAll('.sheet__head')
+        ];
+        let startY = 0, curY = 0, lastY = 0, lastTs = 0, velocity = 0, dragging = false, sheetH = 360;
+
+        const start = (y, target) => {
+          if (target && target.closest('button, a, input, select, textarea, label')) return false;
+          if (sheet.id === 'updateSheet' && isDownloadingUpdate) return false;
+          startY = y;
+          lastY = y;
+          curY = 0;
+          velocity = 0;
+          lastTs = performance.now();
+          dragging = true;
+          sheetH = sheet.offsetHeight || 360;
+          sheet.style.transition = 'none';
+          if (scrim) scrim.style.transition = 'none';
+          return true;
+        };
+
         const move = (y) => {
           if (!dragging) return;
+          const now = performance.now();
+          const dt = Math.max(1, now - lastTs);
+          velocity = (y - lastY) / dt;
+          lastY = y;
+          lastTs = now;
           curY = Math.max(0, y - startY);
           sheet.style.transform = `translateY(${curY}px)`;
+          if (scrim) {
+            const ratio = Math.min(1, curY / Math.max(220, sheetH));
+            scrim.style.opacity = String(Math.max(0.08, 1 - ratio));
+          }
         };
+
         const end = () => {
           if (!dragging) return;
           dragging = false;
-          sheet.style.transition = '';
-          if (curY > 110) {
+          const recentFlick = curY > 28 && velocity > 0.55 && (performance.now() - lastTs) < 120;
+          const shouldDismiss = curY > 110 || recentFlick;
+          if (scrim) { scrim.style.transition = ''; scrim.style.opacity = ''; }
+          if (shouldDismiss) {
+            sheet.style.transition = '';
             sheet.style.transform = '';
-            sheet.closest('.modal, .fixed')?.classList.add('hidden');
+            if (modal.id === 'inspectorModal') closeInspector();
+            else closeModalEl(modal.id);
           } else {
+            sheet.style.transition = 'transform .18s var(--ease)';
             sheet.style.transform = '';
+            setTimeout(() => { if (!dragging) sheet.style.transition = ''; }, 190);
           }
           curY = 0;
+          velocity = 0;
         };
-        grabber.addEventListener('touchstart', e => start(e.touches[0].clientY), { passive: true });
-        grabber.addEventListener('touchmove', e => move(e.touches[0].clientY), { passive: true });
-        grabber.addEventListener('touchend', end);
-        grabber.addEventListener('mousedown', e => { start(e.clientY); const mm = ev => move(ev.clientY); const mu = () => { end(); document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); }; document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu); });
+
+        handles.forEach(handle => {
+          handle.addEventListener('touchstart', e => {
+            if (e.touches && e.touches[0]) start(e.touches[0].clientY, e.target);
+          }, { passive: true });
+          handle.addEventListener('touchmove', e => {
+            if (e.touches && e.touches[0]) move(e.touches[0].clientY);
+          }, { passive: true });
+          handle.addEventListener('touchend', end);
+          handle.addEventListener('touchcancel', end);
+          handle.addEventListener('mousedown', e => {
+            if (!start(e.clientY, e.target)) return;
+            const mm = ev => move(ev.clientY);
+            const mu = () => {
+              end();
+              document.removeEventListener('mousemove', mm);
+              document.removeEventListener('mouseup', mu);
+            };
+            document.addEventListener('mousemove', mm);
+            document.addEventListener('mouseup', mu);
+          });
+        });
       });
+    }
+
+    function setupHardwareBackButton() {
+      const appPlugin = window.Capacitor?.Plugins?.App;
+      if (!appPlugin?.addListener) return;
+      try {
+        appPlugin.addListener('backButton', () => {
+          const stack = ['playlistModal', 'historyDetailModal', 'shieldConfirmModal', 'errorModal', 'updateModal', 'inspectorModal'];
+          for (const id of stack) {
+            const m = document.getElementById(id);
+            if (m && !m.classList.contains('hidden') && !m.classList.contains('is-closing')) {
+              if (id === 'inspectorModal') closeInspector();
+              else closeModalEl(id);
+              return;
+            }
+          }
+          if (currentTab !== 'grab') {
+            switchTab('grab');
+            return;
+          }
+          try { appPlugin.exitApp?.(); } catch (e) {}
+        });
+      } catch (e) {}
     }
 
     // ================= Theme =================
@@ -2485,8 +4594,10 @@
     window.addEventListener('DOMContentLoaded', () => {
       loadHistory();
       renderGrabRecent();
+      handleUrlInputChanged();
       syncGrabLedger();            // v3.1.1: fold in headless grabs the app never saw (N9)
       setupSheetDrag();
+      setupHardwareBackButton();
       refreshSaveLocationLabel();
       consumeOpenQueueRequest();   // v3.1.1: notification tap → Queue (N7)
       checkNotificationHint();     // v3.1.1: warn once if notifications are off (N6)
@@ -2506,7 +4617,11 @@
           }
         } catch (ignored) {}
       }
+      clearLegacyAccent();
+      paintShieldTierUI();
+      syncShieldSettings();
       paintOneTapQuality();
+      paintBatchPasteQuality();
 
       // DowniDrop 2.0: mirror the per-platform quality memory to the native side
       // (DropActivity reads it without a WebView). v3.1.1: the Instant/Ask toggle is
@@ -2516,7 +4631,20 @@
 
       getInstalledVersionInfo().then(applyVersionToUI);
 
-      loadEngineInfo();
+      // Delay engine & device capability probes past MainActivity's 1500ms first-frame warmup budget
+      setTimeout(() => {
+        loadEngineInfo(0);
+        const eng = getEngine();
+        if (eng?.getDeviceCapabilities) {
+          eng.getDeviceCapabilities().then(caps => {
+            if (caps) {
+              deviceCaps = caps;
+              paintShieldTierUI();
+            }
+          }).catch(() => {});
+        }
+      }, 1800);
+      setTimeout(restoreBatchQueue, 2200);
       setTimeout(checkClipboard, 600);
       setTimeout(() => checkAppUpdates(true), 4000);
 
@@ -2535,22 +4663,8 @@
       // whole lifetime is "a link is on the clipboard".
       setInterval(() => { if (!document.hidden) checkClipboard(); }, 4000);
       syncBgPolling();
-
-      const engine = getEngine();
-      if (engine?.getSharedUrl) {
-        engine.getSharedUrl().then(res => {
-          if (res?.url) {
-            const clean = extractUrl(res.url);
-            if (clean) {
-              document.getElementById('inputManualUrl').value = clean;
-              handleInspectAndOpenModal(clean);
-            }
-          }
-        });
-      }
-      // NOTE: the warm-share 'onShareReceived' listener is registered once in
-      // handleSharedIntent() — a second registration here double-opened the
-      // Inspector for every share (B9).
+      // Cold/warm share intents are handled exclusively by handleSharedIntent()
+      // (B9) so a shared link never double-opens the Inspector.
     });
 
   </script>

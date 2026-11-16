@@ -1,6 +1,6 @@
 # READ THIS BEFORE UPGRADE
 
-> **Last reviewed: 2026-11-01 (v3.8.0 / versionCode 60).** This is a living document, not an
+> **Last reviewed: 2026-11-16 (v3.11.0 / versionCode 64).** This is a living document, not an
 > archive. Every feature, fix, engine constraint or newly found truth defect must update it **in
 > the same commit** as the change (§9). If this file and the app disagree, the app is the fact and
 > this file is the defect.
@@ -125,6 +125,8 @@ v3.1.1 earned the name **"The Truth Release"** by killing the ways the app contr
 | **N8** | Terminal cards lingered **indefinitely** (a failed card from 12:47 still on screen at 13:05) because the snapshot was only pruned while a grab ran. | **Terminal state is honest but temporary** — 20 s, re‑pruned on **every read**, and failed cards must show failure copy with no Cancel. |
 | **U5** | A moving progress bar **badged / vibrated / sounded** like an unread notification. | **Progress never badges, sounds or vibrates; only completion does.** (Android locks channel policy at creation — policy changes shape new installs only.) |
 | **C** | The UI showed a **stale version** the build wasn't. | **No hardcoded version strings** — read them from the build. |
+| **N18** | A fresh first grab showed **"Already queued"** while the items had in fact just been queued and were downloading (v3.11.0). Cause: `enqueueBatchItems()` set `batchState.pending = fresh` (same array ref) on an empty queue, then `pumpBatchQueue()` `shift()`ed items off that shared array, so the later `return fresh.length` read `0` and the caller took its `added === 0` (false) branch. | **A count is not an alias.** Capture the enqueued count (`const addedCount = fresh.length`) *before* anything mutates the array, and return that — never re-read `.length` of an array another function may have consumed. Fixed in `www/index.html`; device-verified row 11-7 (2026-11-16). |
+| **N19** | Hashed YouTube caption keys (`zh-HK-2epwjfpmbia`) were rendered as selectable languages in the Playlist Sheet caption dropdown. | **A machine key is not a language.** Filter every subtitle option through `isCleanSubLangCode()` before it reaches a user-facing picker (both Playlist and Inspector), and default to a clean code (`en`). Fixed; row 11-8 (2026-11-16). |
 
 > **The contract in one line:** show only what is actually happening. When display and reality disagree, **reality wins** — even when the honest state looks worse.
 
@@ -146,7 +148,10 @@ Scope is closed. These are the things that must **not** appear in a future versi
 2. **TikTok photo‑post / carousel downloads** — new extractor surface, niche payoff, new falseness risk. The TikTok chip means *video*.
 3. **Web‑side direct‑to‑CDN or "speed" tricks** — the engine already picks lanes; these only add failure modes.
 4. **Any Cloud Boost–style relay** (see §4) — removed for cause. Reviving it revives the false claims.
-5. **Light theme / theming rework** — deleted on purpose; re‑adding doubles the QA matrix.
+5. **Light theme / theming rework** — deleted on purpose; re‑adding doubles the QA matrix. **The
+   `Lime`/`Cyan`/`Amber` accent switcher was also removed on 2026-11-16 (owner ruling, D-004):**
+   DOWNI now has a single fixed Electric Lime OLED brand. No theme picker, no `data-accent`
+   overrides, no `accent_palette` storage — do not reintroduce it under any name.
 6. **APK‑size or engine restructuring** — 42.6 MB is acceptable; churn with no user‑visible truth.
 7. **Localization / multi‑language** — pure scope.
 8. **Any new Android permission** — and know that `REQUEST_INSTALL_PACKAGES` (needed by the updater) is a **Play‑restricted** permission: harmless for sideload distribution, but it needs a declaration if DOWNI ever goes to Play. Never add `QUERY_ALL_PACKAGES` or `MANAGE_EXTERNAL_STORAGE`.
@@ -304,6 +309,26 @@ Key architectural rulings and fixes in 3.8.0:
 3. **Engine Pin & CI Drift Verification.** `yt-dlp==2026.10.29.232701.dev0` and `certifi==2026.10.23` are pinned in `android/app/build.gradle` as the single source of truth, verified by cryptographic PyPI wheel SHA-256 matching via `ci/verify_pin_parity.py`.
 4. **Network Diagnostics Integrity (Engine Settings Option B).** Removed misleading mock engine health badges, fake version checks, and dead notifications. Replaced with real DNS, TLS, and TCP reachability tests with hard timeouts in worker threads and sanitized native clipboard export.
 5. **Single Source of Truth for App Version (D-005).** `build.gradle` is the sole source for `versionName` and `versionCode`. `DowniEnginePlugin` reads directly from `BuildConfig`, eliminating hardcoded fallbacks like `3.6.2`/`55L`. The web UI reads version info dynamically via native bridge calls. `ci/verify_version_parity.py` validates this on every commit.
+
+---
+
+## 1️⃣2️⃣ v3.10.0 — 4K/1440p, IG 1080p DASH, Audio Tagging, Subtitles & Deep Shield (versionCode 63)
+
+Key additions in 3.10.0:
+
+1. **1440p / 4K (VP9/AV1) & Instagram 1080p DASH:**
+   - `downloader.py` accepts `sdk_int` on `inspect()` and `download()`, exposing `1440` (`1440p QHD`) and `2160` (`4K Ultra HD`) when VP9 (`sdk_int >= 29`) or AV1 (`sdk_int >= 34`) streams are present, and raising the `best` lane cap from 1080p to 2160p on API 29+. Also exposes `audio_opus` (`Audio Track (Opus/WebM)`) alongside M4A when WebM/Opus exists.
+   - Instagram and other non-YouTube sites unlock on-device DASH split+merge (`Mp4Merger`) when a supported video-only stream (`>720p`) and AAC audio-only stream exist, so Instagram 1080p DASH is offered honestly when available.
+2. **Pure-Python Audio Cover Art & Metadata Tagging (`audio_tagger.py`):**
+   - Zero subprocesses, zero C deps. Writes `ID3v2.3` (`TIT2`/`TPE1`/`APIC`) on `.mp3` and `moov/udta/meta/ilst` (`©nam`, `©ART`, `covr`) on `.m4a` with `stco`/`co64` chunk-offset adjustment when `moov` precedes `mdat`. Non-fatal: preserves original file on any error.
+3. **Subtitles & Paginated Playlists:**
+   - `inspect()` reports `has_subtitles` and `subtitle_langs`; `download(..., opts_json)` downloads `.srt`/`.vtt` sidecars without ffmpeg when `subtitles: true`.
+   - `playlist_inspect(url, offset=0, limit=50)` paginates via `playliststart`/`playlistend`.
+4. **Anti-Repost Shield Tiers (D-003):**
+   - Standard Lossless S2+ remains default ON; Opt-in Hardware Deep Creator Shield (`DeepShieldProcessor.java`, `shieldTier = "deep"`) is OFF by default and falls back safely to Standard S2+ on any codec error.
+5. **Diagnostics (N15), APK Size & 16 KB Page-Size Note:**
+   - N15 remains enforced: `diagnose()` runs real concurrent DNS, TLS, reachability, TikWM, and YouTube 64 KB Range GET probes (no ffmpeg, no `download_ranges`).
+   - All `arm64-v8a` native `.so` libraries use `p_align >= 0x4000` (16 KB aligned) with `useLegacyPackaging = true` (`DEFLATED` extraction) verified in CI (`release.yml`); APK size remains ~42 MB (Chaquopy + yt-dlp `2026.11.4.232659.dev0`).
 
 ---
 

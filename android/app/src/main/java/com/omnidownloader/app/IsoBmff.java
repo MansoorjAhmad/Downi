@@ -14,12 +14,13 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 
 /**
- * IsoBmff: Container detection, legal entropy atom injection, metadata rewriting,
+ * IsoBmff: Container detection, legal entropy atom injection, metadata sanitization,
  * and single-pass streaming hashing for Anti-Repost Shield S2.
  */
 public final class IsoBmff {
     private static final String TAG = "IsoBmff";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final long MP4_EPOCH_DELTA_SEC = 2082844800L;
 
     public enum ContainerType {
         MP4("mp4", "video/mp4"),
@@ -60,6 +61,13 @@ public final class IsoBmff {
         }
 
         // ISO-BMFF (MP4, M4V, MOV): first 4 bytes size, next 4 bytes box type
+        long boxSize = ((header[0] & 0xFFL) << 24)
+                | ((header[1] & 0xFFL) << 16)
+                | ((header[2] & 0xFFL) << 8)
+                | (header[3] & 0xFFL);
+        if (boxSize != 0 && boxSize != 1 && boxSize < 8) {
+            return ContainerType.UNKNOWN;
+        }
         String type = new String(header, 4, 4, StandardCharsets.ISO_8859_1);
         if ("ftyp".equalsIgnoreCase(type) || "moov".equalsIgnoreCase(type)
                 || "free".equalsIgnoreCase(type) || "mdat".equalsIgnoreCase(type)
@@ -85,7 +93,7 @@ public final class IsoBmff {
     public static byte[] generateIsoFreeBox() {
         ByteBuffer bb = ByteBuffer.allocate(64);
         bb.order(ByteOrder.BIG_ENDIAN);
-        bb.putInt(64); // Box size
+        bb.putInt(64);
         bb.put((byte) 'f');
         bb.put((byte) 'r');
         bb.put((byte) 'e');
@@ -142,7 +150,7 @@ public final class IsoBmff {
         if (file == null || !file.exists() || file.length() == 0) return "";
         try (FileInputStream fis = new FileInputStream(file)) {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] buf = new byte[64 * 1024];
+            byte[] buf = new byte[256 * 1024];
             int r;
             while ((r = fis.read(buf)) != -1) {
                 md.update(buf, 0, r);
@@ -169,8 +177,8 @@ public final class IsoBmff {
     }
 
     /**
-     * Copies input to output, injecting container-appropriate entropy, while hashing
-     * both input and output streams simultaneously in a single pass.
+     * Copies input to output, injecting container-appropriate entropy (for MP4, appends ISO 'free';
+     * for WebM, places EBML 'Void' inside the Segment element), while hashing input and output.
      */
     public static CopyResult copyAndInjectEntropy(File input, File output, ContainerType container) {
         if (input == null || !input.exists() || input.length() == 0 || output == null) {
@@ -197,101 +205,235 @@ public final class IsoBmff {
                 bytesWritten += len;
             }
 
-            byte[] entropy = null;
             if (container == ContainerType.MP4) {
-                entropy = generateIsoFreeBox();
-            } else if (container == ContainerType.WEBM) {
-                entropy = generateEbmlVoidElement();
-            }
-
-            if (entropy != null) {
+                byte[] entropy = generateIsoFreeBox();
                 outMd.update(entropy);
                 out.write(entropy);
                 bytesWritten += entropy.length;
+                out.flush();
+                return new CopyResult(true, bytesToHex(inMd.digest()), bytesToHex(outMd.digest()), bytesWritten);
             }
             out.flush();
-
-            String inSha = bytesToHex(inMd.digest());
-            String outSha = bytesToHex(outMd.digest());
-            return new CopyResult(true, inSha, outSha, bytesWritten);
         } catch (Exception e) {
             Log.e(TAG, "copyAndInjectEntropy failed: " + e.getMessage(), e);
             try { if (output.exists()) output.delete(); } catch (Exception ignored) {}
             return new CopyResult(false, "", "", 0);
         }
+
+        if (container == ContainerType.WEBM) {
+            if (!injectWebmVoidInsideSegment(output)) {
+                try { if (output.exists()) output.delete(); } catch (Exception ignored) {}
+                return new CopyResult(false, "", "", 0);
+            }
+            String inSha = bytesToHex(inMd.digest());
+            String outSha = computeSha256(output);
+            return new CopyResult(!outSha.isEmpty(), inSha, outSha, output.length());
+        }
+
+        String inSha = bytesToHex(inMd.digest());
+        String outSha = bytesToHex(outMd.digest());
+        return new CopyResult(true, inSha, outSha, bytesWritten);
     }
 
     /**
-     * Safely updates creation & modification timestamps in the ISO-BMFF mvhd box.
-     * Parses the top-level box structure with strict boundary checks to avoid file corruption.
-     * Returns true if timestamps were rewritten, false otherwise.
+     * Appends an EBML Void element inside the WebM Segment element, updating the Segment's
+     * VINT size header in-place when finite (preserving all SeekHead/Cluster/Cue offsets).
      */
-    public static boolean rewriteMvhdTimestamp(File mp4File) {
+    public static boolean injectWebmVoidInsideSegment(File webmFile) {
+        if (webmFile == null || !webmFile.exists() || webmFile.length() < 16) return false;
+        try (RandomAccessFile raf = new RandomAccessFile(webmFile, "rw")) {
+            long fileLen = raf.length();
+            raf.seek(0);
+            byte[] ebmlId = new byte[4];
+            raf.readFully(ebmlId);
+            if ((ebmlId[0] & 0xFF) != 0x1A || (ebmlId[1] & 0xFF) != 0x45
+                    || (ebmlId[2] & 0xFF) != 0xDF || (ebmlId[3] & 0xFF) != 0xA3) {
+                return false;
+            }
+            Vint ebmlSize = readEbmlVint(raf, fileLen);
+            if (ebmlSize == null || ebmlSize.unknown) return false;
+            long segPos = raf.getFilePointer() + ebmlSize.value;
+            if (segPos + 5 > fileLen) return false;
+
+            raf.seek(segPos);
+            byte[] segId = new byte[4];
+            raf.readFully(segId);
+            if ((segId[0] & 0xFF) != 0x18 || (segId[1] & 0xFF) != 0x53
+                    || (segId[2] & 0xFF) != 0x80 || (segId[3] & 0xFF) != 0x67) {
+                return false;
+            }
+
+            long segSizePos = raf.getFilePointer();
+            Vint segSize = readEbmlVint(raf, fileLen);
+            if (segSize == null) return false;
+
+            byte[] voidElem = generateEbmlVoidElement();
+            if (segSize.unknown) {
+                // Unknown Segment size spans to EOF; appending at EOF places Void inside Segment.
+                raf.seek(fileLen);
+                raf.write(voidElem);
+                return true;
+            }
+
+            long segDataStart = segSizePos + segSize.width;
+            if (segDataStart + segSize.value != fileLen) {
+                // Segment does not terminate at EOF (e.g. multi-segment); avoid corrupting bounds.
+                return false;
+            }
+            long newSize = segSize.value + voidElem.length;
+            long maxVal = (1L << (7 * segSize.width)) - 2L;
+            if (newSize > maxVal) {
+                return false;
+            }
+            byte[] encodedSize = encodeEbmlVint(newSize, segSize.width);
+            raf.seek(segSizePos);
+            raf.write(encodedSize);
+            raf.seek(fileLen);
+            raf.write(voidElem);
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "injectWebmVoidInsideSegment failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static final class Vint {
+        final int width;
+        final long value;
+        final boolean unknown;
+
+        Vint(int width, long value, boolean unknown) {
+            this.width = width;
+            this.value = value;
+            this.unknown = unknown;
+        }
+    }
+
+    private static Vint readEbmlVint(RandomAccessFile raf, long fileLen) throws Exception {
+        long pos = raf.getFilePointer();
+        if (pos >= fileLen) return null;
+        int first = raf.readUnsignedByte();
+        if (first == 0) return null;
+        int leadingZeros = Integer.numberOfLeadingZeros(first) - 24;
+        int width = leadingZeros + 1;
+        if (width < 1 || width > 8 || pos + width > fileLen) return null;
+
+        long mask = (1L << (8 - width)) - 1L;
+        long val = first & mask;
+        for (int i = 1; i < width; i++) {
+            val = (val << 8) | raf.readUnsignedByte();
+        }
+        long unknownSentinel = (1L << (7 * width)) - 1L;
+        return new Vint(width, val, val == unknownSentinel);
+    }
+
+    private static byte[] encodeEbmlVint(long value, int width) {
+        byte[] out = new byte[width];
+        for (int i = width - 1; i >= 0; i--) {
+            out[i] = (byte) (value & 0xFF);
+            value >>>= 8;
+        }
+        out[0] |= (byte) (1 << (8 - width));
+        return out;
+    }
+
+    /**
+     * Tier A MP4 metadata sanitization:
+     * - Updates creation & modification timestamps in mvhd, tkhd, and mdhd.
+     * - Scrubs tracking/metadata boxes (udta, meta, uuid) in-place by turning them into
+     *   same-size 'free' boxes with zeroed payloads so all stco/co64 chunk offsets stay valid.
+     */
+    public static boolean sanitizeMp4Atoms(File mp4File) {
         if (mp4File == null || !mp4File.exists() || mp4File.length() < 16) return false;
+        boolean updatedAny = false;
         try (RandomAccessFile raf = new RandomAccessFile(mp4File, "rw")) {
             long fileLen = raf.length();
-            long pos = 0;
-            while (pos < fileLen - 8) {
-                raf.seek(pos);
-                long boxSize = raf.readInt() & 0xFFFFFFFFL;
-                byte[] typeBytes = new byte[4];
-                raf.readFully(typeBytes);
-                String type = new String(typeBytes, StandardCharsets.ISO_8859_1);
-                long headerSize = 8;
-                if (boxSize == 1) {
-                    if (pos + 16 > fileLen) break;
-                    boxSize = raf.readLong();
-                    headerSize = 16;
-                } else if (boxSize == 0) {
-                    boxSize = fileLen - pos;
-                }
-                if (boxSize < headerSize || pos + boxSize > fileLen) break;
-
-                if ("moov".equalsIgnoreCase(type)) {
-                    long moovStart = pos + headerSize;
-                    long moovEnd = pos + boxSize;
-                    long subPos = moovStart;
-                    while (subPos < moovEnd - 8) {
-                        raf.seek(subPos);
-                        long subSize = raf.readInt() & 0xFFFFFFFFL;
-                        byte[] subTypeBytes = new byte[4];
-                        raf.readFully(subTypeBytes);
-                        String subType = new String(subTypeBytes, StandardCharsets.ISO_8859_1);
-                        long subHeaderSize = 8;
-                        if (subSize == 1) {
-                            if (subPos + 16 > moovEnd) break;
-                            subSize = raf.readLong();
-                            subHeaderSize = 16;
-                        } else if (subSize == 0) {
-                            subSize = moovEnd - subPos;
-                        }
-                        if (subSize < subHeaderSize || subPos + subSize > moovEnd) break;
-
-                        if ("mvhd".equalsIgnoreCase(subType)) {
-                            raf.seek(subPos + subHeaderSize);
-                            int version = raf.readByte() & 0xFF;
-                            raf.skipBytes(3); // flags
-                            // Seconds since Jan 1, 1904 UTC (delta = 2082844800s)
-                            long mp4EpochDelta = 2082844800L;
-                            long nowMp4Sec = (System.currentTimeMillis() / 1000L) + mp4EpochDelta;
-                            if (version == 0) {
-                                raf.writeInt((int) (nowMp4Sec & 0xFFFFFFFFL));
-                                raf.writeInt((int) (nowMp4Sec & 0xFFFFFFFFL));
-                            } else if (version == 1) {
-                                raf.writeLong(nowMp4Sec);
-                                raf.writeLong(nowMp4Sec);
-                            }
-                            return true;
-                        }
-                        subPos += subSize;
-                    }
-                    break;
-                }
-                pos += boxSize;
-            }
+            long nowMp4Sec = (System.currentTimeMillis() / 1000L) + MP4_EPOCH_DELTA_SEC;
+            updatedAny = walkMp4Container(raf, 0L, fileLen, nowMp4Sec, 0);
         } catch (Exception e) {
-            Log.w(TAG, "rewriteMvhdTimestamp failed (non-fatal): " + e.getMessage());
+            Log.w(TAG, "sanitizeMp4Atoms failed (non-fatal): " + e.getMessage());
+        }
+        return updatedAny;
+    }
+
+    /** Backwards-compatible wrapper that updates mvhd (+ tkhd/mdhd + scrubs udta/meta/uuid). */
+    public static boolean rewriteMvhdTimestamp(File mp4File) {
+        return sanitizeMp4Atoms(mp4File);
+    }
+
+    private static boolean walkMp4Container(RandomAccessFile raf, long start, long end,
+                                            long nowMp4Sec, int depth) throws Exception {
+        if (depth > 4) return false;
+        boolean updated = false;
+        long pos = start;
+        byte[] typeBytes = new byte[4];
+        while (pos <= end - 8) {
+            raf.seek(pos);
+            long boxSize = raf.readInt() & 0xFFFFFFFFL;
+            raf.readFully(typeBytes);
+            String type = new String(typeBytes, StandardCharsets.ISO_8859_1);
+            long headerSize = 8;
+            if (boxSize == 1) {
+                if (pos + 16 > end) break;
+                boxSize = raf.readLong();
+                headerSize = 16;
+            } else if (boxSize == 0) {
+                boxSize = end - pos;
+            }
+            if (boxSize < headerSize || pos + boxSize > end) break;
+
+            long payloadStart = pos + headerSize;
+            long boxEnd = pos + boxSize;
+
+            if ("mvhd".equalsIgnoreCase(type) || "tkhd".equalsIgnoreCase(type) || "mdhd".equalsIgnoreCase(type)) {
+                if (rewriteFullBoxTimestamps(raf, payloadStart, boxEnd, nowMp4Sec)) {
+                    updated = true;
+                }
+            } else if ("udta".equalsIgnoreCase(type) || "meta".equalsIgnoreCase(type) || "uuid".equalsIgnoreCase(type)) {
+                scrubBoxToFree(raf, pos, payloadStart, boxEnd);
+                updated = true;
+            } else if ("moov".equalsIgnoreCase(type) || "trak".equalsIgnoreCase(type) || "mdia".equalsIgnoreCase(type)) {
+                if (walkMp4Container(raf, payloadStart, boxEnd, nowMp4Sec, depth + 1)) {
+                    updated = true;
+                }
+            }
+            pos = boxEnd;
+        }
+        return updated;
+    }
+
+    private static boolean rewriteFullBoxTimestamps(RandomAccessFile raf, long payloadStart,
+                                                    long boxEnd, long nowMp4Sec) throws Exception {
+        if (payloadStart + 12 > boxEnd) return false;
+        raf.seek(payloadStart);
+        int version = raf.readByte() & 0xFF;
+        raf.skipBytes(3); // flags
+        if (version == 0) {
+            if (payloadStart + 12 > boxEnd) return false;
+            raf.writeInt((int) (nowMp4Sec & 0xFFFFFFFFL));
+            raf.writeInt((int) (nowMp4Sec & 0xFFFFFFFFL));
+            return true;
+        } else if (version == 1) {
+            if (payloadStart + 20 > boxEnd) return false;
+            raf.writeLong(nowMp4Sec);
+            raf.writeLong(nowMp4Sec);
+            return true;
         }
         return false;
+    }
+
+    private static void scrubBoxToFree(RandomAccessFile raf, long boxStart,
+                                       long payloadStart, long boxEnd) throws Exception {
+        raf.seek(boxStart + 4);
+        raf.write(new byte[]{'f', 'r', 'e', 'e'});
+        long remaining = boxEnd - payloadStart;
+        if (remaining <= 0) return;
+        raf.seek(payloadStart);
+        byte[] zeros = new byte[(int) Math.min(remaining, 16 * 1024)];
+        while (remaining > 0) {
+            int toWrite = (int) Math.min(remaining, zeros.length);
+            raf.write(zeros, 0, toWrite);
+            remaining -= toWrite;
+        }
     }
 }

@@ -26,6 +26,13 @@ jobs:
         run: python ci/verify_pin_parity.py
       - name: Verify version parity & single source of truth (drift guard)
         run: python ci/verify_version_parity.py
+      - name: Run Python unit tests (truth, titles, engine)
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python tools/test_truth.py
+          python tools/test_titles.py
+          python tools/test_engine.py
       - name: Run engine smoke test
         env:
           PYTHONIOENCODING: utf-8

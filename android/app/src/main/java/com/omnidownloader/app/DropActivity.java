@@ -5,9 +5,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Toast;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 /**
  * DowniDrop 2.0 — the invisible share door. Revives the v2.6.4 ShareReceiverActivity
  * pattern that v3.0 removed when shares moved into the Inspector: translucent,
@@ -18,7 +15,6 @@ import java.util.regex.Pattern;
  * full device matrix. The Inspector remains for the in-app paste / Vortex flows.
  */
 public class DropActivity extends Activity {
-    private static final Pattern URL_PATTERN = Pattern.compile("https?://\\S+");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -28,8 +24,12 @@ public class DropActivity extends Activity {
         if (url == null) {
             Toast.makeText(this, "DowniDrop: no link found in that share", Toast.LENGTH_SHORT).show();
         } else {
-            Toast.makeText(this, "⚡ DowniDrop: grabbing in background…", Toast.LENGTH_SHORT).show();
-            DowniDownloadService.startShared(this, url);
+            try {
+                DowniDownloadService.startShared(this, url);
+                Toast.makeText(this, "⚡ DowniDrop: grabbing in background…", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Toast.makeText(this, "DowniDrop couldn't start background grab. Open DOWNI to paste.", Toast.LENGTH_LONG).show();
+            }
         }
         // Warm-share redirect fix: this activity lives in its own throwaway task
         // (taskAffinity="" in the manifest), and removing that task on the way out
@@ -53,9 +53,7 @@ public class DropActivity extends Activity {
         return null;
     }
 
-    private String extractUrl(String text) {
-        if (text == null) return null;
-        Matcher m = URL_PATTERN.matcher(text);
-        return m.find() ? m.group() : null;
+    static String extractUrl(String text) {
+        return DowniNativeUtils.extractAndCleanUrl(text);
     }
 }

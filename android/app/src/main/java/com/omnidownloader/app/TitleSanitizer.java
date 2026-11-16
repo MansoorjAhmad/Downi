@@ -100,7 +100,7 @@ public final class TitleSanitizer {
      */
     public static String safeFileName(String requested, String ext) {
         String base = sanitize(requested);
-        String cleanExt = (ext == null || ext.trim().isEmpty()) ? "mp4" : ext.trim().toLowerCase(Locale.US).replaceFirst("^\\.", "");
+        String cleanExt = (ext == null || ext.trim().isEmpty()) ? "mp4" : ext.trim().toLowerCase(Locale.US).replaceFirst("^\\.+", "").replaceAll("[^a-z0-9]", "");
         if (cleanExt.isEmpty()) cleanExt = "mp4";
 
         if (base.toLowerCase(Locale.US).endsWith("." + cleanExt)) {

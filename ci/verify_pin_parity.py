@@ -128,9 +128,11 @@ def main() -> int:
         return 1
 
     pinned_yt = specs['yt_dlp']['version']
-    expected_base = re.sub(r'\.dev\d*$', '', pinned_yt)
-    installed_base = re.sub(r'\.dev\d*$', '', installed_yt)
-    if installed_base != expected_base and installed_yt != pinned_yt:
+    def _norm_ver_tuple(v):
+        base = re.sub(r'\.dev\d*$', '', str(v).strip())
+        return tuple(int(part) if part.isdigit() else part for part in base.split('.'))
+
+    if _norm_ver_tuple(installed_yt) != _norm_ver_tuple(pinned_yt) and installed_yt != pinned_yt:
         print("[FAIL] yt-dlp version drift detected!", file=sys.stderr)
         print(f"       Installed in Python ({sys.executable}): {installed_yt}", file=sys.stderr)
         print(f"       Pinned in build.gradle: {pinned_yt}", file=sys.stderr)

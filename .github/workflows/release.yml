@@ -36,6 +36,33 @@ jobs:
       - name: Sync Web Assets into Android
         run: npx cap sync android
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python engine test dependencies
+        run: |
+          PIN=$(python ci/verify_pin_parity.py --print-pin)
+          pip install $PIN
+
+      - name: Pre-release parity & unit test gates
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python ci/verify_pin_parity.py
+          python ci/verify_version_parity.py
+          python tools/test_truth.py
+          python tools/test_titles.py
+          python tools/test_engine.py
+          node tools/_tabcheck.js
+
+      - name: Run Android JVM unit tests
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest --console=plain
+
       - name: Restore Signing Keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -61,6 +88,53 @@ jobs:
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk "DOWNI-${GITHUB_REF_NAME}.apk"
           ls -la DOWNI-*.apk
+
+      - name: Verify 16 KB ELF & ZIP alignment on release APK
+        run: |
+          python - << 'EOF'
+          import glob, struct, sys, zipfile
+
+          apks = glob.glob("DOWNI-*.apk")
+          assert len(apks) == 1, f"Expected 1 APK, found {apks}"
+          apk = apks[0]
+          checked = 0
+          with zipfile.ZipFile(apk, "r") as zf, open(apk, "rb") as raw:
+              for info in zf.infolist():
+                  if not (info.filename.startswith("lib/arm64-v8a/") and info.filename.endswith(".so")):
+                      continue
+                  checked += 1
+                  if info.compress_type == zipfile.ZIP_STORED:
+                      raw.seek(info.header_offset + 26)
+                      fn_len, extra_len = struct.unpack("<HH", raw.read(4))
+                      data_off = info.header_offset + 30 + fn_len + extra_len
+                      if data_off % 16384 != 0:
+                          raise SystemExit(f"Unaligned stored .so {info.filename}: offset={data_off}")
+                  elf = zf.read(info.filename)
+                  if elf[:4] != b"\x7fELF" or elf[4] != 2:
+                      raise SystemExit(f"Not ELF64: {info.filename}")
+                  e_phoff = struct.unpack_from("<Q", elf, 32)[0]
+                  e_phentsize, e_phnum = struct.unpack_from("<HH", elf, 54)
+                  for i in range(e_phnum):
+                      off = e_phoff + i * e_phentsize
+                      p_type = struct.unpack_from("<I", elf, off)[0]
+                      if p_type == 1:  # PT_LOAD
+                          p_align = struct.unpack_from("<Q", elf, off + 48)[0]
+                          if p_align < 0x4000:
+                              raise SystemExit(f"{info.filename} PT_LOAD p_align=0x{p_align:x} < 0x4000")
+          assert checked > 0, "No arm64-v8a .so files found in APK"
+          print(f"[OK] Verified 16 KB alignment across {checked} arm64-v8a .so libraries")
+          EOF
+
+      - name: Verify release signing certificate continuity
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "apksigner not found under ANDROID_HOME=$ANDROID_HOME" >&2
+            exit 1
+          fi
+          CERT_OUT=$("$APKSIGNER" verify --print-certs DOWNI-*.apk)
+          echo "$CERT_OUT"
+          echo "$CERT_OUT" | grep -qi "431131731d7b26dadd6dc6ffa3ef337853f30a63decbb863bcec2a61bb0785e5"
 
       - name: Create or Update GitHub Release
         env:

@@ -50,14 +50,17 @@ typography change in any release. Do not "improve" or replace them.
 
 ## D-003 — The Anti-Repost Shield stays
 
-**Status:** CLOSED — user-facing feature.
+**Status:** CLOSED — user-facing feature (updated in v3.10.0 / versionCode 63).
 It must not be removed or disabled by default.
 
 ### What the code does:
-- For MP4 containers with 1 H.264 video track (profile <= High) and 0 or 1 AAC audio track (`VideoUniquifier.java` lines 158–190), it performs a software sample-by-sample remux via `android.media.MediaExtractor` and `android.media.MediaMuxer` (`VideoUniquifier.java` lines 202–307), preserves the orientation hint from `KEY_ROTATION` (`VideoUniquifier.java` lines 227–235), and appends an ISO `free` box with 48 bytes of entropy from `SecureRandom` (`VideoUniquifier.java` line 297, `IsoBmff.java` lines 85–98).
-- For non-remuxable containers/codecs or upon remux failure, it copies input bytes verbatim and appends an ISO `free` box (MP4) or EBML `Void` element (WebM) (`IsoBmff.java` lines 175–222). For MP4 files, it overwrites the `creation_time` and `modification_time` timestamps in the `moov.mvhd` atom (`IsoBmff.java` lines 229–296). It does not parse or strip individual metadata tags.
-- Post-process output validation checks track count, dimensions, duration tolerance (±150ms), and checks that the first video sample has `MediaExtractor.SAMPLE_FLAG_SYNC` set via `android.media.MediaExtractor` (`VideoUniquifier.java` lines 318–375). It does not use `MediaMetadataRetriever` and does not decode video frames.
-- If validation fails, original files are preserved unmodified (`VideoUniquifier.java` lines 146–149).
+- **Standard Lossless Shield (S2+, default ON):**
+  - For MP4 containers with 1 H.264 video track (profile <= High) and 0 or 1 AAC audio track (`VideoUniquifier.java`), performs a software sample-by-sample remux via `android.media.MediaExtractor` and `android.media.MediaMuxer`, preserves orientation (`KEY_ROTATION`), and appends an ISO `free` box with 48 bytes of entropy from `SecureRandom` (`IsoBmff.java`).
+  - For non-remuxable containers/codecs (including VP9/AV1 1440p/4K) or upon remux failure, copies input bytes verbatim, appends an ISO `free` box (MP4) or EBML `Void` element (WebM), and overwrites `moov.mvhd` timestamps (MP4).
+  - Post-process output validation checks track count, dimensions, duration tolerance (±150ms), and sync flag on first video sample via `MediaExtractor`.
+- **Opt-in Hardware Deep Creator Shield (`shieldTier = "deep"`, default OFF):**
+  - Explicitly opt-in via Settings. When enabled, `DeepShieldProcessor.java` performs hardware-accelerated `MediaCodec` decode/re-encode (H.264/AAC) with automatic fallback to Standard Lossless S2+ if hardware encoding fails or is unsupported.
+- If validation fails on either tier, original files are preserved unmodified.
 - Settings toggle has an explanatory confirmation sheet when switching off to prevent accidental disabling.
 - **Platform Effect:** The effect of these modifications on any platform's ingest, processing, duplicate detection, or distribution is completely untested. The code makes no claim to defeat, bypass, or evade detection on any service.
 
@@ -72,6 +75,13 @@ It must not be removed or disabled by default.
 - Light theme / theming rework.
 
 These were rejected by owner ruling. Do not re-open them as "quick wins".
+
+**2026-11-16 owner ruling — the accent switcher is removed.** The earlier approval of curated
+dark `Lime` / `Cyan` / `Amber` presets is reversed. DOWNI ships with a **single fixed Electric
+Lime brand** on OLED dark (the brand default, `#C6FF3D`). No accent picker, no `data-accent`
+theme overrides, no stored `accent_palette`. Rationale: it does not make the download better and
+it added QA surface for no functional gain. Do not reintroduce a theme switcher under any name.
+The app icon/brand SVGs were always Lime and are unchanged.
 
 ---
 

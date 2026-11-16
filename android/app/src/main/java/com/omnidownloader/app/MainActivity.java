@@ -2,7 +2,6 @@ package com.omnidownloader.app;
 
 import com.getcapacitor.BridgeActivity;
 import androidx.core.splashscreen.SplashScreen;
-import com.chaquo.python.android.AndroidPlatform;
 import com.chaquo.python.Python;
 
 public class MainActivity extends BridgeActivity {
@@ -66,9 +65,7 @@ public class MainActivity extends BridgeActivity {
         }
         new Thread(() -> {
             try {
-                if (!Python.isStarted()) {
-                    Python.start(new AndroidPlatform(getApplicationContext()));
-                }
+                DowniNativeUtils.ensurePythonStarted(getApplicationContext());
                 // Warm the engine too: importing downloader pulls in yt-dlp, so the
                 // first Grab starts seconds faster.
                 Python.getInstance().getModule("downloader").callAttr("engine_info");

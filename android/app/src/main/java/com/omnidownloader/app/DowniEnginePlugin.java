@@ -1,42 +1,37 @@
 package com.omnidownloader.app;
 
 import android.Manifest;
-import android.app.DownloadManager;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageInfo;
-import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.media.MediaMetadataRetriever;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Environment;
-import android.provider.MediaStore;
-import android.content.ContentValues;
-import android.content.Intent;
-import android.provider.DocumentsContract;
-import android.util.Base64;
+import android.provider.Settings;
 import android.util.Log;
-import android.webkit.MimeTypeMap;
+import android.view.HapticFeedbackConstants;
+import android.webkit.WebView;
 
+import androidx.activity.result.ActivityResult;
+import androidx.core.content.FileProvider;
+
+import com.chaquo.python.PyObject;
+import com.chaquo.python.Python;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.util.Set;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
-import com.getcapacitor.PermissionState;
-import androidx.activity.result.ActivityResult;
-import androidx.core.content.FileProvider;
-import com.getcapacitor.annotation.ActivityCallback;
-import com.chaquo.python.android.AndroidPlatform;
-import com.chaquo.python.Python;
-import com.chaquo.python.PyObject;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -44,13 +39,14 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.HashSet;
-import java.util.Locale;
+import java.security.MessageDigest;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,13 +56,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * DOWNI native bridge.
- * Parallel download queue (3 simultaneous, more auto-queued), per-job progress
- * and cancel, true in-app updater, engine health check, Media Vault.
+ * Parallel download queue (3 simultaneous, up to 6 queued), per-job progress
+ * and cancel, verified in-app updater, engine health check, and MediaStore/SAF saver.
  */
 @CapacitorPlugin(name = "DowniEngine", permissions = {
-    @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS }),
-    @Permission(alias = "mediaModern", strings = { Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO }),
-    @Permission(alias = "mediaLegacy", strings = { Manifest.permission.READ_EXTERNAL_STORAGE })
+        @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS }),
+        @Permission(alias = "storageLegacy", strings = { Manifest.permission.WRITE_EXTERNAL_STORAGE })
 })
 public class DowniEnginePlugin extends Plugin {
     private static volatile boolean isAppInForeground = true;
@@ -83,27 +78,44 @@ public class DowniEnginePlugin extends Plugin {
         isAppInForeground = false;
     }
 
+    @Override
+    protected void handleOnDestroy() {
+        enginePool.shutdownNow();
+        miscExecutor.shutdownNow();
+        super.handleOnDestroy();
+    }
+
     private static final int MAX_ACTIVE = 3;
     private static final int MAX_QUEUED = 6;
+    private static final int MAX_UPDATE_REDIRECTS = 5;
 
-    private DownloadManager downloadManager;
     private final ExecutorService enginePool = Executors.newFixedThreadPool(MAX_ACTIVE);
     private final ExecutorService miscExecutor = Executors.newFixedThreadPool(3);
     private final Map<String, DownloadJob> jobs = new ConcurrentHashMap<>();
-    private volatile boolean updateCancelled = false;
+    private final AtomicBoolean updateCancelled = new AtomicBoolean(false);
+    private final AtomicBoolean updateInProgress = new AtomicBoolean(false);
 
-    /** One queued/active download. */
     private static class DownloadJob {
         final String id;
         final PluginCall call;
         final String url;
         final String formatId;
+        final String initialTitle;
+        final boolean subtitles;
+        final String subLang;
+        final String shieldTier;
         final AtomicBoolean cancelled = new AtomicBoolean(false);
-        DownloadJob(String id, PluginCall call, String url, String formatId) {
+
+        DownloadJob(String id, PluginCall call, String url, String formatId,
+                    String initialTitle, boolean subtitles, String subLang, String shieldTier) {
             this.id = id;
             this.call = call;
             this.url = url;
             this.formatId = formatId;
+            this.initialTitle = initialTitle != null ? initialTitle : "";
+            this.subtitles = subtitles;
+            this.subLang = subLang;
+            this.shieldTier = shieldTier;
         }
     }
 
@@ -113,8 +125,8 @@ public class DowniEnginePlugin extends Plugin {
             long freed = 0;
             try {
                 freed += deleteTree(new File(getContext().getCacheDir(), "DowniEngine"));
-                freed += deleteTree(new File(getContext().getCacheDir(), "OmniEngine")); // legacy era
-                freed += deleteTree(new File(getContext().getCacheDir(), "OmniDrop"));   // legacy era
+                freed += deleteTree(new File(getContext().getCacheDir(), "OmniEngine"));
+                freed += deleteTree(new File(getContext().getCacheDir(), "OmniDrop"));
             } catch (Exception ignored) {}
             JSObject result = new JSObject();
             result.put("freed", freed);
@@ -141,23 +153,39 @@ public class DowniEnginePlugin extends Plugin {
     @PluginMethod
     public void chooseFolder(PluginCall call) {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(call, intent, "folderPickerCallback");
     }
 
     @ActivityCallback
     private void folderPickerCallback(PluginCall call, ActivityResult result) {
-        if (result.getResultCode() != android.app.Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+        if (result.getResultCode() != android.app.Activity.RESULT_OK
+                || result.getData() == null
+                || result.getData().getData() == null) {
             call.reject("Folder selection cancelled");
             return;
         }
         Uri tree = result.getData().getData();
         try {
-            getContext().getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).edit().putString("treeUri", tree.toString()).apply();
+            getContext().getContentResolver().takePersistableUriPermission(
+                    tree, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            String treeStr = tree.toString();
+            String folderName = MediaStoreSaver.getSafFolderDisplayName(getContext(), treeStr);
+            String label = folderName.isEmpty() ? "Custom folder" : folderName;
+            synchronized (DowniNativeUtils.PREFS_LOCK) {
+                getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("treeUri", treeStr)
+                        .putString("treeLabel", label)
+                        .apply();
+            }
             JSObject response = new JSObject();
-            response.put("folder", "Custom folder");
-            response.put("uri", tree.toString());
+            response.put("folder", label);
+            response.put("label", label);
+            response.put("uri", treeStr);
+            response.put("custom", true);
             call.resolve(response);
         } catch (Exception error) {
             call.reject("Could not save the selected folder", error);
@@ -166,21 +194,56 @@ public class DowniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void getSaveLocation(PluginCall call) {
-        String treeUri = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getString("treeUri", "");
-        boolean custom = treeUri != null && !treeUri.isEmpty();
+        android.content.SharedPreferences prefs = getContext()
+                .getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE);
+        String treeUri = prefs.getString("treeUri", "");
+        boolean custom = MediaStoreSaver.isSafTreeAccessible(getContext(), treeUri);
+        String label = "Gallery — Movies / Music";
+        if (custom) {
+            String stored = prefs.getString("treeLabel", "");
+            String resolved = !stored.isEmpty() ? stored : MediaStoreSaver.getSafFolderDisplayName(getContext(), treeUri);
+            if (!resolved.isEmpty() && stored.isEmpty()) {
+                synchronized (DowniNativeUtils.PREFS_LOCK) {
+                    prefs.edit().putString("treeLabel", resolved).apply();
+                }
+            }
+            label = resolved.isEmpty() ? "Custom folder" : resolved;
+        }
         JSObject result = new JSObject();
         result.put("custom", custom);
-        result.put("label", custom ? "Custom folder" : "Gallery — Movies / Music");
+        result.put("uri", custom ? treeUri : "");
+        result.put("label", label);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void clearSaveFolder(PluginCall call) {
+        try {
+            android.content.SharedPreferences prefs = getContext()
+                    .getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE);
+            String treeUri = prefs.getString("treeUri", "");
+            if (treeUri != null && !treeUri.isEmpty()) {
+                try {
+                    getContext().getContentResolver().releasePersistableUriPermission(
+                            Uri.parse(treeUri),
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                } catch (Exception ignored) {}
+            }
+            synchronized (DowniNativeUtils.PREFS_LOCK) {
+                prefs.edit().remove("treeUri").remove("treeLabel").apply();
+            }
+        } catch (Exception ignored) {}
+        JSObject result = new JSObject();
+        result.put("uri", "");
+        result.put("label", "Gallery — Movies / Music");
+        result.put("custom", false);
         call.resolve(result);
     }
 
     @Override
     public void load() {
-        downloadManager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
-
-        // One-time identity migration: settings lived under "omni_settings".
         try {
-            android.content.SharedPreferences next = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+            android.content.SharedPreferences next = getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE);
             android.content.SharedPreferences legacy = getContext().getSharedPreferences("omni_settings", Context.MODE_PRIVATE);
             String legacyTree = legacy.getString("treeUri", "");
             if (next.getString("treeUri", "").isEmpty() && legacyTree != null && !legacyTree.isEmpty()) {
@@ -189,15 +252,17 @@ public class DowniEnginePlugin extends Plugin {
             }
         } catch (Exception ignored) {}
 
-        // Never let a stale update APK eat storage (B14) — the installer keeps
-        // no state, so last session's file (either naming era) is pure junk now.
         try {
             File updates = getContext().getExternalFilesDir("updates");
             if (updates != null) {
                 new File(updates, "downi-update.apk").delete();
+                new File(updates, "downi-update.apk.part").delete();
                 new File(updates, "omni-update.apk").delete();
             }
         } catch (Exception ignored) {}
+
+        // Discard leftover interrupted DowniDrop bytes even when reopening app directly.
+        DowniDownloadService.sweepInterrupted(getContext());
     }
 
     @PluginMethod
@@ -207,19 +272,27 @@ public class DowniEnginePlugin extends Plugin {
             call.reject("Paste a playlist link.");
             return;
         }
+        final int offset = Math.max(0, call.getInt("offset", 0));
+        final int limit = Math.max(1, Math.min(100, call.getInt("limit", 50)));
         call.setKeepAlive(true);
         miscExecutor.execute(() -> {
+            long t0 = android.os.SystemClock.elapsedRealtime();
+            Log.i("DOWNI", "playlistInspect start off=" + offset + " lim=" + limit);
             try {
-                if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
-                PyObject response = Python.getInstance().getModule("downloader").callAttr("playlist_inspect", url);
+                DowniNativeUtils.ensurePythonStarted(getContext());
+                PyObject response = Python.getInstance().getModule("downloader")
+                        .callAttr("playlist_inspect", url, offset, limit);
                 if (response == null || "None".equals(response.toString())) {
-                    call.reject("No playlist found on that link.");
+                    Log.i("DOWNI", "playlistInspect empty");
+                    call.reject("No playlist found on that link.", "link", (Exception) null);
                     return;
                 }
-                JSONObject info = new JSONObject(response.toString());
+                String jsonStr = Python.getInstance().getModule("json")
+                        .callAttr("dumps", response).toString();
+                JSONObject info = new JSONObject(jsonStr);
                 JSObject result = new JSObject();
-                result.put("count", info.optInt("count", 0));
-                com.getcapacitor.JSArray list = new com.getcapacitor.JSArray();
+                result.put("title", info.optString("title", "Playlist"));
+                JSArray list = new JSArray();
                 JSONArray items = info.optJSONArray("items");
                 if (items != null) {
                     for (int i = 0; i < items.length(); i++) {
@@ -228,13 +301,26 @@ public class DowniEnginePlugin extends Plugin {
                         item.put("url", obj.optString("url"));
                         item.put("title", obj.optString("title", "Video"));
                         item.put("duration", obj.optInt("duration", 0));
+                        item.put("thumbnail", obj.optString("thumbnail", ""));
                         list.put(item);
                     }
                 }
+                int totalCount = info.optInt("total_count", info.optInt("count", list.length()));
+                boolean hasMore = info.optBoolean("has_more", false);
+                int nextOffset = info.optInt("next_offset", offset + list.length());
+                result.put("count", totalCount);
+                result.put("totalCount", totalCount);
+                result.put("hasMore", hasMore);
+                result.put("nextOffset", nextOffset);
                 result.put("items", list);
+                Log.i("DOWNI", "playlistInspect ok items=" + list.length() + " ms=" + (android.os.SystemClock.elapsedRealtime() - t0));
                 call.resolve(result);
             } catch (Exception error) {
-                call.reject("Could not read that playlist.", error);
+                String detail = error.getMessage() == null ? "" : error.getMessage();
+                Log.w("DOWNI", "playlistInspect err: " + detail);
+                String cause = EngineError.cause(detail);
+                String raw = EngineError.raw(detail);
+                call.reject(raw.isEmpty() ? "Could not read that playlist." : raw, cause, error);
             }
         });
     }
@@ -256,6 +342,26 @@ public class DowniEnginePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getDeviceCapabilities(PluginCall call) {
+        miscExecutor.execute(() -> {
+            long availBytes = 0L;
+            try {
+                File dir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES);
+                if (dir == null || !dir.exists()) dir = getContext().getFilesDir();
+                if (dir != null) {
+                    android.os.StatFs stat = new android.os.StatFs(dir.getAbsolutePath());
+                    availBytes = stat.getAvailableBytes();
+                }
+            } catch (Exception ignored) {}
+            int maxAvcHeight = DeepShieldProcessor.queryMaxAvcEncoderHeight();
+            JSObject res = new JSObject();
+            res.put("availBytes", availBytes);
+            res.put("maxAvcEncodeHeight", maxAvcHeight);
+            call.resolve(res);
+        });
+    }
+
+    @PluginMethod
     public void getAppInfo(PluginCall call) {
         JSObject result = new JSObject();
         try {
@@ -266,8 +372,6 @@ public class DowniEnginePlugin extends Plugin {
             result.put("engine", "DOWNI Engine (Chaquopy 3.11 + yt-dlp)");
             call.resolve(result);
         } catch (Exception e) {
-            // Defect C: Single source of truth — read directly from BuildConfig
-            // generated from build.gradle, eliminating stale hardcoded fallbacks.
             result.put("versionName", BuildConfig.VERSION_NAME);
             result.put("versionCode", (long) BuildConfig.VERSION_CODE);
             result.put("packageName", getContext().getPackageName());
@@ -291,7 +395,13 @@ public class DowniEnginePlugin extends Plugin {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !getContext().getPackageManager().canRequestPackageInstalls()) {
-            call.reject("Install unknown apps permission required — allow it for DOWNI in system settings, then retry.");
+            try {
+                Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getContext().getPackageName()));
+                settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(settingsIntent);
+            } catch (Exception ignored) {}
+            call.reject("Install unknown apps permission required — enable it in settings, then retry.");
             return;
         }
 
@@ -307,54 +417,58 @@ public class DowniEnginePlugin extends Plugin {
         }
     }
 
-    // ---------- In-App Updater: download APK with live progress ----------
+    // ---------- In-App Updater: verified GitHub download with live progress ----------
 
     @PluginMethod
     public void downloadUpdate(PluginCall call) {
         final String fileUrl = call.getString("url", "");
-        if (fileUrl == null || !fileUrl.startsWith("http")) {
-            call.reject("Invalid update URL.");
+        final String expectedSha256 = call.getString("sha256", "");
+        if (!DowniNativeUtils.isAllowedUpdateUrl(fileUrl)) {
+            call.reject("Update URL must be an HTTPS GitHub release URL.");
             return;
         }
-        if (updateCancelled) updateCancelled = false;
+        if (!updateInProgress.compareAndSet(false, true)) {
+            call.reject("An update download is already in progress.");
+            return;
+        }
+        updateCancelled.set(false);
         call.setKeepAlive(true);
 
         miscExecutor.execute(() -> {
             File destDir = getContext().getExternalFilesDir("updates");
             if (destDir == null) destDir = getContext().getFilesDir();
             if (!destDir.exists()) destDir.mkdirs();
+            final File partFile = new File(destDir, "downi-update.apk.part");
             final File destFile = new File(destDir, "downi-update.apk");
             long lastEvent = 0;
+            HttpURLConnection conn = null;
 
             try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(fileUrl).openConnection();
-                conn.setInstanceFollowRedirects(true);
-                conn.setConnectTimeout(20000);
-                conn.setReadTimeout(30000);
-                conn.setRequestProperty("User-Agent", "DOWNI-Android/" + getAppVersionName());
-                conn.connect();
-
+                conn = openAllowedUpdateConnection(fileUrl);
                 int code = conn.getResponseCode();
                 if (code < 200 || code >= 300) {
                     call.reject("Update server returned HTTP " + code);
                     return;
                 }
 
-                long total = conn.getContentLength();
-                InputStream input = conn.getInputStream();
-                OutputStream output = new java.io.FileOutputStream(destFile);
+                long total = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+                        ? conn.getContentLengthLong()
+                        : conn.getContentLength();
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
                 byte[] buffer = new byte[64 * 1024];
                 long downloaded = 0;
                 long start = System.currentTimeMillis();
 
-                try {
+                try (InputStream input = conn.getInputStream();
+                     OutputStream output = new FileOutputStream(partFile)) {
                     int read;
                     while ((read = input.read(buffer)) != -1) {
-                        if (updateCancelled) {
+                        if (updateCancelled.get()) {
                             call.reject("Update download cancelled.");
                             return;
                         }
                         output.write(buffer, 0, read);
+                        digest.update(buffer, 0, read);
                         downloaded += read;
                         long now = System.currentTimeMillis();
                         if (now - lastEvent > 250) {
@@ -367,43 +481,131 @@ public class DowniEnginePlugin extends Plugin {
                             progress.put("downloadedBytes", downloaded);
                             progress.put("totalBytes", total);
                             progress.put("indeterminate", total <= 0);
-                            progress.put("sizeFormatted", formatBytes(downloaded) + (total > 0 ? " / " + formatBytes(total) : ""));
-                            progress.put("speedFormatted", formatSpeed(speed));
+                            progress.put("sizeFormatted", DowniNativeUtils.formatBytes(downloaded)
+                                    + (total > 0 ? " / " + DowniNativeUtils.formatBytes(total) : ""));
+                            progress.put("speedFormatted", DowniNativeUtils.formatSpeed(speed));
                             notifyListeners("onUpdateProgress", progress);
                         }
                     }
-                } finally {
-                    try { input.close(); } catch (Exception ignored) {}
-                    try { output.close(); } catch (Exception ignored) {}
-                    conn.disconnect();
+                    output.flush();
                 }
 
-                if (destFile.length() <= 0) {
+                if (partFile.length() <= 0) {
                     call.reject("Downloaded update file is empty.");
+                    return;
+                }
+
+                String actualSha = IsoBmff.bytesToHex(digest.digest());
+                if (expectedSha256 != null && !expectedSha256.trim().isEmpty()) {
+                    String normalizedExpected = expectedSha256.trim().toLowerCase(java.util.Locale.US)
+                            .replaceFirst("^sha256:", "");
+                    if (!actualSha.equalsIgnoreCase(normalizedExpected)) {
+                        call.reject("Update integrity check failed (SHA-256 mismatch).");
+                        return;
+                    }
+                }
+
+                if (!BuildConfig.DEBUG && !verifyApkSignatureMatchesSelf(partFile)) {
+                    call.reject("Update signature verification failed — APK signer does not match DOWNI.");
+                    return;
+                }
+
+                if (destFile.exists()) destFile.delete();
+                if (!partFile.renameTo(destFile)) {
+                    call.reject("Could not finalize downloaded update APK.");
                     return;
                 }
 
                 JSObject result = new JSObject();
                 result.put("path", destFile.getAbsolutePath());
                 result.put("size", destFile.length());
+                result.put("sha256", actualSha);
                 call.resolve(result);
             } catch (Exception error) {
-                if (updateCancelled) {
+                if (updateCancelled.get()) {
                     call.reject("Update download cancelled.");
                 } else {
-                    call.reject("Update download failed: " + (error.getMessage() != null ? error.getMessage() : "network error"), error);
+                    call.reject("Update download failed: "
+                            + (error.getMessage() != null ? error.getMessage() : "network error"), error);
                 }
+            } finally {
+                if (conn != null) try { conn.disconnect(); } catch (Exception ignored) {}
+                try { if (partFile.exists()) partFile.delete(); } catch (Exception ignored) {}
+                updateInProgress.set(false);
             }
         });
     }
 
+    private HttpURLConnection openAllowedUpdateConnection(String initialUrl) throws Exception {
+        String current = initialUrl;
+        for (int hops = 0; hops <= MAX_UPDATE_REDIRECTS; hops++) {
+            if (!DowniNativeUtils.isAllowedUpdateUrl(current)) {
+                throw new SecurityException("Blocked redirect to untrusted host.");
+            }
+            HttpURLConnection conn = (HttpURLConnection) new URL(current).openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(20000);
+            conn.setReadTimeout(30000);
+            conn.setRequestProperty("User-Agent", "DOWNI-Android/" + getAppVersionName());
+            conn.connect();
+            int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_MOVED_TEMP
+                    || code == HttpURLConnection.HTTP_MOVED_PERM
+                    || code == HttpURLConnection.HTTP_SEE_OTHER
+                    || code == 307
+                    || code == 308) {
+                String location = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (location == null || location.isEmpty()) {
+                    throw new java.io.IOException("Redirect missing Location header.");
+                }
+                current = new URL(new URL(current), location).toString();
+                continue;
+            }
+            return conn;
+        }
+        throw new java.io.IOException("Too many redirects downloading update.");
+    }
+
+    @SuppressWarnings("deprecation")
+    private boolean verifyApkSignatureMatchesSelf(File apkFile) {
+        try {
+            PackageManager pm = getContext().getPackageManager();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageInfo selfInfo = pm.getPackageInfo(getContext().getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES);
+                PackageInfo apkInfo = pm.getPackageArchiveInfo(apkFile.getAbsolutePath(), PackageManager.GET_SIGNING_CERTIFICATES);
+                if (selfInfo == null || apkInfo == null || selfInfo.signingInfo == null || apkInfo.signingInfo == null) {
+                    return false;
+                }
+                Signature[] selfSigs = selfInfo.signingInfo.getApkContentsSigners();
+                Signature[] apkSigs = apkInfo.signingInfo.getApkContentsSigners();
+                if (selfSigs == null || apkSigs == null || selfSigs.length == 0 || apkSigs.length == 0) {
+                    return false;
+                }
+                return Arrays.equals(selfSigs[0].toByteArray(), apkSigs[0].toByteArray());
+            } else {
+                PackageInfo selfInfo = pm.getPackageInfo(getContext().getPackageName(), PackageManager.GET_SIGNATURES);
+                PackageInfo apkInfo = pm.getPackageArchiveInfo(apkFile.getAbsolutePath(), PackageManager.GET_SIGNATURES);
+                if (selfInfo == null || apkInfo == null || selfInfo.signatures == null || apkInfo.signatures == null
+                        || selfInfo.signatures.length == 0 || apkInfo.signatures.length == 0) {
+                    return false;
+                }
+                return Arrays.equals(selfInfo.signatures[0].toByteArray(), apkInfo.signatures[0].toByteArray());
+            }
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @PluginMethod
     public void cancelUpdateDownload(PluginCall call) {
-        updateCancelled = true;
-        // Kill the partial file too — a cancelled update must not leak storage (B14).
+        updateCancelled.set(true);
         try {
             File updates = getContext().getExternalFilesDir("updates");
-            if (updates != null) new File(updates, "downi-update.apk").delete();
+            if (updates != null) {
+                new File(updates, "downi-update.apk").delete();
+                new File(updates, "downi-update.apk.part").delete();
+            }
         } catch (Exception ignored) {}
         call.resolve();
     }
@@ -414,7 +616,7 @@ public class DowniEnginePlugin extends Plugin {
     public void engineInfo(PluginCall call) {
         miscExecutor.execute(() -> {
             try {
-                if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
+                DowniNativeUtils.ensurePythonStarted(getContext());
                 PyObject response = Python.getInstance().getModule("downloader").callAttr("engine_info");
                 JSONObject info = new JSONObject(response.toString());
                 JSObject result = new JSObject();
@@ -428,60 +630,8 @@ public class DowniEnginePlugin extends Plugin {
         });
     }
 
-    private void collectMedia(JSONArray items, Uri collection, String[] projection,
-                              String selection, String[] args, boolean video,
-                              java.util.Set<Long> seen, boolean trackedOnly) {
-        try (Cursor cursor = getContext().getContentResolver().query(
-                collection, projection, selection, args,
-                MediaStore.MediaColumns.DATE_MODIFIED + " DESC")) {
-            if (cursor == null) return;
-            int count = 0;
-            while (cursor.moveToNext() && count < 300) {
-                try {
-                    long id = cursor.getLong(0);
-                    if (seen.contains(id)) continue;
-                    String name = cursor.getString(1);
-                    if (trackedOnly && !isTrackedDowniName(name)) continue;
-                    JSONObject item = new JSONObject();
-                    item.put("id", id);
-                    item.put("name", name != null ? name : "Media");
-                    item.put("size", cursor.getLong(2));
-                    item.put("dateModified", cursor.getLong(3));
-                    String mime = cursor.getString(4);
-                    item.put("mime", mime != null ? mime : (video ? "video/mp4" : "audio/mp4"));
-                    item.put("isVideo", video);
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        String rel = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH));
-                        item.put("folder", rel != null ? rel.replace("/", " ").trim() : "");
-                    } else {
-                        item.put("folder", video ? "Movies" : "Music");
-                    }
-                    seen.add(id);
-                    items.put(item);
-                    count++;
-                } catch (Exception ignored) {}
-            }
-        } catch (Exception ignored) {}
-    }
-
-    /**
-     * True when displayName is one this app saved. nextGalleryName() records every
-     * base name ("title.ext", lowercased) in the downi_saved_names prefs; actual
-     * files may carry a " (N)" suffix before the extension, which we strip first.
-     */
-    private boolean isTrackedDowniName(String displayName) {
-        if (displayName == null) return false;
-        String name = displayName.toLowerCase(Locale.US)
-            .replaceAll("\\s*\\(\\d+\\)(?=\\.[^.]+$)", "");
-        if (getContext().getSharedPreferences("downi_saved_names", Context.MODE_PRIVATE).contains(name)) return true;
-        // Identity migration: names saved while the app was still OmniDownloader.
-        return getContext().getSharedPreferences("omni_saved_names", Context.MODE_PRIVATE).contains(name);
-    }
-
     @PluginMethod
     public void setNativeTheme(PluginCall call) {
-        // 3.6.0: dark-only. The Obsidian foundation owns both system bars; the old
-        // AMOLED true-black branch retired with the toggle.
         getActivity().runOnUiThread(() -> {
             try {
                 android.view.Window window = getActivity().getWindow();
@@ -520,26 +670,57 @@ public class DowniEnginePlugin extends Plugin {
         rawUrl = rawUrl == null ? "" : rawUrl.trim();
         Uri uri = Uri.parse(rawUrl);
         if (!("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))) {
-            call.reject("Paste a valid http or https media link.");
+            call.reject("Paste a valid http or https media link.", "link", (Exception) null);
             return;
         }
+
+        // Request WRITE_EXTERNAL_STORAGE on API 24-28 before starting a download so gallery writes succeed.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                && getPermissionState("storageLegacy") != PermissionState.GRANTED) {
+            call.setKeepAlive(true);
+            requestPermissionForAlias("storageLegacy", call, "storagePermissionCallback");
+            return;
+        }
+        enqueueDownloadJob(call, rawUrl);
+    }
+
+    @PermissionCallback
+    private void storagePermissionCallback(PluginCall call) {
+        String rawUrl = call.getString("directUrl", "");
+        if (rawUrl == null || rawUrl.trim().isEmpty()) rawUrl = call.getString("url", "");
+        enqueueDownloadJob(call, rawUrl == null ? "" : rawUrl.trim());
+    }
+
+    private void enqueueDownloadJob(PluginCall call, String rawUrl) {
         if (jobs.size() >= MAX_QUEUED) {
             call.reject("Queue is full. Wait for a download to finish or cancel one.");
             return;
         }
-        String jobId = "dl" + System.currentTimeMillis() + (int) (Math.random() * 1000);
-        DownloadJob job = new DownloadJob(jobId, call, rawUrl, call.getString("formatId", "best"));
+        String jobId = DowniNativeUtils.nextJobId("dl");
+        boolean subtitles = Boolean.TRUE.equals(call.getBoolean("subtitles", false));
+        String subLang = call.getString("subLang", "");
+        String storedTier = getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                .getString("shieldTier", "standard");
+        String reqTier = call.getString("shieldTier", "");
+        String shieldTier = DowniNativeUtils.normalizeShieldTier(
+                (reqTier != null && !reqTier.trim().isEmpty()) ? reqTier : storedTier);
+        String rawTitle = call.getString("title", "");
+        String initialTitle = rawTitle == null ? "" : rawTitle.trim();
+        DownloadJob job = new DownloadJob(jobId, call, rawUrl, call.getString("formatId", "best"),
+                initialTitle, subtitles, subLang == null ? "" : subLang.trim(), shieldTier);
         jobs.put(jobId, job);
-        Log.i("DOWNI", "job start " + jobId + " " + rawUrl); // (D) logcat breadcrumb
+        Log.i("DOWNI", "job start " + jobId + " " + rawUrl);
 
         JSObject started = new JSObject();
         started.put("jobId", jobId);
+        started.put("url", rawUrl);
+        if (!job.initialTitle.isEmpty()) started.put("title", job.initialTitle);
         started.put("percent", 0);
         started.put("status", "Queued");
         started.put("queued", true);
         notifyListeners("onProgress", started);
 
-        DowniDownloadService.startJob(getContext(), jobId, "Queued");
+        DowniDownloadService.startJob(getContext(), jobId, "Queued", job.initialTitle);
         call.setKeepAlive(true);
         enginePool.execute(() -> runJob(job));
     }
@@ -548,26 +729,32 @@ public class DowniEnginePlugin extends Plugin {
     public void cancelDownload(PluginCall call) {
         String jobId = call.getString("jobId");
         if (jobId != null && !jobId.trim().isEmpty()) {
-            DownloadJob job = jobs.remove(jobId);
-            if (job != null) {
-                job.cancelled.set(true);
-                Log.i("DOWNI", "job cancel " + jobId); // (D) logcat breadcrumb
-                try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
-                DowniDownloadService.finishJob(getContext(), jobId, false);
+            DownloadJob job = jobs.get(jobId);
+            if (job != null && job.cancelled.compareAndSet(false, true)) {
+                Log.i("DOWNI", "job cancel " + jobId);
+                try { job.call.reject("Download cancelled.", "cancelled", (Exception) null); } catch (Exception ignored) {}
+                DowniDownloadService.finishJob(getContext(), jobId, false, isAppInForeground);
                 JSObject progress = new JSObject();
                 progress.put("jobId", jobId);
                 progress.put("failed", true);
+                progress.put("cause", "cancelled");
                 progress.put("error", "Download cancelled.");
                 notifyListeners("onProgress", progress);
             }
         } else {
             for (DownloadJob job : jobs.values()) {
-                job.cancelled.set(true);
-                Log.i("DOWNI", "job cancel all " + job.id); // (D) logcat breadcrumb
-                try { job.call.reject("Download cancelled."); } catch (Exception ignored) {}
-                DowniDownloadService.finishJob(getContext(), job.id, false, isAppInForeground);
+                if (job.cancelled.compareAndSet(false, true)) {
+                    Log.i("DOWNI", "job cancel all " + job.id);
+                    try { job.call.reject("Download cancelled.", "cancelled", (Exception) null); } catch (Exception ignored) {}
+                    DowniDownloadService.finishJob(getContext(), job.id, false, isAppInForeground);
+                    JSObject progress = new JSObject();
+                    progress.put("jobId", job.id);
+                    progress.put("failed", true);
+                    progress.put("cause", "cancelled");
+                    progress.put("error", "Download cancelled.");
+                    notifyListeners("onProgress", progress);
+                }
             }
-            jobs.clear();
         }
         call.resolve();
     }
@@ -576,7 +763,8 @@ public class DowniEnginePlugin extends Plugin {
         File workDir = new File(new File(getContext().getCacheDir(), "DowniEngine"), job.id);
         try {
             if (job.cancelled.get()) return;
-            if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
+            DowniNativeUtils.ensurePythonStarted(getContext());
+            if (job.cancelled.get()) return;
 
             DowniDownloadService.updateJob(getContext(), job.id, "Starting engine…", 1);
             DownloadProgressListener listener = new DownloadProgressListener() {
@@ -585,21 +773,22 @@ public class DowniEnginePlugin extends Plugin {
                     if (job.cancelled.get()) return;
                     JSObject progress = new JSObject();
                     progress.put("jobId", job.id);
-                    progress.put("url", job.url); // lets the web layer match pending cards to the right job (B5)
+                    progress.put("url", job.url);
                     progress.put("percent", (int) percent);
                     progress.put("downloadedBytes", downloadedBytes);
                     progress.put("totalBytes", totalBytes);
                     progress.put("speed", speedBytesPerSec);
-                    progress.put("speedFormatted", formatSpeed(speedBytesPerSec));
-                    progress.put("sizeFormatted", formatBytes(downloadedBytes) + (totalBytes > 0 ? " / " + formatBytes(totalBytes) : ""));
+                    progress.put("speedFormatted", DowniNativeUtils.formatSpeed(speedBytesPerSec));
+                    String sizeText = DowniNativeUtils.formatBytes(downloadedBytes)
+                            + (totalBytes > 0 ? " / " + DowniNativeUtils.formatBytes(totalBytes) : "");
+                    progress.put("sizeFormatted", sizeText);
+                    progress.put("sizeText", sizeText);
                     progress.put("eta", etaSeconds);
-                    progress.put("etaFormatted", etaSeconds > 0 ? (etaSeconds + "s left") : "");
+                    progress.put("etaFormatted", DowniNativeUtils.formatEta(etaSeconds));
                     progress.put("status", "Downloading…");
                     notifyListeners("onProgress", progress);
-                    // v3.1.1 (defects N1-N3): the notification row is fed the same numbers the app
-                    // shows — % · size/total · speed · ETA — via the service's shared formatter.
                     DowniDownloadService.updateJobProgress(getContext(), job.id, (int) percent,
-                        downloadedBytes, totalBytes, speedBytesPerSec, etaSeconds);
+                            downloadedBytes, totalBytes, speedBytesPerSec, etaSeconds);
                 }
 
                 @Override
@@ -608,30 +797,27 @@ public class DowniEnginePlugin extends Plugin {
                 }
             };
 
-            PyObject response = Python.getInstance().getModule("downloader").callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId, listener);
+            JSONObject opts = new JSONObject();
+            opts.put("subtitles", job.subtitles);
+            if (!job.subLang.isEmpty()) opts.put("sub_lang", job.subLang);
+
+            PyObject response = Python.getInstance().getModule("downloader")
+                    .callAttr("download", job.url, workDir.getAbsolutePath(), job.formatId,
+                            listener, Build.VERSION.SDK_INT, opts.toString());
             if (job.cancelled.get()) return;
 
             JSONObject file = new JSONObject(response.toString());
-            DowniDownloadService.updateJob(getContext(), job.id, "Saving to your gallery.", 98);
-
-            JSObject saving = new JSObject();
-            saving.put("jobId", job.id);
-            saving.put("percent", 98);
-            saving.put("status", "Saving to your gallery.");
-            notifyListeners("onProgress", saving);
-
-            String destination;
-            // v3.1.1 (defect N9): the completion event must carry the real size of what landed.
-            // It used to post no totalBytes at all, so the web layer's "MB grabbed" counter
-            // (which only adds on the complete event) stayed at 0 forever — a lie on the
-            // Queue dashboard of a release called "The Truth Release".
-            long finalBytes = 0;
-            VideoUniquifier.Result uRes = null;
+            String title = file.optString("title", "Video");
             boolean wantUnique = job.call.getBoolean("makeUnique", false)
-                || getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getBoolean("autoUnique", true);
+                    || getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                    .getBoolean("autoUnique", true);
+
+            File toSave;
+            String ext;
+            VideoUniquifier.Result uRes;
 
             if (file.optBoolean("merge", false)) {
-                // True 1080p: separate video + audio streams muxed on-device.
+                if (job.cancelled.get()) return;
                 DowniDownloadService.updateJob(getContext(), job.id, "Merging video + audio…", 96);
                 JSObject merging = new JSObject();
                 merging.put("jobId", job.id);
@@ -641,112 +827,151 @@ public class DowniEnginePlugin extends Plugin {
 
                 File videoPart = new File(file.getString("video_path"));
                 File audioPart = new File(file.getString("audio_path"));
-                File merged = new File(videoPart.getParentFile(), file.getString("title") + "-merged.mp4");
-                if (Mp4Merger.merge(videoPart, audioPart, merged)) {
-                    File toSave = merged;
-                    String ext = "mp4";
-                    if (wantUnique) {
-                        try {
-                            DowniDownloadService.updateJob(getContext(), job.id, "Making video unique…", 97);
-                            JSObject uProg = new JSObject();
-                            uProg.put("jobId", job.id);
-                            uProg.put("percent", 97);
-                            uProg.put("status", "Making video unique…");
-                            notifyListeners("onProgress", uProg);
-                            File uniqueCandidate = new File(videoPart.getParentFile(), file.getString("title") + "-unique-temp.mp4");
-                            uRes = VideoUniquifier.process(merged, uniqueCandidate);
-                            if (uRes.success && ("remux".equals(uRes.mode) || "identity".equals(uRes.mode))) {
-                                try { merged.delete(); } catch (Exception ignored) {}
-                                toSave = uRes.file;
-                                ext = uRes.extension;
-                            } else {
-                                toSave = merged;
-                            }
-                        } catch (Throwable t) {
-                            Log.w("DowniEngine", "Uniquifier error, using original: " + t.getMessage());
-                            toSave = merged;
-                        }
-                    }
-                    finalBytes = toSave.length();
-                    destination = copyToGallery(toSave, file.getString("title"), ext);
-                    try { if (toSave != merged) toSave.delete(); } catch (Exception ignored) {}
-                } else {
-                    try { videoPart.delete(); } catch (Exception ignored) {}
-                    try { audioPart.delete(); } catch (Exception ignored) {}
-                    throw new IllegalStateException("Could not merge 1080p on this device. Try 720p HD or Best Available.");
-                }
+                File merged = new File(videoPart.getParentFile(), TitleSanitizer.sanitize(title) + "-merged.mp4");
+                boolean mergedOk = Mp4Merger.merge(videoPart, audioPart, merged, job.cancelled::get);
                 try { videoPart.delete(); } catch (Exception ignored) {}
                 try { audioPart.delete(); } catch (Exception ignored) {}
-            } else {
-                File single = new File(file.getString("path"));
-                File toSave = single;
-                String ext = file.getString("ext");
-                if (wantUnique && !"audio".equalsIgnoreCase(job.formatId) && !"mp3".equalsIgnoreCase(ext) && !"m4a".equalsIgnoreCase(ext)) {
-                    try {
-                        DowniDownloadService.updateJob(getContext(), job.id, "Making video unique…", 97);
-                        JSObject uProg = new JSObject();
-                        uProg.put("jobId", job.id);
-                        uProg.put("percent", 97);
-                        uProg.put("status", "Making video unique…");
-                        notifyListeners("onProgress", uProg);
-                        File uniqueCandidate = new File(single.getParentFile(), file.getString("title") + "-unique-temp." + ext);
-                        uRes = VideoUniquifier.process(single, uniqueCandidate);
-                        if (uRes.success && ("remux".equals(uRes.mode) || "identity".equals(uRes.mode))) {
-                            try { single.delete(); } catch (Exception ignored) {}
-                            toSave = uRes.file;
-                            ext = uRes.extension;
-                        } else {
-                            toSave = single;
-                        }
-                    } catch (Throwable t) {
-                        Log.w("DowniEngine", "Uniquifier error, using original: " + t.getMessage());
-                        toSave = single;
-                    }
+
+                if (job.cancelled.get()) {
+                    try { merged.delete(); } catch (Exception ignored) {}
+                    return;
                 }
-                finalBytes = toSave.length();
-                destination = copyToGallery(toSave, file.getString("title"), ext);
-                try { if (toSave != single) toSave.delete(); } catch (Exception ignored) {}
+                if (!mergedOk) {
+                    throw new IllegalStateException("[cause:format] Could not merge video and audio on this device. Try 1080p Full HD or 720p HD.");
+                }
+
+                String mergedExt = IsoBmff.isWebm(merged) ? "webm" : "mp4";
+                if (wantUnique) {
+                    DowniDownloadService.updateJob(getContext(), job.id, "Making video unique…", 97);
+                    JSObject uProg = new JSObject();
+                    uProg.put("jobId", job.id);
+                    uProg.put("percent", 97);
+                    uProg.put("status", "Making video unique…");
+                    notifyListeners("onProgress", uProg);
+                }
+                MediaStoreSaver.ShieldOutcome shield = MediaStoreSaver.applyShieldIfEnabled(
+                        merged, title, mergedExt, wantUnique, job.formatId, job.shieldTier, job.cancelled::get);
+                toSave = shield.fileToSave;
+                ext = shield.ext;
+                uRes = shield.result;
+            } else {
+                if (job.cancelled.get()) return;
+                File single = new File(file.getString("path"));
+                ext = file.getString("ext");
+                if (wantUnique && !MediaStoreSaver.isAudioExtension(ext)
+                        && !"audio".equalsIgnoreCase(job.formatId) && !"audio_opus".equalsIgnoreCase(job.formatId)) {
+                    DowniDownloadService.updateJob(getContext(), job.id, "Making video unique…", 97);
+                    JSObject uProg = new JSObject();
+                    uProg.put("jobId", job.id);
+                    uProg.put("percent", 97);
+                    uProg.put("status", "Making video unique…");
+                    notifyListeners("onProgress", uProg);
+                }
+                MediaStoreSaver.ShieldOutcome shield = MediaStoreSaver.applyShieldIfEnabled(
+                        single, title, ext, wantUnique, job.formatId, job.shieldTier, job.cancelled::get);
+                toSave = shield.fileToSave;
+                ext = shield.ext;
+                uRes = shield.result;
             }
+
             if (job.cancelled.get()) return;
 
+            DowniDownloadService.updateJob(getContext(), job.id, "Saving to your gallery.", 98);
+            JSObject saving = new JSObject();
+            saving.put("jobId", job.id);
+            saving.put("percent", 98);
+            saving.put("status", "Saving to your gallery.");
+            notifyListeners("onProgress", saving);
+
+            long finalBytes = toSave.length();
+            MediaStoreSaver.SaveOutcome saveResult = MediaStoreSaver.saveToGallery(getContext(), toSave, title, ext);
+            String destination = saveResult.destinationLabel;
+
+            int subtitleCount = 0;
+            String subtitleUri = "";
+            JSONArray subPaths = file.optJSONArray("subtitle_paths");
+            if (subPaths != null) {
+                for (int i = 0; i < subPaths.length(); i++) {
+                    String subPath = subPaths.optString(i, "");
+                    if (subPath.isEmpty()) continue;
+                    File subFile = new File(subPath);
+                    if (!subFile.exists() || subFile.length() == 0) continue;
+                    String subName = subFile.getName();
+                    int dot = subName.lastIndexOf('.');
+                    String subExt = (dot > 0 && dot < subName.length() - 1) ? subName.substring(dot + 1) : "srt";
+                    try {
+                        MediaStoreSaver.SaveOutcome subSaved = MediaStoreSaver.saveSubtitleFile(getContext(), subFile, title, subExt);
+                        subtitleCount++;
+                        if (subtitleUri.isEmpty() && subSaved.mediaUri != null) {
+                            subtitleUri = subSaved.mediaUri;
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            if (job.cancelled.get()) return;
+
+            String sizeFormatted = DowniNativeUtils.formatBytes(finalBytes);
             JSObject progress = new JSObject();
             progress.put("jobId", job.id);
             progress.put("url", job.url);
             progress.put("percent", 100);
             progress.put("status", "Saved to your gallery");
             progress.put("complete", true);
-            progress.put("title", file.optString("title", "Video"));
+            progress.put("title", title);
             progress.put("destination", destination);
+            progress.put("mediaUri", saveResult.mediaUri);
+            progress.put("mimeType", saveResult.mimeType);
+            progress.put("subtitleCount", subtitleCount);
+            progress.put("subtitleUri", subtitleUri);
+            if (file.has("tagged")) {
+                progress.put("tagged", file.optBoolean("tagged", false));
+            }
             if (uRes != null) {
                 progress.put("shieldMode", uRes.mode);
                 progress.put("shieldReason", uRes.reason);
+                progress.put("shieldInputSha", uRes.inputSha256);
                 progress.put("shieldSha", uRes.outputSha256);
+            } else {
+                progress.put("shieldMode", "");
+                progress.put("shieldReason", "");
+                progress.put("shieldInputSha", "");
+                progress.put("shieldSha", "");
             }
-            // N9: hand the web layer the size that actually landed so "MB grabbed" is real.
             progress.put("totalBytes", finalBytes);
             progress.put("downloadedBytes", finalBytes);
-            progress.put("sizeFormatted", formatBytes(finalBytes));
+            progress.put("sizeFormatted", sizeFormatted);
+            progress.put("sizeText", sizeFormatted);
             notifyListeners("onProgress", progress);
 
             DowniDownloadService.finishJob(getContext(), job.id, true, isAppInForeground);
             try { job.call.resolve(progress); } catch (Exception ignored) {}
-            Log.i("DOWNI", "job saved " + job.id + " -> " + destination); // (D) logcat breadcrumb
+            Log.i("DOWNI", "job saved " + job.id + " -> " + destination);
         } catch (Exception error) {
-            if (!job.cancelled.get()) {
+            String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
+            String cause = EngineError.cause(detail);
+            String raw = EngineError.raw(detail);
+            if ("cancelled".equals(cause)) {
+                if (job.cancelled.compareAndSet(false, true)) {
+                    JSObject progress = new JSObject();
+                    progress.put("jobId", job.id);
+                    progress.put("failed", true);
+                    progress.put("cause", "cancelled");
+                    progress.put("error", raw.isEmpty() ? "Download cancelled." : raw);
+                    notifyListeners("onProgress", progress);
+                    DowniDownloadService.finishJob(getContext(), job.id, false, isAppInForeground);
+                    try { job.call.reject(raw.isEmpty() ? "Download cancelled." : raw, "cancelled", error); } catch (Exception ignored) {}
+                }
+            } else if (!job.cancelled.get()) {
                 JSObject progress = new JSObject();
                 progress.put("jobId", job.id);
                 progress.put("failed", true);
-                String detail = error.getMessage() == null ? "Unknown download error" : error.getMessage();
-                String cause = EngineError.cause(detail);
-                String raw = EngineError.raw(detail);
                 progress.put("error", raw);
                 progress.put("cause", cause);
                 notifyListeners("onProgress", progress);
-                DowniDownloadService.finishJob(getContext(), job.id, false);
-                // The cause rides as the rejection's code, so the web layer phrases it
-                // without re-reading (or rewriting) the reason.
+                DowniDownloadService.finishJob(getContext(), job.id, false, isAppInForeground);
                 try { job.call.reject(raw, cause, error); } catch (Exception ignored) {}
-                Log.i("DOWNI", "job failed " + job.id + " [" + cause + "]: " + raw); // (D) logcat breadcrumb
+                Log.i("DOWNI", "job failed " + job.id + " [" + cause + "]: " + raw);
             }
         } finally {
             jobs.remove(job.id);
@@ -754,26 +979,23 @@ public class DowniEnginePlugin extends Plugin {
         }
     }
 
-
-
     @PluginMethod
     public void extract(PluginCall call) {
         String url = call.getString("url", "").trim();
         Uri uri = Uri.parse(url);
         if (!("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))) {
-            call.reject("Paste a valid public video link.");
+            call.reject("Paste a valid public video link.", "link", (Exception) null);
             return;
         }
         call.setKeepAlive(true);
         miscExecutor.execute(() -> {
             try {
-                if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
-                PyObject response = Python.getInstance().getModule("downloader").callAttr("inspect", url);
+                DowniNativeUtils.ensurePythonStarted(getContext());
+                PyObject response = Python.getInstance().getModule("downloader")
+                        .callAttr("inspect", url, Build.VERSION.SDK_INT);
                 JSONObject info = new JSONObject(response.toString());
-                // G2: a non-video link (tag page, dead resolve) carries neither duration nor
-                // thumbnail — reject honestly instead of opening the Inspector on "Video · 0:00".
                 if (info.optInt("duration", 0) <= 0 && info.optString("thumbnail", "").isEmpty()) {
-                    call.reject("That link isn't a video.");
+                    call.reject("That link isn't a video.", "link", (Exception) null);
                     return;
                 }
                 JSObject result = new JSObject();
@@ -784,10 +1006,20 @@ public class DowniEnginePlugin extends Plugin {
                 result.put("url", info.optString("webpage_url", url));
                 result.put("platform", info.optString("platform", "other"));
                 result.put("note", info.optString("note", ""));
+                result.put("hasSubtitles", info.optBoolean("has_subtitles", false));
+                JSArray subLangs = new JSArray();
+                JSONArray rawSubLangs = info.optJSONArray("subtitle_langs");
+                if (rawSubLangs != null) {
+                    for (int i = 0; i < rawSubLangs.length(); i++) {
+                        String code = rawSubLangs.optString(i, "");
+                        if (!code.isEmpty()) subLangs.put(code);
+                    }
+                }
+                result.put("subtitleLangs", subLangs);
 
                 JSONArray fmts = info.optJSONArray("formats");
                 if (fmts != null) {
-                    com.getcapacitor.JSArray jsFmts = new com.getcapacitor.JSArray();
+                    JSArray jsFmts = new JSArray();
                     for (int i = 0; i < fmts.length(); i++) {
                         JSONObject obj = fmts.getJSONObject(i);
                         JSObject item = new JSObject();
@@ -795,15 +1027,13 @@ public class DowniEnginePlugin extends Plugin {
                         item.put("label", obj.optString("label", "Standard"));
                         item.put("ext", obj.optString("ext", "mp4"));
                         item.put("badge", obj.optString("badge", "HD"));
+                        item.put("filesize", obj.optLong("filesize", 0L));
                         jsFmts.put(item);
                     }
                     result.put("formats", jsFmts);
                 }
                 call.resolve(result);
             } catch (Exception error) {
-                // The truth layer (v3.6.2): the engine's reason survives. "It may be
-                // private, protected, or temporarily unsupported" was a guess - the
-                // engine knows which one it was, and says so.
                 String detail = error.getMessage() == null ? "" : error.getMessage();
                 String cause = EngineError.cause(detail);
                 String raw = EngineError.raw(detail);
@@ -815,8 +1045,8 @@ public class DowniEnginePlugin extends Plugin {
     @PluginMethod
     public void setAutoUnique(PluginCall call) {
         boolean enabled = call.getBoolean("enabled", false);
-        getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
-            .edit().putBoolean("autoUnique", enabled).apply();
+        getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                .edit().putBoolean("autoUnique", enabled).apply();
         JSObject res = new JSObject();
         res.put("enabled", enabled);
         call.resolve(res);
@@ -824,8 +1054,8 @@ public class DowniEnginePlugin extends Plugin {
 
     @PluginMethod
     public void getAutoUnique(PluginCall call) {
-        boolean enabled = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
-            .getBoolean("autoUnique", true);
+        boolean enabled = getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                .getBoolean("autoUnique", true);
         JSObject res = new JSObject();
         res.put("enabled", enabled);
         call.resolve(res);
@@ -839,6 +1069,7 @@ public class DowniEnginePlugin extends Plugin {
             call.reject("No video uri provided");
             return;
         }
+        call.setKeepAlive(true);
         miscExecutor.execute(() -> {
             File tempInput = null;
             File tempOutput = null;
@@ -860,20 +1091,25 @@ public class DowniEnginePlugin extends Plugin {
                 String candExt = container.extension.isEmpty() ? "mp4" : container.extension;
                 tempOutput = new File(getContext().getCacheDir(), "uniq_" + System.currentTimeMillis() + "." + candExt);
 
-                VideoUniquifier.Result uRes = VideoUniquifier.process(tempInput, tempOutput);
-                if (uRes.success && ("remux".equals(uRes.mode) || "identity".equals(uRes.mode))) {
+                String tier = DowniNativeUtils.normalizeShieldTier(
+                        getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                                .getString("shieldTier", "standard"));
+                VideoUniquifier.Result uRes = VideoUniquifier.process(tempInput, tempOutput, tier);
+                if (uRes.success && VideoUniquifier.Result.isAppliedMode(uRes.mode)) {
                     String cleanTitle = (title.endsWith("(Unique)") ? title : (title + " (Unique)")).trim();
-                    String dest = copyToGallery(uRes.file, cleanTitle, uRes.extension);
+                    MediaStoreSaver.SaveOutcome saveResult = MediaStoreSaver.saveToGallery(getContext(), uRes.file, cleanTitle, uRes.extension);
                     JSObject res = new JSObject();
                     res.put("success", true);
-                    res.put("destination", dest);
+                    res.put("destination", saveResult.destinationLabel);
+                    res.put("mediaUri", saveResult.mediaUri);
+                    res.put("mimeType", saveResult.mimeType);
                     res.put("title", cleanTitle);
                     res.put("shieldMode", uRes.mode);
                     res.put("shieldReason", uRes.reason);
+                    res.put("shieldInputSha", uRes.inputSha256);
                     res.put("shieldSha", uRes.outputSha256);
                     call.resolve(res);
                 } else {
-                    // Do not save a duplicate under "(Unique)" — return an honest error and leave the original untouched.
                     String msg = (uRes != null && uRes.reason != null && !uRes.reason.isEmpty())
                             ? uRes.reason
                             : "Format not upload-safe for modification; original left untouched.";
@@ -893,18 +1129,12 @@ public class DowniEnginePlugin extends Plugin {
         call.setKeepAlive(true);
         miscExecutor.execute(() -> {
             try {
-                if (!Python.isStarted()) Python.start(new AndroidPlatform(getContext()));
+                DowniNativeUtils.ensurePythonStarted(getContext());
                 PyObject response = Python.getInstance().getModule("downloader").callAttr("diagnose");
                 String raw = response.toString();
-                // (D) logcat breadcrumb: the diagnostics' raw payload. Without it a
-                // results box that renders empty is a guessing game.
                 Log.i("DOWNI", "diagnose -> " + raw.substring(0, Math.min(raw.length(), 300)));
                 JSONObject info = new JSONObject(raw);
                 JSObject result = new JSObject();
-                // JSArray.from(JSONArray) is a trap: its constructor only accepts
-                // primitive arrays and Collections, so it returns null and the
-                // whole "results" key vanished - the phone showed an empty box
-                // while claiming "All clear". Parse the array's JSON instead.
                 JSONArray rows = info.optJSONArray("results");
                 JSArray results = new JSArray();
                 if (rows != null) {
@@ -935,14 +1165,11 @@ public class DowniEnginePlugin extends Plugin {
                 String value = intent.getStringExtra(android.content.Intent.EXTRA_TEXT);
                 if (value != null) shared = value;
             } else if (android.content.Intent.ACTION_PROCESS_TEXT.equals(action)) {
-                // Text-selection share (overflow menu → DOWNI). API 23+.
                 CharSequence value = intent.getCharSequenceExtra(android.content.Intent.EXTRA_PROCESS_TEXT);
                 if (value == null) value = intent.getCharSequenceExtra(android.content.Intent.EXTRA_PROCESS_TEXT_READONLY);
                 if (value != null) shared = value.toString();
             }
             if (!shared.isEmpty()) {
-                // Consume the share so a second read (boot block + handleSharedIntent)
-                // never re-opens the Inspector for the same intent.
                 intent.setAction("__downi_consumed__");
             }
         }
@@ -950,53 +1177,56 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve(result);
     }
 
-    /**
-     * DowniDrop settings bridge: the web layer (localStorage) owns the per-platform quality
-     * memory, but DropActivity and the headless service path are native-only — so the value
-     * is mirrored into SharedPreferences. v3.1.1 (owner ruling): the Instant / Ask-quality
-     * mode key is gone — shares always grab instantly, and this also sweeps the stale key.
-     */
     @PluginMethod
     public void syncDropSettings(PluginCall call) {
         String qualities = call.getString("qualities", "");
-        getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE)
-            .edit()
-            .putString("dropQualities", qualities == null ? "" : qualities)
-            .remove("dropMode")
-            .apply();
+        synchronized (DowniNativeUtils.PREFS_LOCK) {
+            android.content.SharedPreferences.Editor ed = getContext()
+                    .getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("dropQualities", qualities == null ? "" : qualities)
+                    .remove("dropMode");
+            if (call.hasOption("shieldTier")) {
+                ed.putString("shieldTier", DowniNativeUtils.normalizeShieldTier(call.getString("shieldTier", "standard")));
+            }
+            ed.apply();
+        }
         call.resolve();
     }
 
-    /**
-     * v3.1.1 (defect N4): background DowniDrop jobs are headless, so the app reads this snapshot to
-     * show them as live cards in Active downloads / Queue. Written by DowniDownloadService.
-     */
+    @PluginMethod
+    public void syncShieldSettings(PluginCall call) {
+        String tier = DowniNativeUtils.normalizeShieldTier(call.getString("tier", "standard"));
+        synchronized (DowniNativeUtils.PREFS_LOCK) {
+            getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("shieldTier", tier)
+                    .apply();
+        }
+        JSObject res = new JSObject();
+        res.put("tier", tier);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void getShieldSettings(PluginCall call) {
+        String tier = DowniNativeUtils.normalizeShieldTier(
+                getContext().getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
+                        .getString("shieldTier", "standard"));
+        JSObject res = new JSObject();
+        res.put("tier", tier);
+        call.resolve(res);
+    }
+
     @PluginMethod
     public void getDropJobs(PluginCall call) {
         JSObject result = new JSObject();
         try {
             android.content.SharedPreferences prefs = getContext()
-                .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
-            JSONArray list = JobSnapshot.read(getContext());
-            // v3.1.1 (defect N8): re-apply the terminal-entry window on read, because the
-            // service only writes this snapshot while a grab runs. Without this, a done/failed
-            // card stayed in Active downloads until the next grab happened (seen on device: a
-            // failed card from 12:47 and a done card still rendered at 13:05 with nothing live).
-            // v3.1.1 (defect N11): a "running" entry is only honest while the service still holds
-            // that grab. Force-stopping the app mid-grab froze the entry at state=running, so the
-            // app rendered a live card and counted ACTIVE 1 for a grab that no longer existed (no
-            // service, no notification row) — it never expired, because only terminal entries had
-            // a window (N8). Ask the service which grabs are real; null = no service alive at all.
-            // (Wave 0: the rules live in JobSnapshot.pruneForDisplay — one contract for every
-            // reader of the bus.)
+                    .getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE);
             Set<String> liveJobIds = DowniDownloadService.liveJobIdsSnapshot();
-            JSONArray kept = JobSnapshot.pruneForDisplay(list, liveJobIds, System.currentTimeMillis());
-            if (kept.length() != list.length()) {
-                JobSnapshot.write(getContext(), kept);
-            }
+            JSONArray kept = JobSnapshot.readAndPrune(getContext(), liveJobIds, System.currentTimeMillis());
             result.put("jobs", kept);
-            // DowniDrop self-diagnosis: the last headless failure (raw engine text included),
-            // written by DowniDownloadService — readable in the app, no adb needed.
             result.put("lastError", prefs.getString("dropLastError", ""));
         } catch (Exception e) {
             result.put("jobs", new JSONArray());
@@ -1004,11 +1234,6 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve(result);
     }
 
-    /**
-     * v3.1.1 (defect N9): the service-side ledger of headless DowniDrop grabs — lifetime bytes plus
-     * the rows themselves. The Queue dashboard used to count only the grabs the WebView happened to
-     * be alive for, so a "6 completed · 0 MB" line was possible after a run of shares.
-     */
     @PluginMethod
     public void getGrabLedger(PluginCall call) {
         JSObject result = new JSObject();
@@ -1022,45 +1247,42 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve(result);
     }
 
-    /** Clear-history also clears the headless ledger, so the dashboard resets as one unit. */
     @PluginMethod
     public void resetGrabLedger(PluginCall call) {
         try { DowniDownloadService.resetGrabLedger(getContext()); } catch (Exception ignored) {}
         call.resolve();
     }
 
-    /** Cancel a background grab from inside the app — routes to the service's shared_cancel action. */
     @PluginMethod
     public void cancelDropJob(PluginCall call) {
         String jobId = call.getString("jobId");
         if (jobId != null && !jobId.trim().isEmpty()) {
-            Intent intent = new Intent(getContext(), DowniDownloadService.class);
-            intent.setAction("shared_cancel");
-            intent.putExtra("jobId", jobId);
-            try { getContext().startService(intent); } catch (Exception ignored) {}
+            boolean cancelled = DowniDownloadService.cancelSharedJob(getContext(), jobId);
+            if (!cancelled && DowniDownloadService.isAlive()) {
+                Intent intent = new Intent(getContext(), DowniDownloadService.class);
+                intent.setAction("shared_cancel");
+                intent.putExtra("jobId", jobId);
+                try { getContext().startService(intent); } catch (Exception ignored) {}
+            }
         }
         call.resolve();
     }
 
-    /** v3.1.1 (defect N7): true exactly once after the user tapped a grab notification. */
     @PluginMethod
     public void consumeOpenQueueFlag(PluginCall call) {
         JSObject result = new JSObject();
         boolean open = false;
         try {
             android.content.SharedPreferences prefs = getContext()
-                .getSharedPreferences("downi_settings", Context.MODE_PRIVATE);
+                    .getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE);
             open = prefs.getBoolean("openQueuePending", false);
             if (open) prefs.edit().putBoolean("openQueuePending", false).apply();
-            // The Core's "peek" request is gone with the Core and the Vault. A leftover
-            // flag from an older build is cleared, never answered.
             prefs.edit().remove("openVaultPending").apply();
         } catch (Exception ignored) {}
         result.put("open", open);
         call.resolve(result);
     }
 
-    /** v3.1.1 (defect N6): lets the web warn once when notifications are switched off. */
     @PluginMethod
     public void notificationStatus(PluginCall call) {
         JSObject result = new JSObject();
@@ -1073,178 +1295,198 @@ public class DowniEnginePlugin extends Plugin {
         call.resolve(result);
     }
 
+    @PluginMethod
+    public void hapticTick(PluginCall call) {
+        final String style = call.getString("style", "light");
+        final int constant;
+        if ("error".equalsIgnoreCase(style)) {
+            constant = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    ? HapticFeedbackConstants.REJECT
+                    : HapticFeedbackConstants.LONG_PRESS;
+        } else if ("success".equalsIgnoreCase(style)) {
+            constant = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    ? HapticFeedbackConstants.CONFIRM
+                    : HapticFeedbackConstants.VIRTUAL_KEY;
+        } else if ("medium".equalsIgnoreCase(style)) {
+            constant = HapticFeedbackConstants.CONTEXT_CLICK;
+        } else {
+            constant = HapticFeedbackConstants.CLOCK_TICK;
+        }
+        android.app.Activity activity = getActivity();
+        if (activity == null || getBridge() == null) {
+            call.resolve();
+            return;
+        }
+        activity.runOnUiThread(() -> {
+            try {
+                WebView webView = getBridge().getWebView();
+                if (webView != null) {
+                    webView.performHapticFeedback(constant);
+                }
+            } catch (Exception ignored) {}
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void openSavedMedia(PluginCall call) {
+        String rawUri = call.getString("mediaUri", "");
+        String requestedMime = call.getString("mimeType", "");
+        try {
+            Uri contentUri = resolveAccessibleMediaUri(rawUri);
+            String mime = resolveOpenMimeType(contentUri, requestedMime);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(contentUri, mime);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                getContext().startActivity(intent);
+            } catch (ActivityNotFoundException firstMiss) {
+                if (!isCaptionOrTextFallbackEligible(mime, rawUri)) {
+                    throw firstMiss;
+                }
+                Intent textIntent = new Intent(Intent.ACTION_VIEW);
+                textIntent.setDataAndType(contentUri, "text/plain");
+                textIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    getContext().startActivity(textIntent);
+                } catch (ActivityNotFoundException secondMiss) {
+                    // Last-resort share sheet when the OEM ROM ships no text/caption viewer.
+                    Intent share = new Intent(Intent.ACTION_SEND);
+                    share.setType("text/plain");
+                    share.putExtra(Intent.EXTRA_STREAM, contentUri);
+                    share.setClipData(ClipData.newUri(getContext().getContentResolver(), "Captions", contentUri));
+                    share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    Intent chooser = Intent.createChooser(share, "Open captions with");
+                    chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    getContext().startActivity(chooser);
+                }
+            }
+            call.resolve();
+        } catch (ActivityNotFoundException e) {
+            call.reject("No app found on your device to open this media.", e);
+        } catch (Exception e) {
+            call.reject(e.getMessage() != null ? e.getMessage() : "Could not open saved media.", e);
+        }
+    }
+
+    private static boolean isCaptionOrTextFallbackEligible(String mime, String rawUri) {
+        String m = mime != null ? mime.toLowerCase(java.util.Locale.US) : "";
+        String u = rawUri != null ? rawUri.toLowerCase(java.util.Locale.US) : "";
+        return "application/x-subrip".equals(m)
+                || "text/vtt".equals(m)
+                || "text/srt".equals(m)
+                || u.endsWith(".srt")
+                || u.endsWith(".vtt");
+    }
+
+    @PluginMethod
+    public void shareSavedMedia(PluginCall call) {
+        String rawUri = call.getString("mediaUri", "");
+        String requestedMime = call.getString("mimeType", "");
+        String title = call.getString("title", "");
+        try {
+            Uri contentUri = resolveAccessibleMediaUri(rawUri);
+            String mime = resolveOpenMimeType(contentUri, requestedMime);
+            String label = (title != null && !title.trim().isEmpty()) ? title.trim() : "Share media";
+            Intent share = new Intent(Intent.ACTION_SEND);
+            share.setType(mime);
+            share.putExtra(Intent.EXTRA_STREAM, contentUri);
+            if (!label.isEmpty()) {
+                share.putExtra(Intent.EXTRA_SUBJECT, label);
+                share.putExtra(Intent.EXTRA_TITLE, label);
+            }
+            share.setClipData(ClipData.newUri(getContext().getContentResolver(), label, contentUri));
+            share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(share, label);
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (ActivityNotFoundException e) {
+            call.reject("No app available to share this media.", e);
+        } catch (Exception e) {
+            call.reject(e.getMessage() != null ? e.getMessage() : "Could not share saved media.", e);
+        }
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        String target = call.getString("target", "app_info");
+        String pkg = getContext().getPackageName();
+        Intent intent;
+        if ("notifications".equalsIgnoreCase(target) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, pkg);
+        } else if ("unknown_apps".equalsIgnoreCase(target) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + pkg));
+        } else {
+            intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg));
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception primaryErr) {
+            try {
+                Intent fallback = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg));
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(fallback);
+                call.resolve();
+            } catch (Exception fallbackErr) {
+                call.reject("Could not open Android settings.", fallbackErr);
+            }
+        }
+    }
+
+    private Uri resolveAccessibleMediaUri(String rawUri) throws Exception {
+        if (!DowniNativeUtils.isSupportedMediaUri(rawUri)) {
+            throw new IllegalArgumentException("No shareable media URI is stored for this item.");
+        }
+        Uri parsed = Uri.parse(rawUri.trim());
+        Uri resolved = parsed;
+        if ("file".equalsIgnoreCase(parsed.getScheme())) {
+            String path = parsed.getPath();
+            if (path == null || path.isEmpty()) {
+                throw new FileNotFoundException("Saved file path is empty.");
+            }
+            File f = new File(path);
+            if (!f.exists()) {
+                throw new FileNotFoundException("Saved file was moved or deleted.");
+            }
+            resolved = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", f);
+        }
+        try (AssetFileDescriptor afd = getContext().getContentResolver().openAssetFileDescriptor(resolved, "r")) {
+            if (afd == null) {
+                throw new FileNotFoundException("Saved file is no longer accessible.");
+            }
+        } catch (FileNotFoundException e) {
+            throw new FileNotFoundException("Saved file was moved or deleted.");
+        } catch (SecurityException e) {
+            throw new SecurityException("Permission to access this file was revoked.");
+        }
+        return resolved;
+    }
+
+    private String resolveOpenMimeType(Uri contentUri, String requestedMime) {
+        if (requestedMime != null && !requestedMime.trim().isEmpty()) {
+            return requestedMime.trim();
+        }
+        try {
+            String detected = getContext().getContentResolver().getType(contentUri);
+            if (detected != null && !detected.trim().isEmpty()) {
+                return detected.trim();
+            }
+        } catch (Exception ignored) {}
+        return "video/mp4";
+    }
+
     private void cleanDir(File dir) {
         try {
             if (dir != null && dir.exists()) {
                 File[] files = dir.listFiles();
                 if (files != null) for (File f : files) f.delete();
+                dir.delete();
             }
         } catch (Exception ignored) {}
-    }
-
-    /**
-     * SAF writes are not always indexed by MediaScanner, which left saved
-     * videos invisible in the Vault (a MediaStore query) and in gallery apps.
-     * Resolve the real path when the document lives on primary storage and
-     * hand it to the media scanner.
-     */
-    private void scanSafDocument(Uri documentUri, String mime) {
-        try {
-            String docId = DocumentsContract.getDocumentId(documentUri);
-            int colon = docId.indexOf(':');
-            if (colon <= 0) return;
-            String device = docId.substring(0, colon);
-            String rel = docId.substring(colon + 1);
-            if (!"primary".equals(device) || rel.isEmpty()) return;
-            File f = new File(Environment.getExternalStorageDirectory(), rel);
-            android.media.MediaScannerConnection.scanFile(getContext(), new String[]{f.getAbsolutePath()}, new String[]{mime}, null);
-        } catch (Exception ignored) {}
-    }
-
-    private String copyToGallery(File source, String title, String extension) {
-        if (source == null || !source.exists()) {
-            return "Downloaded file missing";
-        }
-        String displayName = nextGalleryName(title, extension, source);
-        String ext = (extension == null || extension.trim().isEmpty()) ? "mp4" : extension.toLowerCase(Locale.US);
-        String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
-        if (mime == null) mime = ext.startsWith("m4") || ext.equals("mp3") ? "audio/" + ext : "video/mp4";
-
-        boolean saved = false;
-
-        String treeUri = getContext().getSharedPreferences("downi_settings", Context.MODE_PRIVATE).getString("treeUri", "");
-        if (treeUri != null && !treeUri.isEmpty()) {
-            try {
-                Uri tree = Uri.parse(treeUri);
-                Uri parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
-                Uri destination = DocumentsContract.createDocument(getContext().getContentResolver(), parent, mime, displayName);
-                if (destination != null) {
-                    try (InputStream input = new FileInputStream(source); OutputStream output = getContext().getContentResolver().openOutputStream(destination)) {
-                        if (output != null) {
-                            byte[] buffer = new byte[64 * 1024];
-                            for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
-                            saved = true;
-                        }
-                    }
-                    if (saved) scanSafDocument(destination, mime);
-                }
-            } catch (Exception ignored) {}
-            if (saved) {
-                try { source.delete(); } catch (Exception ignored) {}
-                return "Custom folder";
-            }
-        }
-
-        // Method 1: MediaStore
-        try {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
-            values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Straight into the gallery root - Movies/ or Music/, no DOWNI
-                // subfolder, exactly like the headless path in
-                // DowniDownloadService.saveToGallery. The two paths used to
-                // disagree (this one wrote Movies/DOWNI/, that one wrote
-                // Movies/), so the same grab landed in two albums and the app
-                // showed two different folders. One path, one album.
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, (mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES) + "/");
-                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
-            }
-
-            Uri collection = mime.startsWith("audio/") ? MediaStore.Audio.Media.EXTERNAL_CONTENT_URI : MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
-            Uri destination = getContext().getContentResolver().insert(collection, values);
-            if (destination != null) {
-                try (InputStream input = new FileInputStream(source); OutputStream output = getContext().getContentResolver().openOutputStream(destination)) {
-                    if (output != null) {
-                        byte[] buffer = new byte[64 * 1024];
-                        for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
-                        saved = true;
-                    }
-                }
-                if (saved && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ContentValues ready = new ContentValues();
-                    ready.put(MediaStore.MediaColumns.IS_PENDING, 0);
-                    getContext().getContentResolver().update(destination, ready, null, null);
-                }
-            }
-        } catch (Exception ignored) {
-            saved = false;
-        }
-
-        // Method 2: Public Media Directory
-        if (!saved) {
-            try {
-                File publicDir = Environment.getExternalStoragePublicDirectory(mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES);
-                if (!publicDir.exists()) publicDir.mkdirs();
-                File destFile = new File(publicDir, displayName);
-                try (InputStream input = new FileInputStream(source); OutputStream output = new java.io.FileOutputStream(destFile)) {
-                    byte[] buffer = new byte[64 * 1024];
-                    for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
-                    saved = true;
-                }
-                android.media.MediaScannerConnection.scanFile(getContext(), new String[]{destFile.getAbsolutePath()}, new String[]{mime}, null);
-            } catch (Exception ignored) {
-                saved = false;
-            }
-        }
-
-        // Method 3: App External Files
-        if (!saved) {
-            try {
-                File appDir = getContext().getExternalFilesDir(mime.startsWith("audio/") ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES);
-                if (appDir != null) {
-                    if (!appDir.exists()) appDir.mkdirs();
-                    File destFile = new File(appDir, displayName);
-                    try (InputStream input = new FileInputStream(source); OutputStream output = new java.io.FileOutputStream(destFile)) {
-                        byte[] buffer = new byte[64 * 1024];
-                        for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
-                        saved = true;
-                    }
-                    android.media.MediaScannerConnection.scanFile(getContext(), new String[]{destFile.getAbsolutePath()}, new String[]{mime}, null);
-                }
-            } catch (Exception ignored) {}
-        }
-
-        try { source.delete(); } catch (Exception ignored) {}
-        return "Gallery / Movies";
-    }
-
-    private synchronized String nextGalleryName(String title, String extension, File source) {
-        String ext = (extension == null || extension.trim().isEmpty()) ? "mp4" : extension.toLowerCase(Locale.US).replaceFirst("^\\.", "");
-        String base = TitleSanitizer.sanitize(title);
-        if (base.toLowerCase(Locale.US).endsWith("." + ext)) base = base.substring(0, base.length() - ext.length() - 1);
-        String key = (base + "." + ext).toLowerCase(Locale.US);
-        android.content.SharedPreferences names = getContext().getSharedPreferences("downi_saved_names", Context.MODE_PRIVATE);
-        // Identity migration: counters used to live under "omni_saved_names".
-        android.content.SharedPreferences legacyNames = getContext().getSharedPreferences("omni_saved_names", Context.MODE_PRIVATE);
-        int number = names.getInt(key, -1);
-        if (number < 0) {
-            number = legacyNames.getInt(key, 0);
-            if (number > 0) names.edit().putInt(key, number).apply();
-        }
-        String candidate = number == 0 ? base + "." + ext : base + " (" + number + ")." + ext;
-        while (galleryNameExists(candidate)) {
-            number++;
-            candidate = base + " (" + number + ")." + ext;
-        }
-        names.edit().putInt(key, number + 1).apply();
-        return candidate;
-    }
-
-    private boolean galleryNameExists(String displayName) {
-        String[] projection = {MediaStore.MediaColumns._ID};
-        String selection = MediaStore.MediaColumns.DISPLAY_NAME + "=?";
-        try (Cursor cursor = getContext().getContentResolver().query(MediaStore.Files.getContentUri("external"), projection, selection, new String[]{displayName}, null)) {
-            return cursor != null && cursor.moveToFirst();
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private String safeFileName(String requested, Uri uri) {
-        String path = (uri != null && uri.getPath() != null) ? uri.getPath() : "";
-        String ext = path.contains(".") ? path.substring(path.lastIndexOf('.')).toLowerCase(Locale.US) : ".mp4";
-        return TitleSanitizer.safeFileName(requested, ext);
     }
 
     private String getAppVersionName() {
@@ -1254,24 +1496,5 @@ public class DowniEnginePlugin extends Plugin {
         } catch (Exception e) {
             return BuildConfig.VERSION_NAME;
         }
-    }
-
-    private String formatBytes(long bytes) {
-        if (bytes <= 0) return "0 MB";
-        double mb = bytes / (1024.0 * 1024.0);
-        if (mb >= 1024.0) {
-            return String.format(Locale.US, "%.2f GB", mb / 1024.0);
-        }
-        return String.format(Locale.US, "%.1f MB", mb);
-    }
-
-    private String formatSpeed(double bytesPerSec) {
-        if (bytesPerSec <= 0) return "";
-        double mbPerSec = bytesPerSec / (1024.0 * 1024.0);
-        if (mbPerSec >= 1.0) {
-            return String.format(Locale.US, "%.1f MB/s", mbPerSec);
-        }
-        double kbPerSec = bytesPerSec / 1024.0;
-        return String.format(Locale.US, "%.0f KB/s", kbPerSec);
     }
 }

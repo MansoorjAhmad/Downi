@@ -1,10 +1,14 @@
 # DOWNI — Handoff Brief for a New Chat
 
-_Updated 2026-10-20 (v3.5.0, the scope reduction). Read this first in a fresh session._
+_Updated 2026-11-16 (v3.11.0). Read this first in a fresh session._
 
 ---
 
 ## 0. Read this first — v3.5.0 changed what the app IS
+
+> **Historical note:** v3.5.0 did ship (device-verified, tagged). The "still owed before v3.5.0 can
+> ship" list below and the P0 v3.5.0 checklist in §7 are kept only as the record of that cut. The
+> current shipped build is **v3.11.0 (versionCode 64)** — see §1. Nothing in those lists is owed now.
 
 **DOWNI is a downloader for YouTube, TikTok and Instagram. That is the whole product.** The Vault,
 the Fetcher and the Core were removed on 2026-10-20 after users said the app had grown too much
@@ -60,8 +64,8 @@ platform × entry-point matrix in §5 was not required — only the §6 truth re
 | Local path | `C:\Users\Manso\Documents\Codex\2026-09-06\bro-i-have-started-working-on\mobile-app` |
 | Remote | github.com/MansoorjAhmad/Downi |
 | Live channel | GitHub Releases → in-app updater |
-| Current version | **v3.8.0** (versionCode 60): Anti-Repost Shield S2 (container remux & entropy injection; platform effect untested), Pause/Resume permanently removed, pinned engine + certifi with PyPI wheel verification, real network diagnostics, single source of truth for version. |
-| Previous | v3.7.0 (versionCode 59). |
+| Current version | **v3.11.0** (versionCode 64): unified persistent `BatchQueue` (`downi_batch_v1`), direct Playlist Sheet with thumbnails/search/quality strip, immediate Queue & notification metadata, single fixed Electric Lime OLED brand, richer History receipts, and inspector/subtitle/platform-URL accuracy fixes. Built, signed and device-verified on the vivo V2058 (checks 11-1 … 11-11); uncommitted. |
+| Previous | v3.10.0 (versionCode 63): 1440p/4K VP9/AV1 & IG 1080p DASH, audio tagging, subtitles, paginated playlists, Deep Shield. |
 | Tests | `.github/workflows/test.yml` (engine smoke + debug build, every push) |
 | Release trigger | `git push origin vX.Y.Z` → `.github/workflows/release.yml` builds + publishes |
 
@@ -82,7 +86,7 @@ Old companion desktop app (`desktop-app/`, `dist/`, `work/`) is **abandoned** �
 3. **No Cloud Boost / remote relay** for on-device builds. If ever revisited: health-check + graceful local fallback.
 4. **Any extraction-layer change requires the full device matrix first**: Instagram + YouTube + TikTok × Vortex / Inspector / DowniDrop on a real phone (`DEVICE_TEST.md`).
 5. **Never change `applicationId` (`com.omnidownloader.app`) or the signing key** — breaks in-place updates for installed users.
-6. yt-dlp pin: bump monthly or on-break, each bump gated by the matrix. Currently `2026.8.19`.
+6. yt-dlp pin: bump monthly or on-break, each bump gated by the matrix. Currently `2026.11.4.232659.dev0`.
 7. **§7-bis (added 2026-10-20): a version may also be earned by an owner-ruled scope reduction** — a deliberate removal of a shipped feature. The removal must be named honestly, §6 truth re-checks are still owed on a device, §5 is only owed if the extraction layer changed, and **nothing removed comes back by stealth**.
 
 ---
@@ -92,7 +96,7 @@ Old companion desktop app (`desktop-app/`, `dist/`, `work/`) is **abandoned** �
 - **Capacitor 6** (WebView `https://localhost`, assets bundled from `www/`) + **Chaquopy 3.11** (Python 3.11 + yt-dlp, on-device).
 - Native bridge: **`DowniEnginePlugin`** (all `@PluginMethod`s; JS calls `Capacitor.Plugins.DowniEngine`).
 - Notifications/foreground: **`DowniDownloadService`** (channels `downi_progress` LOW, `downi_alerts` DEFAULT; per-job ids).
-- **True 1080p**: `downloader.py::_download_split` (H.264 video-only + M4A) → **`Mp4Merger`** (MediaMuxer, PTS-interleaved, 8 MB buffer; VP9 needs API 29+, AV1 API 34+).
+- **HD / 4K DASH & Audio Tagging**: `downloader.py::_download_split` (H.264/VP9/AV1 video-only + M4A) → **`Mp4Merger`** (MediaMuxer, PTS-interleaved, 8 MB buffer; VP9 needs API 29+, AV1 API 34+), unlocked for YouTube up to 2160p and Instagram/non-YT DASH (>720p). `audio_tagger.py` writes ID3v2.3 (`.mp3`) and MP4 `ilst` (`.m4a`) cover art + metadata in pure Python. `VideoUniquifier` (S2+ default) + `DeepShieldProcessor` (opt-in `deep` tier) handle Anti-Repost Shield (`D-003`).
 - **Save path**: MediaStore insert straight into `Movies/` (or `Music/` for audio) — no DOWNI subfolder, because the subfolder only existed for the Vault to scope to. A custom SAF folder is still optional.
 - **Save paths**: MediaStore `Movies/` `Music/` (or chosen SAF folder) — the custom folder is honored by the in-app path and DowniDrop.
 - **Share intents (DowniDrop)**: `ACTION_SEND` + `ACTION_PROCESS_TEXT` → **DropActivity** (invisible, translucent, noHistory). Instant mode (default): toast + `DowniDownloadService.startShared()` — the service **self-starts Python** (`Python.isStarted()` → `Python.start()`, v2.6.4 pattern; never assume MainActivity warm-up) and saves via the ported gallery path (`Movies/` + `Music/` or a custom SAF folder). "Ask quality" mode: forwards to MainActivity → Inspector (`getSharedUrl` consumes the intent; warm start via `onShareReceived`). Per-platform quality memory lives in localStorage, mirrored to `downi_settings` prefs via `syncDropSettings`.
@@ -218,8 +222,6 @@ The only thing that earns a place in the app now is making the download better.
 - [ ] ~~Play Store track: AAB build, targetSdk 35+, ProGuard rules, listing assets.~~ **Rejected permanently.**
 - [ ] ~~The Vault, the Fetcher, the Core.~~ **Removed in v3.5.0 (2026-10-20). Nothing removed
       comes back by stealth — see READ_THIS_BEFORE_UPGRADE §7-bis.**
-- [ ] ~~Shield.~~ **Cancelled before it shipped (2026-10-20). The work is preserved on the
-      `feature/shield` and `feature/shield-s6` branches.**
 
 **Owner decisions**
 1. Play Store track — **rejected permanently**. Sideload-only via GitHub Releases. (2026-09-22)

@@ -21,11 +21,15 @@ on a plain Python (see tools/test_truth.py).
 # us. 'sign in to confirm' is a block (it carries 'sign in', which alone would
 # read as private), so the block rule comes first.
 CAUSE_RULES = (
-    ('cancelled', ('cancel',)),
+    ('cancelled', ('[cause:cancelled]', 'download cancelled', 'download canceled',
+                   'grab cancelled', 'grab canceled',
+                   'update download cancelled', 'update download canceled',
+                   'cancelled by user', 'canceled by user')),
     ('blocked', ('403', 'forbidden', 'not a bot',
                  'confirm you are not a bot', 'po token', 'potoken',
                  'unusual traffic', 'captcha')),
-    ('rate_limited', ('429', 'too many requests', 'rate limit', 'rate-limit')),
+    ('rate_limited', ('429', 'too many requests', 'rate limit', 'rate-limit',
+                      'free api limit', '1 request/second', '1 request per second')),
     ('private', ('private video', 'login required', 'members-only', 'members only',
                  'age-restricted', 'age restricted', 'confirm your age', 'age gate',
                  'requires an account', 'without being logged-in', 'logged-in', 'logged in',

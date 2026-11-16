@@ -38,22 +38,38 @@ public final class JobSnapshot {
 
     /** The raw snapshot as stored, never null. */
     public static JSONArray read(Context context) {
-        try {
-            SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String raw = prefs.getString(KEY, "");
-            if (raw == null || raw.isEmpty()) return new JSONArray();
-            return new JSONArray(raw);
-        } catch (Throwable t) {
-            return new JSONArray();
+        synchronized (DowniNativeUtils.PREFS_LOCK) {
+            try {
+                SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+                String raw = prefs.getString(KEY, "");
+                if (raw == null || raw.isEmpty()) return new JSONArray();
+                return new JSONArray(raw);
+            } catch (Throwable t) {
+                return new JSONArray();
+            }
         }
     }
 
     /** Rewrite the snapshot (the service and the read-pruning plugin are the only writers). */
     public static void write(Context context, JSONArray list) {
-        try {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .edit().putString(KEY, list.toString()).apply();
-        } catch (Exception ignored) {}
+        synchronized (DowniNativeUtils.PREFS_LOCK) {
+            try {
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        .edit().putString(KEY, list.toString()).apply();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    /** Atomically reads, prunes stale rows, and persists when rows were dropped. */
+    public static JSONArray readAndPrune(Context context, Set<String> liveJobIds, long now) {
+        synchronized (DowniNativeUtils.PREFS_LOCK) {
+            JSONArray list = read(context);
+            JSONArray kept = pruneForDisplay(list, liveJobIds, now);
+            if (kept.length() != list.length()) {
+                write(context, kept);
+            }
+            return kept;
+        }
     }
 
     /**
