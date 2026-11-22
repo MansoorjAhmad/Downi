@@ -75,13 +75,19 @@ def split_cause(message):
     web layer need no new plumbing: they read the tag, strip it, and keep the
     raw reason exactly as the engine wrote it. A message with no tag is
     classified here, so nothing can arrive unclassified.
+
+    The tag is searched for, not required at index 0: Chaquopy hands a Python
+    exception to Java with the type name in front ("RuntimeError: [cause:...]"),
+    and a message that comes back through that bridge must still split cleanly.
     """
     text = str(message or '')
-    if text.startswith(CAUSE_PREFIX):
-        end = text.find(']')
-        if end > 0:
-            code = text[len(CAUSE_PREFIX):end]
-            return code, text[end + 1:].strip()
+    start = text.find(CAUSE_PREFIX)
+    if start >= 0:
+        end = text.find(']', start + len(CAUSE_PREFIX))
+        if end > start:
+            code = text[start + len(CAUSE_PREFIX):end].strip()
+            if code and all(ch.isalnum() or ch == '_' for ch in code):
+                return code, text[end + 1:].strip()
     return classify(text), text
 
 

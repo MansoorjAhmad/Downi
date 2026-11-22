@@ -1,5 +1,7 @@
 package com.omnidownloader.app;
 
+import java.util.regex.Pattern;
+
 /**
  * The truth layer, Java side: read the engine's cause tag, keep the raw reason.
  *
@@ -15,21 +17,16 @@ package com.omnidownloader.app;
 final class EngineError {
 
     private static final String PREFIX = "[cause:";
+    /** Cause codes are lowercase identifiers; anything else is not a tag we wrote. */
+    private static final Pattern CODE = Pattern.compile("[a-z][a-z0-9_]*");
 
     private EngineError() {
     }
 
     /** The cause code the engine tagged, or "unknown" when it tagged nothing. */
     static String cause(String message) {
-        if (message == null) return "unknown";
-        String text = message.trim();
-        if (text.startsWith(PREFIX)) {
-            int end = text.indexOf(']');
-            if (end > PREFIX.length()) {
-                return text.substring(PREFIX.length(), end);
-            }
-        }
-        return "unknown";
+        Tag tag = parse(message);
+        return tag == null ? "unknown" : tag.cause;
     }
 
     /** The engine's reason, exactly as the engine wrote it (the tag removed). */
@@ -37,14 +34,47 @@ final class EngineError {
         if (message == null) {
             return "";
         }
-        String text = message.trim();
-        if (text.startsWith(PREFIX)) {
-            int end = text.indexOf(']');
-            if (end > PREFIX.length()) {
-                return text.substring(end + 1).trim();
-            }
+        Tag tag = parse(message);
+        return tag == null ? message.trim() : tag.raw;
+    }
+
+    /**
+     * Read the tag wherever it landed.
+     *
+     * <p>The engine raises Python exceptions, and Chaquopy hands those to Java with the Python
+     * exception type in front of the message ("RuntimeError: [cause:rate_limited] ERROR: ...").
+     * The tag is therefore not always at index 0. Searching for it (instead of requiring it at
+     * the start) is what keeps the truth layer alive on-device: the old startsWith() check
+     * matched nothing that crossed the bridge, so every engine failure surfaced as "unknown".
+     */
+    private static Tag parse(String message) {
+        if (message == null) {
+            return null;
         }
-        return text;
+        String text = message.trim();
+        int start = text.indexOf(PREFIX);
+        if (start < 0) {
+            return null;
+        }
+        int end = text.indexOf(']', start + PREFIX.length());
+        if (end < 0) {
+            return null;
+        }
+        String code = text.substring(start + PREFIX.length(), end).trim();
+        if (!CODE.matcher(code).matches()) {
+            return null;
+        }
+        return new Tag(code, text.substring(end + 1).trim());
+    }
+
+    private static final class Tag {
+        final String cause;
+        final String raw;
+
+        Tag(String cause, String raw) {
+            this.cause = cause;
+            this.raw = raw;
+        }
     }
 
     /** A short phrase for the native notification - no guesses, no blame. */

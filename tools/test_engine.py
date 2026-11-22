@@ -5,7 +5,8 @@ Runs offline in plain Python (no live network required) and verifies:
 - Silent 360p regression guard (720/best on YT routes to _download_split instead of progressive itag 18)
 - _clean_url() URL extraction and short-link expansion
 - _download_split() height cap preservation, single-extraction reuse, and cancellation [cause:cancelled]
-- _run_ydl_with_fragment_fallback() 3 -> 1 fragment fallback on 403/429
+- _run_ydl_with_fragment_fallback() 3 -> 1 fragment fallback on 403 (and never on a rate limit)
+- extract-cache reuse across the inspect -> grab gap (one anonymous request per grab)
 - playlist_inspect() error propagation via truth layer
 - truth.py Tikwm rate-limit classification and non-loose cancel handling
 - diagnose() concurrency, 403/429 failure verdicts, and _diag_yt_range() probe
@@ -338,6 +339,81 @@ class TestDownloadPipelineAndSplit(unittest.TestCase):
         self.assertEqual(attempts, [3, 1])
         self.assertEqual(path, '/tmp/recovered.mp4')
 
+    def test_rate_limit_is_never_retried(self):
+        attempts = []
+
+        class _RateLimitedYdl:
+            def __init__(self, opts):
+                attempts.append(opts['concurrent_fragment_downloads'])
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def extract_info(self, url, download=True):
+                raise RuntimeError(
+                    'ERROR: [Instagram] Df7j0cXs5J3: The webpage request was redirected '
+                    'to the login page. You have exceeded the rate-limit for accessing '
+                    'posts anonymously')
+
+        with patch.object(downloader, 'YoutubeDL', _RateLimitedYdl), patch('time.sleep'):
+            with self.assertRaises(RuntimeError):
+                downloader._run_ydl_with_fragment_fallback(
+                    {'quiet': True, 'concurrent_fragment_downloads': 3},
+                    'https://www.instagram.com/reel/Df7j0cXs5J3/',
+                )
+
+        # One request. The old code fired a second one 1.5 s later, which is
+        # what deepened the limit it was trying to escape.
+        self.assertEqual(attempts, [3])
+
+    def test_inspect_metadata_survives_the_grab_gap(self):
+        url = 'https://www.instagram.com/reel/Df7j0cXs5J3/'
+        info = {'title': 'Video by someone', 'formats': [{'format_id': 'best', 'url': 'https://cdn.example/v.mp4'}]}
+        downloader.clear_caches()
+        with patch.object(downloader.time, 'monotonic', return_value=1000.0):
+            downloader._put_cached_info([url], info)
+        # Five minutes later - the old 150 s TTL had expired, so the grab made
+        # a second anonymous extraction for the same tap.
+        with patch.object(downloader.time, 'monotonic', return_value=1300.0):
+            cached = downloader._get_cached_info(url)
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached.get('title'), 'Video by someone')
+        downloader.clear_caches()
+
+    def test_instagram_grab_never_reextracts_after_a_failure(self):
+        """One anonymous page request per grab: a failed grab reports the truth
+        instead of evicting the cache and asking Instagram a second time."""
+        url = 'https://www.instagram.com/reel/nolimit/'
+        info = {'title': 'Video by someone', 'formats': [
+            {'format_id': 'best', 'ext': 'mp4', 'url': 'https://cdn.example/v.mp4'},
+        ]}
+        downloader.clear_caches()
+        with patch.object(downloader.time, 'monotonic', return_value=1000.0):
+            downloader._put_cached_info([url], info)
+        calls = []
+
+        def _boom(opts, u, info=None, progress_listener=None):
+            calls.append(info is not None)
+            raise RuntimeError(
+                '[cause:rate_limited] The webpage request was redirected to the login page')
+
+        with patch.object(downloader, '_run_ydl_with_fragment_fallback', side_effect=_boom), \
+                patch.object(downloader, '_evict_cached_info') as evict, \
+                patch.object(downloader.time, 'monotonic', return_value=1000.0):
+            with tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(RuntimeError):
+                    downloader._download_lanes(url, tmp, 'best', sdk_int=34)
+
+        self.assertEqual(calls, [True])
+        evict.assert_not_called()
+        # The inspector's cache entry survives the failed grab.
+        with patch.object(downloader.time, 'monotonic', return_value=1010.0):
+            self.assertIsNotNone(downloader._get_cached_info(url))
+        downloader.clear_caches()
+
     def test_playlist_inspect_propagates_truth_error(self):
         class _FailYdl:
             def __init__(self, opts):
@@ -512,6 +588,11 @@ class TestStage3Features(unittest.TestCase):
         self.assertIn('1080', ids)
         by_id = {f['id']: f for f in insp['formats']}
         self.assertEqual(by_id['1080']['filesize'], 10_000_000)
+        # v3.8.0 parity: the default "best" row is the single progressive file;
+        # DASH merge is an explicit opt-in, so it never triggers a second
+        # anonymous page request during a normal grab.
+        self.assertEqual(by_id['best']['filesize'], 4_000_000)
+        self.assertNotIn('HD', by_id['best']['label'])
 
         with tempfile.TemporaryDirectory() as tmp:
             v_file = os.path.join(tmp, 'IG 1080p Reel-ig1080.mp4')
@@ -544,10 +625,15 @@ class TestStage3Features(unittest.TestCase):
                     return a_file if info_dict.get('ext') == 'm4a' else v_file
 
             with patch.object(downloader, 'YoutubeDL', _FakeDlYdl):
+                # "best" is the single progressive file (no merge).
                 dl = json.loads(downloader.download('https://www.instagram.com/reel/ig1080/', tmp, 'best'))
+                # The explicit HD lane still merges on device.
+                hd = json.loads(downloader.download('https://www.instagram.com/reel/ig1080/', tmp, '1080'))
 
-        self.assertTrue(dl['merge'])
+        self.assertFalse(dl.get('merge', False))
         self.assertEqual(dl['platform'], 'instagram')
+        self.assertTrue(hd['merge'])
+        self.assertEqual(hd['platform'], 'instagram')
 
     def test_subtitles_inspect_and_download_sidecar(self):
         fake_info = {

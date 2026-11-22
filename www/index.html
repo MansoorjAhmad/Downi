@@ -673,6 +673,10 @@
     let updateListenerAttached = false;
     let progressListenerAttached = false;
     let inspectReqSeq = 0;
+    // An inspect must end even when the site never answers. yt-dlp can sit on
+    // 30 s socket timeouts x 3 retries (downloader.py inspect()), which is
+    // long enough for the main button to look frozen forever.
+    const INSPECT_TIMEOUT_MS = 90000;
     let lastFailedUrl = '';
     let lastFailedFormat = 'best';
     let currentRawError = '';
@@ -1179,6 +1183,14 @@
       if (!engine?.extract || !Array.isArray(urls)) return;
       urls.forEach((u, idx) => {
         if (inspectCache.has(u)) return;
+        // Instagram limits anonymous requests per network. A pasted batch of
+        // Instagram links used to fire up to eight extractions in ~1.4 s just
+        // to fill in previews - the exact burst that triggers the limit - and
+        // every grab then extracted the same link again. The preview keeps the
+        // host name; the grab is the only anonymous request now.
+        let host = '';
+        try { host = new URL(u).hostname.toLowerCase(); } catch (e) {}
+        if (host === 'instagram.com' || host.endsWith('.instagram.com')) return;
         setTimeout(() => {
           if (document.getElementById('playlistModal')?.classList.contains('hidden')) return;
           engine.extract({ url: u }).then(info => {
@@ -1384,6 +1396,20 @@
       openModalEl('playlistModal');
     }
 
+    // An honest ceiling on a scan. Promise.race does not cancel the native call
+    // (nothing can), but it ends the UI's wait and clears "Scanning…".
+    function withInspectTimeout(promise) {
+      let timer = null;
+      const ceiling = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const err = new Error('The site did not answer in time.');
+          err.timeout = true;
+          reject(err);
+        }, INSPECT_TIMEOUT_MS);
+      });
+      return Promise.race([promise, ceiling]).finally(() => clearTimeout(timer));
+    }
+
     async function handleInspectAndOpenModal(url) {
       document.getElementById('inputManualUrl')?.blur();
       const reqId = ++inspectReqSeq;
@@ -1397,7 +1423,7 @@
       if (isPurePlaylist && engine?.playlistInspect) {
         openPlaylistLoading(url);
         try {
-          const plRes = await engine.playlistInspect({ url: url, offset: 0, limit: 50 });
+          const plRes = await withInspectTimeout(engine.playlistInspect({ url: url, offset: 0, limit: 50 }));
           if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
           if (plRes && Array.isArray(plRes.items) && plRes.items.length > 0) {
             playlistState.loading = false;
@@ -1412,8 +1438,12 @@
           if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
           closePlaylistModal();
           currentRawError = (e && e.message) ? e.message : '';
-          const voice = ERROR_VOICES[(e && e.code) || 'unknown'] || ERROR_VOICES.unknown;
-          showToast('Playlist inspect failed', voice.short, 'error');
+          if (e && e.timeout) {
+            showToast('Scan took too long', 'The site did not answer within 90 seconds. Try again.', 'error');
+          } else {
+            const voice = ERROR_VOICES[(e && e.code) || 'unknown'] || ERROR_VOICES.unknown;
+            showToast('Playlist inspect failed', voice.short, 'error');
+          }
           if (btn) { btn.innerText = 'Grab this link'; handleUrlInputChanged(); }
           return;
         }
@@ -1451,7 +1481,7 @@
           return;
         }
         if (engine?.extract) {
-          const info = await engine.extract({ url: url });
+          const info = await withInspectTimeout(engine.extract({ url: url }));
           inspectCache.set(url, { ts: Date.now(), info });
           if (reqId !== inspectReqSeq || currentInspectedUrl !== url) return;
           fillInspector(info, null);
@@ -1465,8 +1495,12 @@
         // The truth layer: the engine's reason and its cause come back with the
         // rejection, so say what happened instead of "could not be inspected".
         currentRawError = (e && e.message) ? e.message : '';
-        const voice = ERROR_VOICES[(e && e.code) || 'unknown'] || ERROR_VOICES.unknown;
-        showToast('Inspect failed', voice.short, 'error');
+        if (e && e.timeout) {
+          showToast('Scan took too long', 'The site did not answer within 90 seconds. Try again.', 'error');
+        } else {
+          const voice = ERROR_VOICES[(e && e.code) || 'unknown'] || ERROR_VOICES.unknown;
+          showToast('Inspect failed', voice.short, 'error');
+        }
       } finally {
         if (reqId === inspectReqSeq) resetInspectButtonText();
       }
@@ -2311,6 +2345,9 @@
     }
     function closeInspector() {
       inspectReqSeq++;
+      // Closing the sheet abandons the scan; the main button must not stay on
+      // "Scanning…" when the abandoned request settles (or never does).
+      resetInspectButtonText();
       closeModalEl('inspectorModal');
     }
 
@@ -2536,7 +2573,14 @@
       }));
       renderJobCards();
       updateQueueBadge();
-      if (!initTitle && engine?.extract) {
+      // Instagram limits anonymous requests per network, and the download is
+      // already about to extract this same link. A second extraction just to
+      // fill the queue card's title is one request too many; the title arrives
+      // with the download's first progress event instead.
+      let cosmeticHost = '';
+      try { cosmeticHost = new URL(url).hostname.toLowerCase(); } catch (e) {}
+      const skipCosmeticExtract = cosmeticHost === 'instagram.com' || cosmeticHost.endsWith('.instagram.com');
+      if (!initTitle && !skipCosmeticExtract && engine?.extract) {
         engine.extract({ url }).then(info => {
           if (!info) return;
           inspectCache.set(url, { ts: Date.now(), info });
@@ -2792,10 +2836,10 @@
         retry: false
       },
       rate_limited: {
-        short: "The site is rate-limiting this device (429).",
-        message: "The site is rate-limiting this device (HTTP 429) - too many requests from here, too fast.",
-        fix: "Wait a few minutes before the next grab. Nothing is wrong with your link.",
-        retry: true
+        short: "The site is rate-limiting this device.",
+        message: "The site is rate-limiting this device - too many requests from here, too fast. Instagram and other sites do this to anonymous requests; nothing is wrong with your link.",
+        fix: "Wait a few minutes before the next grab. Retrying right away makes the wait longer, not shorter. Switching between Wi-Fi and mobile data also changes the network the limit is tied to.",
+        retry: false
       },
       private: {
         short: "That video needs an account, or it is private.",
@@ -3830,7 +3874,7 @@
       if (badge) {
         if (failed) {
           badge.className = 'chip chip--bad';
-          badge.textContent = (item.cause || 'stopped').toUpperCase();
+          badge.textContent = (item.cause || 'stopped').replace(/_/g, ' ').toUpperCase();
         } else if (item.shieldMode === 'skipped') {
           badge.className = 'chip';
           badge.textContent = 'Shield skipped';
@@ -3846,9 +3890,9 @@
       if (subEl) subEl.textContent = (item.date || '') + (item.destination ? ' · ' + item.destination : '');
 
       const rows = [];
+      const itemVoice = failed ? (ERROR_VOICES[item.cause] || ERROR_VOICES.unknown) : null;
       if (failed) {
-        const voice = ERROR_VOICES[item.cause] || ERROR_VOICES.unknown;
-        rows.push(['Cause', (item.cause || 'unknown') + ' — ' + voice.short]);
+        rows.push(['Cause', (item.cause || 'unknown') + ' — ' + itemVoice.short]);
         if (item.rawError) rows.push(['Details', item.rawError]);
         if (item.url) rows.push(['Link', item.url]);
       } else {
@@ -3876,7 +3920,7 @@
       if (btnOpen) btnOpen.disabled = !hasMedia;
       if (btnShare) btnShare.disabled = !hasMedia;
       if (btnSub) btnSub.classList.toggle('hidden', failed || !item.subtitleUri);
-      if (btnRetry) btnRetry.classList.toggle('hidden', !failed || !item.url);
+      if (btnRetry) btnRetry.classList.toggle('hidden', !failed || !item.url || (itemVoice && itemVoice.retry === false));
       if (btnCopy) btnCopy.classList.toggle('hidden', !item.url);
 
       openModalEl('historyDetailModal');

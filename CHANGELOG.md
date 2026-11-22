@@ -3,6 +3,18 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V3.11.1 - Instagram Rate-Limit Fix (versionCode 65) - 2026-11-22
+
+**Hotfix for the Instagram "redirected to the login page / exceeded the rate-limit for accessing posts anonymously" error seen on v3.11.0 while v3.8.0 worked on the same network.** Verified end-to-end by an affected user. The Instagram extractor itself was byte-identical across all versions; the cause was the app re-requesting the page after a failure.
+
+### What Changed
+- **One extraction per grab on non-YouTube sites (`downloader.py`):** removed the v3.11-only evict-and-re-extract retry in `_download_split()` and `_download_lanes()`. A failed grab now reports the real reason instead of firing a second anonymous page request that escalated a soft throttle into the hard login wall (v3.8 behaviour restored).
+- **Rate limits are never retried:** `_run_ydl_with_fragment_fallback()` raises immediately on 429/rate-limit instead of sleeping 1.5 s and retrying.
+- **v3.8-equivalent default:** Instagram `best` is the single progressive file again; the 1080p/1440p/4K DASH merge stays as an explicit opt-in row.
+- **Fewer duplicate requests:** batch hydration and cosmetic-title extracts skip Instagram; extraction cache reuse extended to 15 minutes with a 120-second grab reuse window.
+- **Honest reporting:** engine failures no longer display `UNKNOWN` (the Chaquopy `RuntimeError:` prefix is now parsed); rate limits read "The site is rate-limiting this device" with "Retry from 0%" hidden; Inspect has a 90 s timeout so "Scanning…" cannot hang.
+- **Regression tests:** 33 engine tests, 21 truth checks, 25 JVM tests, version/pin/UI parity gates — all green. Signed with the unchanged release key (certificate continuity verified).
+
 ## V3.11.0 - Unified Batch Queue, Playlist Sheet, Immediate Metadata & UI/UX Polish (versionCode 64) - 2026-11-16
 
 **Unified persistent batch queue (`BatchQueue`), direct Playlist Sheet with thumbnails, live selection/filtering and a deliberate-selection confirmation for large batches, immediate Queue metadata & artwork, one fixed Electric Lime OLED brand, richer History receipts, and subtitle/format accuracy fixes.**

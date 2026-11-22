@@ -13,6 +13,28 @@ public class EngineErrorTest {
         assertEquals("ERROR: HTTP Error 429: Too Many Requests", EngineError.raw(msg));
     }
 
+    /**
+     * The shape that actually crosses the Chaquopy bridge: the Python exception type is
+     * prepended, so the tag is not at index 0. This is the case the old startsWith() check
+     * missed, and it turned every on-device engine failure into "unknown".
+     */
+    @Test
+    public void extractsCauseBehindTheChaquopyExceptionPrefix() {
+        String msg = "RuntimeError: [cause:rate_limited] ERROR: [Instagram] Df7j0cXs5J3: "
+                + "The webpage request was redirected to the login page. You have exceeded the "
+                + "rate-limit for accessing posts anonymously.";
+        assertEquals("rate_limited", EngineError.cause(msg));
+        assertTrue(EngineError.raw(msg).startsWith("ERROR: [Instagram] Df7j0cXs5J3:"));
+        assertFalse(EngineError.raw(msg).contains("[cause:"));
+    }
+
+    @Test
+    public void ignoresATagThatIsNotOneOfOurs() {
+        assertEquals("unknown", EngineError.cause("RuntimeError: [cause:not a code] reason"));
+        assertEquals("RuntimeError: [cause:not a code] reason",
+                EngineError.raw("RuntimeError: [cause:not a code] reason"));
+    }
+
     @Test
     public void untaggedOrNullDefaultsToUnknown() {
         assertEquals("unknown", EngineError.cause(null));

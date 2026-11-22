@@ -28,7 +28,16 @@ _TIKWM_CACHE = {}       # clean_url -> (monotonic_ts, parsed_json)
 _EXTRACT_CACHE = {}     # clean_url -> (monotonic_ts, sanitized_info_dict)
 _CACHE_MAX = 24
 _CLEAN_TTL_SEC = 300.0
-_INFO_TTL_SEC = 150.0
+# 15 minutes, not 2.5. Every extraction is an anonymous request, and Instagram
+# limits those per network. The inspector extracts a link, then the grab used
+# to extract it AGAIN once this cache had expired - two requests for one tap,
+# which is exactly what turns a short limit into "you have exceeded the
+# rate-limit".
+_INFO_TTL_SEC = 900.0
+# A grab may only reuse the inspector's extraction while its signed media URLs
+# are certainly still fresh. Past this, the grab extracts once - exactly like
+# v3.8.0 did - instead of retrying a dead URL and then re-requesting the page.
+_INFO_REUSE_SEC = 120.0
 
 
 def clear_caches():
@@ -380,16 +389,17 @@ def _put_cached_info(urls, info):
         _prune_cache_locked(_EXTRACT_CACHE, _INFO_TTL_SEC)
 
 
-def _get_cached_info(url):
+def _get_cached_info(url, max_age=None):
     if not url:
         return None
+    limit = _INFO_TTL_SEC if max_age is None else min(float(max_age), _INFO_TTL_SEC)
     now = time.monotonic()
     with _CACHE_LOCK:
         entry = _EXTRACT_CACHE.get(url)
         if not entry:
             return None
         ts, info = entry
-        if (now - ts) > _INFO_TTL_SEC:
+        if (now - ts) > limit:
             _EXTRACT_CACHE.pop(url, None)
             return None
         return copy.deepcopy(info)
@@ -419,8 +429,29 @@ def _extract_info_fast(base_opts, url, platform=None, download=False):
         return ydl.extract_info(url, download=download)
 
 
+_RATE_LIMIT_TOKENS = (
+    '429', 'too many requests', 'rate limit', 'rate-limit',
+    'free api limit', '1 request/second', '1 request per second',
+)
+
+
+def _is_rate_limit_message(message):
+    """True when the site said "too many requests", in any of its dialects.
+
+    A rate limit is the one failure a retry cannot fix: the retry is another
+    request, and it extends the wait instead of shortening it. Kept next to
+    the fragment fallback so the retry decision can never drift from it.
+    """
+    text = str(message or '').lower()
+    return any(token in text for token in _RATE_LIMIT_TOKENS)
+
+
 def _run_ydl_with_fragment_fallback(opts, url, info=None, progress_listener=None):
-    """Run YoutubeDL download, falling back from 3 -> 1 concurrent fragments on 403/429."""
+    """Run YoutubeDL download, falling back from 3 -> 1 concurrent fragments on 403.
+
+    A 429/rate limit is raised immediately: a retry is another request, and the
+    site has already said no.
+    """
     for frag_count in (3, 1):
         if _is_cancelled(progress_listener):
             _fail("Download cancelled.", cause='cancelled')
@@ -438,8 +469,13 @@ def _run_ydl_with_fragment_fallback(opts, url, info=None, progress_listener=None
             if _is_cancelled(progress_listener):
                 _fail("Download cancelled.", cause='cancelled')
             msg = str(exc).lower()
-            is_throttle = any(tok in msg for tok in ('403', '429', 'forbidden', 'too many requests', 'rate limit'))
-            if frag_count == 3 and is_throttle:
+            # NEVER retry a rate limit. The old code treated 429 like a
+            # fragment-count problem and fired a second request 1.5 s later,
+            # which is the opposite of what the site asked for.
+            if frag_count == 3 and _is_rate_limit_message(msg):
+                raise
+            is_fragment_throttle = any(tok in msg for tok in ('403', 'forbidden'))
+            if frag_count == 3 and is_fragment_throttle:
                 time.sleep(1.5)
                 continue
             raise
@@ -632,7 +668,11 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None,
     a_info = None
     v_ext = 'mp4'
 
-    for use_cache in (True, False):
+    # One extraction per grab on every non-YouTube site. A stale signed URL is
+    # re-extracted once, and only for YouTube: on Instagram a second anonymous
+    # page request is what escalates a soft limit into a hard login wall.
+    attempts = (True, False) if platform == 'youtube' else (True,)
+    for use_cache in attempts:
         video_path = None
         audio_path = None
         used_cached_info = False
@@ -640,7 +680,7 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None,
             if _is_cancelled(progress_listener):
                 _fail("Download cancelled.", cause='cancelled')
 
-            info = _get_cached_info(url) if use_cache else None
+            info = _get_cached_info(url, _INFO_REUSE_SEC) if use_cache else None
             if info is not None:
                 used_cached_info = True
             else:
@@ -746,7 +786,10 @@ def _download_split(url, target_dir, max_height=1080, progress_listener=None,
                         pass
             if _is_cancelled(progress_listener):
                 _fail("Download cancelled.", cause='cancelled')
-            if used_cached_info:
+            # Only YouTube gets the second, re-extracted attempt for a stale
+            # signed URL. On Instagram that second anonymous page request is
+            # exactly what escalates a soft limit into a hard login wall.
+            if used_cached_info and platform == 'youtube':
                 _evict_cached_info(url)
                 continue
             # THE TRUTH LAYER: returning None here would report "this video has no
@@ -1113,22 +1156,42 @@ def _build_other_formats(info, platform='other', sdk_int=34):
             v_sz = _fmt_size(top_dash)
             a_sz = _fmt_size(top_aac)
             dash_size = (v_sz + a_sz) if v_sz > 0 else 0
-            badge = f'{top_dash_h}p' if top_dash_h in (1080, 1440, 2160) else 'HD'
-            rows = [
-                {
+            # DASH split+merge is an explicit choice on non-YouTube sites. The
+            # default "best" lane stays the single progressive file, exactly as
+            # v3.8.0 did: one anonymous metadata request, one media request, no
+            # second fetch. The merged HD rows remain available as opt-ins.
+            rows = []
+            if pool:
+                rows.append({
+                    'id': 'best',
+                    'label': ('Best Available Quality' if not best_combined_h
+                              else f'Best Available Quality ({best_combined_h}p)'),
+                    'ext': 'mp4',
+                    'badge': f'{best_combined_h}p' if best_combined_h else 'Best',
+                    'filesize': int(best_size),
+                })
+            else:
+                # No progressive stream at all: best must fall back to merged.
+                rows.append({
                     'id': 'best',
                     'label': f'Best Available Quality ({top_dash_h}p HD)',
                     'ext': 'mp4',
-                    'badge': badge,
+                    'badge': f'{top_dash_h}p' if top_dash_h in (1080, 1440, 2160) else 'HD',
                     'filesize': int(dash_size),
-                }
-            ]
-            if top_dash_h >= 1080:
+                })
+            merged_lanes = {
+                2160: ('4k', '4K Ultra HD (merged on device)', '4K'),
+                1440: ('1440', '1440p QHD (merged on device)', '1440p'),
+                1080: ('1080', '1080p Full HD (merged on device)', '1080p'),
+            }
+            lane_h = next((h for h in (2160, 1440, 1080) if top_dash_h >= h), None)
+            if lane_h:
+                lane_id, lane_label, lane_badge = merged_lanes[lane_h]
                 rows.append({
-                    'id': '1080',
-                    'label': '1080p Full HD (merged on device)',
+                    'id': lane_id,
+                    'label': lane_label,
                     'ext': 'mp4',
-                    'badge': '1080p',
+                    'badge': lane_badge,
                     'filesize': int(dash_size),
                 })
             if pool and 0 < best_combined_h <= 720:
@@ -1297,7 +1360,10 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None, s
             return json.dumps(split)
         if fmt_key == '1080':
             _fail('This video has no separate 1080p stream - pick 720p HD or Best Available.')
-    elif platform not in ('youtube', 'tiktok') and not is_audio and fmt_key in ('best', '2160', '4k', '1440', '1080'):
+    # On Instagram/non-YT, 'best' is the single progressive file (v3.8.0
+    # behaviour): one metadata request, one media request. DASH merge stays
+    # available only as an explicit higher-resolution lane.
+    elif platform not in ('youtube', 'tiktok') and not is_audio and fmt_key in ('2160', '4k', '1440', '1080'):
         split = _download_split(
             clean, target_dir, _lane_height(fmt_key, sdk), progress_listener,
             sdk_int=sdk, platform=platform, sub_opts=opts,
@@ -1376,13 +1442,16 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None, s
         options['subtitleslangs'] = _subtitle_langs_from_opts(opts)
         options['subtitlesformat'] = 'srt/vtt/best'
 
-    cached_info = _get_cached_info(clean)
+    cached_info = _get_cached_info(clean, _INFO_REUSE_SEC)
     try:
         info, path = _run_ydl_with_fragment_fallback(
             options, clean, info=cached_info, progress_listener=progress_listener
         )
     except Exception:
-        if cached_info is None or _is_cancelled(progress_listener):
+        # A second anonymous page request is what turns a soft Instagram
+        # throttle into a hard login wall. Only YouTube may re-extract here
+        # (its CDN URLs actually expire); everywhere else report the reason.
+        if cached_info is None or _is_cancelled(progress_listener) or platform != 'youtube':
             raise
         _evict_cached_info(clean)
         info, path = _run_ydl_with_fragment_fallback(

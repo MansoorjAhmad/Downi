@@ -80,6 +80,14 @@ def main():
     check('split_cause() classifies an untagged message', cause, 'format')
     check('split_cause() keeps an untagged message', raw, 'ERROR: Requested format is not available')
 
+    # --- the tag survives Chaquopy's exception-type prefix ----------------
+    # (Java receives "RuntimeError: [cause:...]", not the bare tagged text)
+    cause, raw = truth.split_cause(
+        'RuntimeError: [cause:rate_limited] ERROR: HTTP Error 429: Too Many Requests')
+    check('split_cause() reads a tag behind the bridge prefix', cause, 'rate_limited')
+    check('split_cause() strips the bridge prefix too', raw,
+          'ERROR: HTTP Error 429: Too Many Requests')
+
     # --- a reason that passes through two layers is tagged ONCE -----------
     # (the 1080p split tags it, then download() re-raises it - a double tag
     #  would leave a stray "[cause:x]" in the text the user reads)
