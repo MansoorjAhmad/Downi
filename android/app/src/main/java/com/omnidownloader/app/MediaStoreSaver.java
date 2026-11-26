@@ -65,6 +65,10 @@ public final class MediaStoreSaver {
         EXPLICIT_MIMES.put("ass", "text/x-ssa");
         EXPLICIT_MIMES.put("ssa", "text/x-ssa");
         EXPLICIT_MIMES.put("ttml", "application/ttml+xml");
+        EXPLICIT_MIMES.put("jpg", "image/jpeg");
+        EXPLICIT_MIMES.put("jpeg", "image/jpeg");
+        EXPLICIT_MIMES.put("png", "image/png");
+        EXPLICIT_MIMES.put("webp", "image/webp");
     }
 
     public static final class SaveOutcome {
@@ -260,7 +264,8 @@ public final class MediaStoreSaver {
         String ext = normalizeExt(extension);
         String mime = mimeForExtension(ext);
         boolean isAudio = mime.startsWith("audio/");
-        boolean videoMime = !isAudio;
+        boolean isImage = mime.startsWith("image/");
+        boolean videoMime = !isAudio && !isImage;
 
         String treeUriStr = context.getSharedPreferences(DowniNativeUtils.PREFS_SETTINGS, Context.MODE_PRIVATE)
                 .getString("treeUri", "");
@@ -301,11 +306,13 @@ public final class MediaStoreSaver {
                 ContentValues values = new ContentValues();
                 values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
                 values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH,
-                        (isAudio ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES) + "/");
+                String relDir = isAudio ? Environment.DIRECTORY_MUSIC : (isImage ? Environment.DIRECTORY_PICTURES : Environment.DIRECTORY_MOVIES);
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, relDir + "/");
                 values.put(MediaStore.MediaColumns.IS_PENDING, 1);
 
-                Uri collection = isAudio ? MediaStore.Audio.Media.EXTERNAL_CONTENT_URI : MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                Uri collection = isAudio
+                        ? MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                        : (isImage ? MediaStore.Images.Media.EXTERNAL_CONTENT_URI : MediaStore.Video.Media.EXTERNAL_CONTENT_URI);
                 Uri destination = context.getContentResolver().insert(collection, values);
                 if (destination != null) {
                     boolean copied = copyFileToUri(context, source, destination);
@@ -316,7 +323,8 @@ public final class MediaStoreSaver {
                         long savedId = 0L;
                         try { savedId = Long.parseLong(destination.getLastPathSegment()); } catch (Exception ignored) {}
                         try { source.delete(); } catch (Exception ignored) {}
-                        return new SaveOutcome(isAudio ? "Gallery / Music" : "Gallery / Movies",
+                        String destLabel = isAudio ? "Gallery / Music" : (isImage ? "Gallery / Pictures" : "Gallery / Movies");
+                        return new SaveOutcome(destLabel,
                                 destination.toString(), mime, savedId, videoMime);
                     } else {
                         try { context.getContentResolver().delete(destination, null, null); } catch (Exception ignored) {}
@@ -329,7 +337,7 @@ public final class MediaStoreSaver {
         if (canWriteLegacy) {
             try {
                 File publicDir = Environment.getExternalStoragePublicDirectory(
-                        isAudio ? Environment.DIRECTORY_MUSIC : Environment.DIRECTORY_MOVIES);
+                        isAudio ? Environment.DIRECTORY_MUSIC : (isImage ? Environment.DIRECTORY_PICTURES : Environment.DIRECTORY_MOVIES));
                 if (!publicDir.exists()) publicDir.mkdirs();
                 File destFile = new File(publicDir, displayName);
                 copyFileToFile(source, destFile);

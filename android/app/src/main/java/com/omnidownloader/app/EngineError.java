@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
  * <p>The short phrase exists for the native notification, which is a native surface and needs
  * native-length text. The full sentences live in the web layer, which owns the app's voice.
  */
-final class EngineError {
+public final class EngineError {
 
     private static final String PREFIX = "[cause:";
     /** Cause codes are lowercase identifiers; anything else is not a tag we wrote. */
@@ -24,13 +24,13 @@ final class EngineError {
     }
 
     /** The cause code the engine tagged, or "unknown" when it tagged nothing. */
-    static String cause(String message) {
+    public static String cause(String message) {
         Tag tag = parse(message);
         return tag == null ? "unknown" : tag.cause;
     }
 
     /** The engine's reason, exactly as the engine wrote it (the tag removed). */
-    static String raw(String message) {
+    public static String raw(String message) {
         if (message == null) {
             return "";
         }
@@ -78,7 +78,7 @@ final class EngineError {
     }
 
     /** A short phrase for the native notification - no guesses, no blame. */
-    static String phrase(String cause) {
+    public static String phrase(String cause) {
         if (cause == null) {
             return "DOWNI couldn't finish this grab.";
         }

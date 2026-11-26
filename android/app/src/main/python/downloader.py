@@ -412,6 +412,77 @@ def _evict_cached_info(url):
         _EXTRACT_CACHE.pop(url, None)
 
 
+def _extract_instagram_embed(url):
+    """Best-effort public Instagram /embed/captioned/ fallback when primary API is rate-limited."""
+    m = re.search(r'instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)', str(url or ''))
+    if not m:
+        return None
+    shortcode = m.group(1)
+    embed_url = f'https://www.instagram.com/reel/{shortcode}/embed/captioned/'
+    req = urllib.request.Request(
+        embed_url,
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, context=_ssl_context(), timeout=15) as resp:
+            html = resp.read().decode('utf-8', errors='replace')
+    except Exception:
+        return None
+
+    def _unescape(s):
+        return (s or '').replace('\\/', '/').replace('\\u0026', '&').replace('&amp;', '&')
+
+    vid_m = re.search(r'"video_url"\s*:\s*"([^"]+)"', html) or re.search(r'<video[^>]+src="([^"]+)"', html)
+    thumb_m = re.search(r'"display_url"\s*:\s*"([^"]+)"', html) or re.search(r'<img[^>]+class="EmbeddedMediaImage"[^>]+src="([^"]+)"', html)
+    thumb = _unescape(thumb_m.group(1)) if thumb_m else ''
+    title_m = re.search(r'"caption"\s*:\s*"([^"]{1,140})"', html)
+    title = _safe_name(_unescape(title_m.group(1))) if title_m else f'Instagram {shortcode}'
+
+    if vid_m:
+        video_url = _unescape(vid_m.group(1))
+        if video_url.startswith('http'):
+            return {
+                'id': shortcode,
+                'title': title,
+                'uploader': 'Instagram',
+                'webpage_url': url,
+                'url': video_url,
+                'ext': 'mp4',
+                'thumbnail': thumb,
+                'duration': 0,
+                'formats': [{
+                    'format_id': 'best',
+                    'url': video_url,
+                    'ext': 'mp4',
+                    'vcodec': 'avc1',
+                    'acodec': 'mp4a',
+                }],
+            }
+
+    if thumb.startswith('http'):
+        return {
+            'id': shortcode,
+            'title': title,
+            'uploader': 'Instagram',
+            'webpage_url': url,
+            'url': thumb,
+            'ext': 'jpg',
+            'thumbnail': thumb,
+            'duration': 0,
+            'formats': [{
+                'format_id': 'best',
+                'url': thumb,
+                'ext': 'jpg',
+                'vcodec': 'none',
+                'acodec': 'none',
+            }],
+        }
+    return None
+
+
 def _extract_info_fast(base_opts, url, platform=None, download=False):
     """Extract info, skipping unused HLS/DASH YouTube manifests first with full fallback."""
     plat = platform or _detect_platform(url)
@@ -425,8 +496,25 @@ def _extract_info_fast(base_opts, url, platform=None, download=False):
                 return info
         except Exception:
             pass
-    with YoutubeDL(base_opts) as ydl:
-        return ydl.extract_info(url, download=download)
+    try:
+        with YoutubeDL(base_opts) as ydl:
+            return ydl.extract_info(url, download=download)
+    except Exception as exc:
+        msg = str(exc).lower()
+        # Surgical YouTube fallback on 403 / bot-check only (never forced globally)
+        if plat == 'youtube' and any(tok in msg for tok in ('403', 'sign in to confirm', 'not a bot')):
+            retry_opts = dict(base_opts)
+            retry_opts['extractor_args'] = {'youtube': {'player_client': ['tv_embedded', 'web_safari']}}
+            with YoutubeDL(retry_opts) as ydl:
+                return ydl.extract_info(url, download=download)
+        # Instagram public /embed/captioned/ fallback on anonymous rate-limit/login wall/photo-only post
+        if plat == 'instagram' and not download and (
+            _is_rate_limit_message(msg) or any(tok in msg for tok in ('login', 'empty media', 'no video in this post', '401', '403'))
+        ):
+            embed_info = _extract_instagram_embed(url)
+            if embed_info:
+                return embed_info
+        raise
 
 
 _RATE_LIMIT_TOKENS = (
@@ -897,6 +985,34 @@ def _download_tiktok_direct(url, target_dir, is_audio=False, progress_listener=N
             _fail(data.get('msg') or 'TikTok video not available')
         item = data.get('data') or {}
         music_info = item.get('music_info') or {}
+        images = item.get('images') if isinstance(item.get('images'), list) else []
+        if images and not is_audio:
+            raw_title = item.get('title') or ('tiktok_' + str(item.get('id', int(time.time()))))
+            title = _safe_name(raw_title)
+            slide_paths = []
+            for idx, img_url in enumerate(images, start=1):
+                if not img_url:
+                    continue
+                full_img = urllib.parse.urljoin('https://www.tikwm.com', img_url) if str(img_url).startswith('/') else str(img_url)
+                slide_path = os.path.join(target_dir, f"{title[:40]}-{item.get('id', 'slide')}-{idx}.jpg")
+                try:
+                    _download_stream_direct(full_img, slide_path, 'https://www.tikwm.com/', progress_listener)
+                    if os.path.exists(slide_path) and os.path.getsize(slide_path) > 0:
+                        slide_paths.append(slide_path)
+                except Exception:
+                    if _is_cancelled(progress_listener):
+                        _fail("Download cancelled.", cause='cancelled')
+            if slide_paths:
+                total_sz = sum(os.path.getsize(p) for p in slide_paths if os.path.exists(p))
+                return {
+                    'path': slide_paths[0],
+                    'extra_paths': slide_paths[1:],
+                    'title': title,
+                    'ext': 'jpg',
+                    'filesize': total_sz,
+                    'platform': 'tiktok',
+                    'thumbnail': urllib.parse.urljoin('https://www.tikwm.com', str(item.get('cover') or images[0])),
+                }
         raw_candidates = (
             (music_info.get('play'), item.get('music'))
             if is_audio
@@ -1447,7 +1563,24 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None, s
         info, path = _run_ydl_with_fragment_fallback(
             options, clean, info=cached_info, progress_listener=progress_listener
         )
-    except Exception:
+    except Exception as dl_exc:
+        if platform == 'instagram' and not is_audio and not _is_cancelled(progress_listener):
+            dl_msg = str(dl_exc).lower()
+            if _is_rate_limit_message(dl_msg) or any(tok in dl_msg for tok in ('login', 'empty media', 'no video in this post', '401', '403')):
+                embed_info = _extract_instagram_embed(clean)
+                if embed_info and str(embed_info.get('url') or '').startswith('http'):
+                    ext_fb = embed_info.get('ext') or 'mp4'
+                    title_fb = embed_info.get('title') or 'Instagram'
+                    out_fb = os.path.join(target_dir, f"{title_fb[:50]}-{embed_info.get('id', 'post')}.{ext_fb}")
+                    _download_stream_direct(embed_info['url'], out_fb, 'https://www.instagram.com/', progress_listener)
+                    return json.dumps({
+                        'path': out_fb,
+                        'title': title_fb,
+                        'ext': ext_fb,
+                        'filesize': os.path.getsize(out_fb) if os.path.exists(out_fb) else 0,
+                        'platform': 'instagram',
+                        'thumbnail': embed_info.get('thumbnail') or '',
+                    })
         # A second anonymous page request is what turns a soft Instagram
         # throttle into a hard login wall. Only YouTube may re-extract here
         # (its CDN URLs actually expire); everywhere else report the reason.
@@ -1458,15 +1591,21 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None, s
             options, clean, info=None, progress_listener=progress_listener
         )
 
-    if not path or not os.path.exists(path):
-        candidates = [
+    new_media_files = sorted(
+        [
             os.path.join(target_dir, name)
             for name in os.listdir(target_dir)
-            if os.path.isfile(os.path.join(target_dir, name))
-            and not name.endswith(('.part', '.srt', '.vtt'))
-        ]
-        if candidates:
-            path = max(candidates, key=os.path.getmtime)
+            if os.path.join(target_dir, name) not in before_files
+            and os.path.isfile(os.path.join(target_dir, name))
+            and not name.endswith(('.part', '.srt', '.vtt', '.ass', '.ssa', '.ttml'))
+            and os.path.getsize(os.path.join(target_dir, name)) > 0
+        ],
+        key=os.path.getmtime,
+    )
+
+    if not path or not os.path.exists(path):
+        if new_media_files:
+            path = new_media_files[-1]
         else:
             _fail('The site did not provide a downloadable public media file.')
 
@@ -1478,14 +1617,20 @@ def _download_lanes(url, target_dir, format_id='best', progress_listener=None, s
         thumb_url = (info.get('thumbnail') or '') if info else ''
         tagged = bool(audio_tagger.tag_audio_file(path, title, artist, thumb_url, _ssl_context()))
 
-    filesize = os.path.getsize(path) if os.path.exists(path) else 0
+    extra_paths = [p for p in new_media_files if p != path] if (not is_audio and len(new_media_files) > 1) else []
+    filesize = (os.path.getsize(path) if os.path.exists(path) else 0) + sum(
+        os.path.getsize(p) for p in extra_paths if os.path.exists(p)
+    )
     result = {
         'path': path,
         'title': title,
         'ext': ext,
         'filesize': filesize,
         'platform': platform,
+        'thumbnail': (info.get('thumbnail') or '') if info else '',
     }
+    if extra_paths:
+        result['extra_paths'] = extra_paths
     if is_audio:
         result['tagged'] = tagged
     if opts.get('subtitles') and not is_audio:

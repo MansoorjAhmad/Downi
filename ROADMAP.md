@@ -41,6 +41,27 @@ Deferred / next candidates:
 - Web: direct-to-CDN downloads where CORS allows (skip the proxy)
 - Play Store track: AAB, targetSdk 35+, ProGuard rules
 
+Shipped in v4.0.0 ("The Native Kotlin & Compose Rebuild" — versionCode 66):
+- Architecture: Migrated from Capacitor/WebView/Java to **Kotlin + Jetpack Compose + Python (Chaquopy)** (2 core languages).
+- Core: Room DB (`DownloadJobEntity`), DataStore (`SettingsRepository`), `WorkManager` (`QueueRecoveryWorker`), unified `DownloadCoordinator` + `DowniDownloadService`, `DropActivity`, `AppUpdater` (OkHttp 4).
+- UI: Obsidian + Electric Lime Compose UI, live Grab-tab progress, instant clipboard detection, playlist auto-routing, real thumbnails in Grab & Vault, L3 Shield Report dialog, and rich DowniDrop notifications (progress %, Share, Retry).
+- Engine: `yt-dlp==2026.11.24.232653.dev0`, R8 minification enabled, Capacitor/Node/WebView/spike scripts removed.
+
+Planned for v4.0.0 ("The Bulletproof Zero-Cookie & Flagship Release"):
+- **Phase 1 — Zero-Cookie Rate-Limit Defense & Extraction Resilience:**
+  - Per-platform pacing (`DownloadCoordinator`: serialize Instagram 1-at-a-time with 1.5–2.5s jitter; keep 3 concurrent for YouTube/TikTok).
+  - Adaptive 60s platform cooldown on `rate_limited` with honest IP/network-switch guidance.
+  - Instagram public `/embed/captioned/` fallback when main `yt-dlp` endpoint hits anonymous rate-limits.
+  - Surgical YouTube 403/bot-check fallback retry (only on failure, never forced globally).
+  - Weekly automated `yt-dlp` nightly qualification CI (`.github/workflows/update-ytdlp.yml`).
+- **Phase 2 — Flagship UX & Shield Completeness:**
+  - In-app `Media3` (ExoPlayer) preview player inside Vault (scrub, speed, one-tap Repost/Share).
+  - Multi-file Carousel support (Instagram & TikTok photo/video slides) into `MediaStore`.
+  - Deep Creator Shield audio micro-uniqueness (optional subtle resample/dither alongside `EGL14` video transform).
+  - Android Quick Settings `TileService` for instant clipboard grab / Shield toggle.
+- **Phase 3 — Multi-OEM Verification & Release:**
+  - Full 3-platform x 3-entry-point matrix + Shield ON/OFF upload validation + `release.yml` signed v4.0.0 APK.
+
 Law of the land (READ_THIS_BEFORE_UPGRADE.md):
 - No client spoofing, no forced UAs, no Instagram sessions, no segmented-socket hacks.
 - No pause/resume, no `.part` continuation, no resumable job state. Removed in 3.8.0 and permanently banned (`DECISIONS.md`).

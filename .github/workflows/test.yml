@@ -39,7 +39,7 @@ jobs:
         run: python ci/smoke_test.py
 
   build:
-    name: Debug APK build (exercises the bundled-UI freshness guard)
+    name: Native Android Compose Debug APK build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,14 +47,6 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-      - run: npm ci || npm install
-      - run: npx cap sync android
-      - name: "Tab state gate (one view, one nav per switch)"
-        run: node tools/_tabcheck.js
       - name: "JVM unit tests"
         run: |
           cd android

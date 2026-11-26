@@ -1,0 +1,107 @@
+name: Weekly yt-dlp Nightly Qualification
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  qualify:
+    name: Qualify Latest yt-dlp Nightly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check PyPI for latest yt-dlp nightly
+        id: pypi
+        run: |
+          python - << 'EOF'
+          import json, os, re, urllib.request
+
+          req = urllib.request.Request("https://pypi.org/pypi/yt-dlp/json", headers={"User-Agent": "DOWNI-CI/1.0"})
+          data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
+          nightlies = [k for k in data.get("releases", {}) if k.endswith(".dev0")]
+          def ver_key(v):
+              return [int(x) if x.isdigit() else 0 for x in v.replace(".dev0", "").split(".")]
+          latest = max(nightlies, key=ver_key)
+          whl = next(f for f in data["releases"][latest] if f["filename"].endswith(".whl"))
+          sha = whl["digests"]["sha256"]
+
+          with open("android/app/build.gradle", "r", encoding="utf-8") as f:
+              gradle = f.read()
+          m = re.search(r'install\("yt-dlp==([^"]+)"\)', gradle)
+          current = m.group(1) if m else ""
+          changed = (latest != current)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"latest={latest}\n")
+              out.write(f"sha={sha}\n")
+              out.write(f"current={current}\n")
+              out.write(f"changed={'true' if changed else 'false'}\n")
+          print(f"Current: {current} | Latest: {latest} | Changed: {changed}")
+          EOF
+
+      - name: Install & qualify candidate yt-dlp
+        if: steps.pypi.outputs.changed == 'true'
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          pip install "yt-dlp==${{ steps.pypi.outputs.latest }}" certifi==2026.10.23
+          python tools/test_truth.py
+          python tools/test_titles.py
+          python tools/test_engine.py
+          python ci/smoke_test.py
+
+      - name: Update android/app/build.gradle pin
+        if: steps.pypi.outputs.changed == 'true'
+        run: |
+          python - << 'EOF'
+          import os, re
+          latest = os.environ["LATEST"]
+          sha = os.environ["SHA"]
+          current = os.environ["CURRENT"]
+          with open("android/app/build.gradle", "r", encoding="utf-8") as f:
+              text = f.read()
+          new_block = (
+              f'// Wheel artifact SHA-256: {sha}\n'
+              f'            // Rollback pin: install("yt-dlp=={current}")\n'
+              f'            install("yt-dlp=={latest}")'
+          )
+          updated = re.sub(
+              r'// Wheel artifact SHA-256: [a-fA-F0-9]{64}\s*\n(?:\s*//[^\n]*\n)*\s*install\("yt-dlp==[^"]+"\)',
+              new_block,
+              text,
+              count=1
+          )
+          assert updated != text, "Failed to update yt-dlp pin in build.gradle"
+          with open("android/app/build.gradle", "w", encoding="utf-8") as f:
+              f.write(updated)
+          EOF
+        env:
+          LATEST: ${{ steps.pypi.outputs.latest }}
+          SHA: ${{ steps.pypi.outputs.sha }}
+          CURRENT: ${{ steps.pypi.outputs.current }}
+
+      - name: Verify pin parity & create PR
+        if: steps.pypi.outputs.changed == 'true'
+        run: |
+          python ci/verify_pin_parity.py
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/ytdlp-${{ steps.pypi.outputs.latest }}"
+          git checkout -b "$BRANCH"
+          git add android/app/build.gradle
+          git commit -m "chore(engine): bump yt-dlp to ${{ steps.pypi.outputs.latest }}"
+          git push origin "$BRANCH"
+          gh pr create --title "chore(engine): bump yt-dlp to ${{ steps.pypi.outputs.latest }}" \
+            --body "Automated weekly yt-dlp nightly qualification passed all truth, title, engine, and smoke tests." \
+            --base main --head "$BRANCH"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

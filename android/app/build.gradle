@@ -1,4 +1,6 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'com.google.devtools.ksp'
 apply plugin: 'com.chaquo.python'
 
 chaquopy {
@@ -7,28 +9,17 @@ chaquopy {
         pip {
             // Pinned on purpose: extractor fixes for Instagram/YouTube/TikTok ship
             // through yt-dlp releases, so bump this deliberately (monthly cadence,
-            // or immediately when a platform breaks) — and every bump is an
-            // extraction-layer change: READ_THIS_BEFORE_UPGRADE.md's full device
-            // matrix applies before release.
+            // or immediately when a platform breaks).
             //
-            // v3.6.2+: pinned to a verified yt-dlp NIGHTLY build. A site that changes
-            // breaks every app on the same stable version at the same moment,
-            // and the nightlies are where yt-dlp ships the fix first.
-            // Do NOT re-introduce the player_client cascade or a forced mobile
-            // User-Agent here: both caused 403s and Instagram breakage
-            // (READ_THIS_BEFORE_UPGRADE.md §2).
-            //
-            // Wheel artifact SHA-256: 8623aa358f20d513dc5ae4bcf2cbeea229a7b84b59c9f4e0d10f8fb1a6feba61
-            // Rollback pin: install("yt-dlp==2026.10.29.232701.dev0")
-            install("yt-dlp==2026.11.4.232659.dev0")
+            // Wheel artifact SHA-256: d9efc48001599179033cf97b9cb2c268be52eea10d068cb7a54e19f70aed7bf8
+            // Rollback pin: install("yt-dlp==2026.11.4.232659.dev0")
+            install("yt-dlp==2026.11.24.232653.dev0")
             // Wheel artifact SHA-256: e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
             install("certifi==2026.10.23")
         }
     }
 }
 
-// Signing: read from android/keystore.properties (gitignored) or environment
-// variables (CI). Never hardcode credentials in this file.
 def keystorePropsFile = rootProject.file("keystore.properties")
 def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) {
@@ -42,11 +33,17 @@ def releaseSigningAvailable = ksStoreFile != null && file(ksStoreFile).exists()
 
 android {
     namespace "com.omnidownloader.app"
-    // Capacitor's plugin scaffolding reads BuildConfig at build time.
+    compileSdk rootProject.ext.compileSdkVersion
+
     buildFeatures {
         buildConfig true
+        compose true
     }
-    compileSdk rootProject.ext.compileSdkVersion
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
+    }
+
     defaultConfig {
         applicationId "com.omnidownloader.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -54,15 +51,20 @@ android {
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
-        versionCode 65
-        versionName "3.11.1"
+        versionCode 67
+        versionName "4.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
-        }
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
     signingConfigs {
         if (releaseSigningAvailable) {
             release {
@@ -73,79 +75,68 @@ android {
             }
         }
     }
+
     packaging {
         jniLibs {
-            // Compress native .so libs so PackageManager extracts them to disk (16 KB page-size safe
-            // with Chaquopy's 16 KB ELF p_align on AGP 8.2.1, and reduces APK download size).
             useLegacyPackaging = true
         }
     }
+
     testOptions {
         unitTests {
             returnDefaultValues = true
         }
     }
+
     buildTypes {
         release {
             if (releaseSigningAvailable) {
                 signingConfig signingConfigs.release
             }
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
-            // Standard Android debug keystore
         }
-    }
-}
-
-// --- Bundled-UI freshness guard -------------------------------------------------
-// The APK serves src/main/assets/public/, which is a byte-copy of ../../www
-// refreshed by `npx cap sync android`. Local builds that skip the sync used to
-// silently ship an outdated UI (this actually shipped a stale debug APK once).
-// Refuse to build in that case so it can never happen again.
-tasks.named('preBuild') {
-    doFirst {
-        def wwwIndex = new File(rootProject.projectDir.parentFile, 'www/index.html')
-        def bundledIndex = file('src/main/assets/public/index.html')
-        if (!wwwIndex.exists()) {
-            throw new GradleException("www/index.html not found at ${wwwIndex.absolutePath}. Run `npx cap sync android` from the repo root.")
-        }
-        if (!bundledIndex.exists() || !java.util.Arrays.equals(wwwIndex.bytes, bundledIndex.bytes)) {
-            throw new GradleException("Bundled web UI is stale: assets/public/index.html differs from www/index.html. Run `npx cap sync android` from the repo root, then rebuild.")
-        }
-    }
-}
-
-repositories {
-    flatDir{
-        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
     }
 }
 
 dependencies {
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
-    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
-    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
-    implementation project(':capacitor-android')
-    testImplementation "junit:junit:$junitVersion"
-    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
-    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
-    implementation project(':capacitor-cordova-android-plugins')
-}
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.appcompat
+    implementation libs.androidx.core.splashscreen
+    implementation libs.androidx.activity.compose
 
-configurations.configureEach {
-    exclude group: 'androidx.annotation', module: 'annotation-jvm'
-}
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.ui.graphics
+    implementation libs.androidx.compose.ui.tooling.preview
+    implementation libs.androidx.compose.material3
+    implementation libs.androidx.compose.material.icons
+    implementation libs.haze
+    debugImplementation libs.androidx.compose.ui.tooling
 
-apply from: 'capacitor.build.gradle'
+    implementation libs.androidx.navigation.compose
+    implementation libs.androidx.lifecycle.runtime.ktx
+    implementation libs.androidx.lifecycle.runtime.compose
+    implementation libs.androidx.lifecycle.viewmodel.compose
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+    implementation libs.kotlinx.coroutines.android
+
+    implementation libs.androidx.room.runtime
+    implementation libs.androidx.room.ktx
+    ksp libs.androidx.room.compiler
+
+    implementation libs.androidx.datastore.preferences
+    implementation libs.androidx.work.runtime.ktx
+
+    implementation libs.okhttp
+    implementation libs.coil.compose
+    implementation libs.androidx.media3.exoplayer
+    implementation libs.androidx.media3.ui
+
+    testImplementation libs.junit
+    androidTestImplementation libs.androidx.junit
+    androidTestImplementation libs.androidx.espresso.core
 }

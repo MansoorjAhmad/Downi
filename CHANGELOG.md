@@ -3,6 +3,19 @@
 Full release notes + signed APKs live on
 [GitHub Releases](https://github.com/MansoorjAhmad/Downi/releases).
 
+## V4.0.0 - Zero-Cookie Resilience, Media3 Vault & Carousels (versionCode 67) - 2026-11-26
+
+- **Zero-Cookie Rate-Limit Defense (`D-005`):** Per-platform pacing (serialized Instagram with 1.5–2.5s jitter, 3 concurrent for YouTube/TikTok), 60s adaptive cooldowns, Instagram `/embed/captioned/` video & photo fallback, surgical YouTube 403/bot-check retry, and weekly automated `yt-dlp` qualification CI (`.github/workflows/update-ytdlp.yml`).
+- **Flagship Vault & System UX:** In-app `Media3` (ExoPlayer) preview sheet with `1x/1.5x/2x` speed, post-download **Standard Shield**, **Deep Shield**, and **Extract Audio (M4A)** actions (`VaultProcessor`), and **DOWNI Grab** Quick Settings tile (`DowniTileService`).
+- **Multi-File Carousels:** TikTok photo-slide carousels and Instagram multi-item posts save all slides cleanly to `Gallery / Pictures` / `Movies`.
+- **Engine Pin:** Updated `yt-dlp` nightly to `2026.11.24.232653.dev0`.
+
+## V4.0.0 - Native Kotlin & Jetpack Compose Rebuild (versionCode 66) - 2026-11-26
+
+- **Architecture:** Clean-break migration from Capacitor/WebView/Java to **Kotlin + Jetpack Compose + Python (Chaquopy)** (2 core languages).
+- **Unified Core:** Room DB (`DownloadJobEntity`), DataStore (`SettingsRepository`), `WorkManager` (`QueueRecoveryWorker`), unified `DownloadCoordinator` + `DowniDownloadService`, `DropActivity`, and OkHttp `AppUpdater`, with R8 release minification enabled.
+- **UI & UX:** Obsidian + Electric Lime Compose UI, live Grab-tab progress, instant `onWindowFocusChanged` clipboard detection, playlist auto-routing, real thumbnails in Grab & Vault, and rich DowniDrop notifications (progress %, Share, Retry).
+
 ## V3.11.1 - Instagram Rate-Limit Fix (versionCode 65) - 2026-11-22
 
 **Hotfix for the Instagram "redirected to the login page / exceeded the rate-limit for accessing posts anonymously" error seen on v3.11.0 while v3.8.0 worked on the same network.** Verified end-to-end by an affected user. The Instagram extractor itself was byte-identical across all versions; the cause was the app re-requesting the page after a failure.

@@ -93,3 +93,10 @@ Native plugins read from `BuildConfig` generated from `build.gradle`, eliminatin
 The web UI dynamically queries the native app info rather than storing hardcoded version strings.
 Enforced in CI via `ci/verify_version_parity.py`.
 
+
+---
+
+## D-005 — Zero-Cookie Anonymous Architecture
+
+**Status:** CLOSED — owner ruling (v4.1 plan).
+**Rule:** DOWNI remains **100% cookie-free and login-free**. Do not add user account login flows, WebView cookie harvesting, or `cookies.txt` session storage. Reliability must be achieved through per-platform pacing, adaptive cooldowns, public fallback endpoints, surgical retries, and automated `yt-dlp` updates.

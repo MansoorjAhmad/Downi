@@ -92,17 +92,6 @@ public class NativeHelpersTest {
     }
 
     @Test
-    public void notificationIdsNeverCollideWithCompletionIds() {
-        int id = DowniDownloadService.jobNotificationId("drop_12345");
-        assertTrue(id > 4811 && id < 5811);
-        // Even hashCode == Integer.MIN_VALUE stays strictly inside [4812..5810]
-        int edge = DowniDownloadService.jobNotificationId("polygenelubricants");
-        assertTrue(edge > 4811 && edge < 5811);
-        assertEquals(20_000L, JobSnapshot.TERMINAL_TTL_MS);
-        assertEquals(8, JobSnapshot.MAX_ROWS);
-    }
-
-    @Test
     public void buildsSaveOutcomeAndParsesSafFolderNames() {
         MediaStoreSaver.SaveOutcome outcome = new MediaStoreSaver.SaveOutcome(
                 "Custom folder (Reels)",

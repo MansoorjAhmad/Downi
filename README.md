@@ -24,20 +24,18 @@ sites get the best single file they actually serve.
 ## What it does
 
 - **YouTube, TikTok, Instagram, X, Facebook, Reddit, Pinterest** — and anything that resolves to a
-  direct media link.
-- **Up to 1080p on YouTube** — the video and audio streams are downloaded separately and merged on
-  the device with Android's own MediaMuxer. No ffmpeg, no client spoofing.
-- **Audio only** — MP3 / M4A.
-- **3 parallel downloads**, 6 queued behind them, with live progress, speed and ETA in the app and
-  in the notification.
-- **Playlists** — paste a playlist link and DOWNI grabs every video in it, one after another.
-- **Engine health and network diagnostics** in Settings, so "it didn't work" has an answer. The
-  YouTube probe pulls real bytes, not just metadata, so a blocked request can't hide behind a
-  green tick.
-- **Honest failures.** When a grab fails, DOWNI says what actually happened — a refused request, a
-  rate limit, a private video, a dead network — instead of guessing. The engine's exact reason is
-  one tap away under **View details**.
-- **In-app updater** — Settings → Updates.
+  direct media link (including TikTok photo-slide carousels and Instagram public video/photo posts).
+- **100% Native Android UI & Engine** — Kotlin + Jetpack Compose + Room + DataStore + WorkManager +
+  Chaquopy Python (`yt-dlp`), with zero WebView/Capacitor overhead.
+- **Up to 4K on YouTube** — video and audio streams are merged on-device with Android's native
+  `MediaMuxer` (zero ffmpeg).
+- **Anti-Repost Shield** — Standard S2+ (lossless `MediaMuxer` / `IsoBmff`) and Deep Creator
+  (`MediaCodec` + `EGL14`) with L3 verification reports and post-download Vault re-shielding.
+- **In-App `Media3` Vault Player & Audio Extract** — preview saved media with speed controls,
+  extract M4A audio natively, or share/repost in one tap.
+- **Quick Settings Tile & DowniDrop** — grab from the notification shade or Android Share sheet.
+- **Zero-Cookie Rate-Limit Defense** — per-platform pacing, 60s adaptive cooldowns, and public
+  embed fallbacks without risking user accounts (`D-005`).
 
 ## 100% watermark-free
 
